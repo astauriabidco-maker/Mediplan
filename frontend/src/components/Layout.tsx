@@ -1,0 +1,146 @@
+import { NavLink, Outlet, useLocation } from 'react-router-dom'
+import { LayoutDashboard, Calendar, Settings, Bell, User, LogOut, Award, Smartphone, HeartPulse, Wifi, ChevronRight, ChevronDown, List, Layers, Network } from 'lucide-react'
+import { useAppConfig } from '../store/useAppConfig'
+import { clsx, type ClassValue } from 'clsx'
+import { twMerge } from 'tailwind-merge'
+import React, { useState } from 'react'
+
+function cn(...inputs: ClassValue[]) {
+    return twMerge(clsx(inputs))
+}
+
+const SidebarItem = ({ to, icon: Icon, label, themeColor, isSubItem = false }: { to: string, icon: any, label: string, themeColor: string, isSubItem?: boolean }) => (
+    <NavLink
+        to={to}
+        end={to === "/agents"}
+        className={({ isActive }) => cn(
+            "flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all duration-200 group mx-2",
+            isActive
+                ? `bg-white/10 text-white shadow-lg`
+                : "text-slate-400 hover:bg-white/5 hover:text-slate-200",
+            isSubItem && "pl-11 py-2 text-sm"
+        )}
+    >
+        {({ isActive }) => (
+            <>
+                {!isSubItem && (
+                    <div className={cn(
+                        "p-2 rounded-lg transition-colors",
+                        isActive ? `bg-${themeColor}/20 text-${themeColor}` : "bg-slate-800 text-slate-500 group-hover:text-slate-300"
+                    )}>
+                        <Icon size={18} />
+                    </div>
+                )}
+                {isSubItem && <div className={cn("w-1 h-1 rounded-full", isActive ? `bg-${themeColor}` : "bg-slate-600")} />}
+                <span className="font-medium">{label}</span>
+                {isActive && !isSubItem && (
+                    <div className={cn("ml-auto w-1.5 h-1.5 rounded-full shadow-[0_0_8px_rgba(255,255,255,0.5)]", `bg-${themeColor}`)} />
+                )}
+            </>
+        )}
+    </NavLink>
+)
+
+const SidebarGroup = ({ icon: Icon, label, themeColor, children, activePaths }: { icon: any, label: string, themeColor: string, children: React.ReactNode, activePaths: string[] }) => {
+    const location = useLocation();
+    const isExpanded = activePaths.some(path => location.pathname.startsWith(path));
+    const [open, setOpen] = useState(isExpanded);
+
+    return (
+        <div className="space-y-1">
+            <button
+                onClick={() => setOpen(!open)}
+                className={cn(
+                    "w-[calc(100%-16px)] flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group mx-2",
+                    isExpanded ? "text-white" : "text-slate-400 hover:bg-white/5 hover:text-slate-200"
+                )}
+            >
+                <div className={cn(
+                    "p-2 rounded-lg transition-colors",
+                    isExpanded ? `bg-${themeColor}/20 text-${themeColor}` : "bg-slate-800 text-slate-500 group-hover:text-slate-300"
+                )}>
+                    <Icon size={18} />
+                </div>
+                <span className="font-medium flex-1 text-left">{label}</span>
+                {open ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+            </button>
+            {open && <div className="animate-in slide-in-from-top-1 duration-200">{children}</div>}
+        </div>
+    );
+};
+
+export const Layout = () => {
+    const { region, themeColor } = useAppConfig()
+
+    return (
+        <div className="flex h-screen w-full bg-slate-950 text-slate-100 overflow-hidden">
+            {/* Sidebar */}
+            <aside className="w-64 bg-slate-900 border-r border-slate-800 flex flex-col">
+                <div className="p-6">
+                    <h1 className="text-2xl font-bold text-white flex items-center gap-2">
+                        <div className={cn("w-3 h-3 rounded-full bg-current", `text-${themeColor}`)} />
+                        MEDIPLAN
+                    </h1>
+                </div>
+
+                <nav className="flex-1 mt-6 space-y-1 overflow-y-auto">
+                    <SidebarItem to="/dashboard" icon={LayoutDashboard} label="Tableau de bord" themeColor={themeColor} />
+                    <SidebarItem to="/planning" icon={Calendar} label="Planning" themeColor={themeColor} />
+                    <SidebarItem to="/leaves" icon={Calendar} label="Congés" themeColor={themeColor} />
+
+                    <SidebarGroup icon={User} label="Agents" themeColor={themeColor} activePaths={['/agents']}>
+                        <SidebarItem to="/agents" icon={List} label="Liste des Agents" themeColor={themeColor} isSubItem />
+                        <SidebarItem to="/agents/services" icon={Layers} label="Services" themeColor={themeColor} isSubItem />
+                        <SidebarItem to="/agents/hierarchy" icon={Network} label="Hiérarchie" themeColor={themeColor} isSubItem />
+                    </SidebarGroup>
+
+                    <SidebarItem to="/competencies" icon={Award} label="Compétences" themeColor={themeColor} />
+                    <SidebarItem to="/payment" icon={Smartphone} label="Paiements" themeColor={themeColor} />
+                    <SidebarItem to="/qvt" icon={HeartPulse} label="Santé & QVT" themeColor={themeColor} />
+                    <SidebarItem to="/sync" icon={Wifi} label="Synchronisation" themeColor={themeColor} />
+                    <SidebarItem to="/settings" icon={Settings} label="Paramètres" themeColor={themeColor} />
+                </nav>
+
+                <div className="p-4 border-t border-slate-800">
+                    <div className="flex items-center gap-3 px-2">
+                        <div className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center">
+                            <User size={16} />
+                        </div>
+                        <div className="text-xs">
+                            <p className="font-medium text-slate-200">Session Admin</p>
+                            <p className="text-slate-500">Connecté</p>
+                        </div>
+                    </div>
+                </div>
+            </aside>
+
+            {/* Main Content */}
+            <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+                {/* Header */}
+                <header className={cn("h-16 flex items-center justify-between px-8 border-b border-white/10", `bg-${themeColor}`)}>
+                    <div className="flex items-center gap-4">
+                        <h2 className="text-lg font-semibold text-white uppercase tracking-wider">
+                            SaaS Hospitalier
+                        </h2>
+                    </div>
+
+                    <div className="flex items-center gap-6">
+                        <div className="flex items-center gap-2 bg-white/20 px-3 py-1 rounded-full">
+                            <span className="text-xs font-bold text-white">{region}</span>
+                        </div>
+
+                        <button className="text-white hover:opacity-80 transition-opacity">
+                            <Bell size={20} />
+                        </button>
+                        <div className="w-8 h-8 rounded-full border border-white/30 bg-white/10 overflow-hidden" />
+                    </div>
+                </header>
+
+                {/* Scrollable Area */}
+                <main className="flex-1 overflow-y-auto p-8">
+                    <Outlet />
+                </main>
+            </div>
+        </div>
+    )
+}

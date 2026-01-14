@@ -1,0 +1,35 @@
+import { Contract } from './contract.entity';
+import { AgentCompetency } from '../../competencies/entities/agent-competency.entity';
+import { Shift } from '../../planning/entities/shift.entity';
+import { Leave } from '../../planning/entities/leave.entity';
+import { HospitalService } from './hospital-service.entity';
+export declare class Agent {
+    id: number;
+    nom: string;
+    firstName: string;
+    lastName: string;
+    gender: string;
+    dateOfBirth: string;
+    placeOfBirth: string;
+    nationality: string;
+    address: string;
+    department: string;
+    hospitalService: HospitalService;
+    jobTitle: string;
+    hiringDate: string;
+    contractType: string;
+    emergencyContactName: string;
+    emergencyContactPhone: string;
+    email: string;
+    matricule: string;
+    telephone: string;
+    password?: string;
+    tenantId: string;
+    managerId: number;
+    manager: Agent;
+    subordinates: Agent[];
+    contracts: Contract[];
+    agentCompetencies: AgentCompetency[];
+    shifts: Shift[];
+    leaves: Leave[];
+}
