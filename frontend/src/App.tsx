@@ -9,6 +9,8 @@ import { CompetenciesPage } from './pages/CompetenciesPage'
 import { PlanningPage } from './pages/Planning'
 import { LeavesPage } from './pages/LeavesPage'
 import { LoginPage } from './pages/LoginPage'
+import { WhatsAppInbox } from './pages/WhatsAppInbox'
+import { AcceptInvitePage } from './pages/AcceptInvitePage'
 import { useAppConfig } from './store/useAppConfig'
 import { useAuth } from './store/useAuth'
 
@@ -46,6 +48,7 @@ function App() {
             <BrowserRouter>
                 <Routes>
                     <Route path="/login" element={<LoginPage />} />
+                    <Route path="/auth/accept-invite" element={<AcceptInvitePage />} />
 
                     <Route element={<ProtectedRoute />}>
                         <Route path="/" element={<Layout />}>
@@ -62,6 +65,7 @@ function App() {
                             <Route path="payment" element={<PaymentPage />} />
                             <Route path="qvt" element={<QvtPage />} />
                             <Route path="sync" element={<SyncPage />} />
+                            <Route path="whatsapp-inbox" element={<WhatsAppInbox />} />
                             <Route path="settings" element={<SettingsPage />} />
                         </Route>
                     </Route>

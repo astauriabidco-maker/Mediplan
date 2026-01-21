@@ -1,14 +1,53 @@
-import { Entity, PrimaryGeneratedColumn, Column, OneToMany, ManyToOne, JoinColumn } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, OneToMany, ManyToOne, JoinColumn, CreateDateColumn, UpdateDateColumn } from 'typeorm';
 import { Contract } from './contract.entity';
 import { AgentCompetency } from '../../competencies/entities/agent-competency.entity';
 import { Shift } from '../../planning/entities/shift.entity';
 import { Leave } from '../../planning/entities/leave.entity';
 import { HospitalService } from './hospital-service.entity';
+import { Role } from '../../auth/entities/role.entity';
+import { Grade } from './grade.entity';
+
+export enum UserRole {
+    ADMIN = 'ADMIN',
+    MANAGER = 'MANAGER',
+    AGENT = 'AGENT',
+}
+
+export enum UserStatus {
+    INVITED = 'INVITED',
+    ACTIVE = 'ACTIVE',
+    DISABLED = 'DISABLED',
+}
 
 @Entity()
 export class Agent {
     @PrimaryGeneratedColumn()
     id: number;
+
+    @Column({
+        type: 'enum',
+        enum: UserRole,
+        default: UserRole.AGENT,
+        nullable: true
+    })
+    role: UserRole;
+
+    @Column({ nullable: true })
+    roleId: number;
+
+    @ManyToOne(() => Role, (role) => role.agents, { nullable: true })
+    @JoinColumn({ name: 'roleId' })
+    dbRole: Role;
+
+    @Column({
+        type: 'enum',
+        enum: UserStatus,
+        default: UserStatus.ACTIVE, // Existing users are active
+    })
+    status: UserStatus;
+
+    @Column({ type: 'varchar', nullable: true, select: false })
+    invitationToken: string | null;
 
     @Column()
     nom: string; // Used as Display Name or Full Name
@@ -38,6 +77,9 @@ export class Agent {
     @Column({ nullable: true })
     department: string; // Legacy string service name
 
+    @Column({ nullable: true })
+    hospitalServiceId: number;
+
     @ManyToOne(() => HospitalService, (service) => service.agents, { nullable: true })
     @JoinColumn({ name: 'hospitalServiceId' })
     hospitalService: HospitalService;
@@ -50,6 +92,69 @@ export class Agent {
 
     @Column({ nullable: true })
     contractType: string; // CDI, CDD, Stage
+
+    // Identification RH Complète
+    @Column({ nullable: true })
+    birthName: string;
+
+    @Column({ nullable: true })
+    nir: string; // Numéro de Sécurité Sociale
+
+    @Column({ nullable: true })
+    maritalStatus: string; // Célibataire, Marié, PACS, Divorcé, Veuf
+
+    @Column({ default: 0 })
+    childrenCount: number;
+
+    // Coordonnées Détaillées
+    @Column({ nullable: true })
+    street: string;
+
+    @Column({ nullable: true })
+    zipCode: string;
+
+    @Column({ nullable: true })
+    city: string;
+
+    @Column({ nullable: true })
+    personalEmail: string;
+
+    // Détails Contractuels
+    @Column({ type: 'float', default: 100 })
+    workTimePercentage: number; // Quotité (ex: 80 pour 80%)
+
+    @Column({ nullable: true })
+    gradeLegacy: string; // Grade / Catégorie
+
+    @Column({ nullable: true })
+    step: string; // Échelon
+
+    @Column({ nullable: true })
+    index: string; // Indice (Majoré/Brut)
+
+    @Column({ nullable: true })
+    gradeId: number;
+
+    @ManyToOne(() => Grade, (grade) => grade.agents, { nullable: true })
+    @JoinColumn({ name: 'gradeId' })
+    grade: Grade; // Relation vers l'entité Grade (Surcharge le champ string legacy 'grade' si présent)
+
+    @Column({ nullable: true })
+    contractEndDate: string; // Pour les CDD / Vacations
+
+    // Informations Bancaires
+    @Column({ nullable: true, select: false })
+    iban: string;
+
+    @Column({ nullable: true, select: false })
+    bic: string;
+
+    // Formation
+    @Column({ nullable: true })
+    mainDiploma: string;
+
+    @Column({ nullable: true })
+    diplomaYear: string;
 
     // Emergency Contact
     @Column({ nullable: true })

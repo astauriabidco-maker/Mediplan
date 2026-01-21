@@ -220,6 +220,7 @@ let SeedController = class SeedController {
             hiringDate: '2018-01-15',
             hospitalServiceId: administration.id,
             tenantId,
+            role: agent_entity_1.UserRole.ADMIN,
             password: passwordHash,
         });
         const chefChirurgie = await this.agentRepo.save({

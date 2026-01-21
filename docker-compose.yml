@@ -28,6 +28,30 @@ services:
         timeout: 5s
         retries: 5
 
+  backend:
+    build: .
+    ports:
+      - "3002:3005"
+    volumes:
+      - .:/app
+      - /app/node_modules
+    env_file: .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "5173:5175"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    depends_on:
+      - backend
+
 volumes:
   postgres_data:
   redis_data:

@@ -99,6 +99,36 @@ export const LoginPage: React.FC = () => {
                         </button>
                     </div>
                 </form>
+
+                <div className="mt-8 pt-6 border-t border-white/10">
+                    <p className="text-center text-xs font-semibold text-blue-300 uppercase tracking-wider mb-4">
+                        Accès Rapides (Développement)
+                    </p>
+                    <div className="grid grid-cols-1 gap-3">
+                        {[
+                            { label: 'Administrateur', email: 'directeur@hgd-douala.cm' },
+                            { label: 'Chef de Service', email: 'p.mbarga@hgd-douala.cm' },
+                            { label: 'Médecin', email: 's.ondoa@hgd-douala.cm' },
+                        ].map((profile) => (
+                            <button
+                                key={profile.email}
+                                onClick={() => {
+                                    setEmail(profile.email);
+                                    setPassword('password123');
+                                    // Trigger auto-submit in next tick to let state update
+                                    setTimeout(() => {
+                                        const form = document.querySelector('form');
+                                        form?.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
+                                    }, 100);
+                                }}
+                                className="w-full py-2 px-3 text-xs font-medium text-blue-200 border border-white/10 rounded-lg hover:bg-white/5 hover:text-white transition-all text-left flex justify-between items-center group"
+                            >
+                                <span>{profile.label}</span>
+                                <span className="opacity-50 text-[10px] group-hover:opacity-100">{profile.email}</span>
+                            </button>
+                        ))}
+                    </div>
+                </div>
             </div>
         </div>
     );

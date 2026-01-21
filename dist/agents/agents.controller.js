@@ -18,6 +18,8 @@ const agents_service_1 = require("./agents.service");
 const create_agent_dto_1 = require("./dto/create-agent.dto");
 const update_agent_dto_1 = require("./dto/update-agent.dto");
 const jwt_auth_guard_1 = require("../auth/jwt-auth.guard");
+const permissions_decorator_1 = require("../auth/permissions.decorator");
+const roles_guard_1 = require("../auth/roles.guard");
 let AgentsController = class AgentsController {
     agentsService;
     constructor(agentsService) {
@@ -52,6 +54,7 @@ let AgentsController = class AgentsController {
 exports.AgentsController = AgentsController;
 __decorate([
     (0, common_1.Post)(),
+    (0, permissions_decorator_1.Permissions)('agents:write'),
     __param(0, (0, common_1.Request)()),
     __param(1, (0, common_1.Body)()),
     __metadata("design:type", Function),
@@ -60,6 +63,7 @@ __decorate([
 ], AgentsController.prototype, "create", null);
 __decorate([
     (0, common_1.Get)(),
+    (0, permissions_decorator_1.Permissions)('agents:read'),
     __param(0, (0, common_1.Request)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [Object]),
@@ -67,6 +71,7 @@ __decorate([
 ], AgentsController.prototype, "findAll", null);
 __decorate([
     (0, common_1.Get)('my-team'),
+    (0, permissions_decorator_1.Permissions)('agents:read'),
     __param(0, (0, common_1.Request)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [Object]),
@@ -74,6 +79,7 @@ __decorate([
 ], AgentsController.prototype, "getMyTeam", null);
 __decorate([
     (0, common_1.Get)(':id'),
+    (0, permissions_decorator_1.Permissions)('agents:read'),
     __param(0, (0, common_1.Request)()),
     __param(1, (0, common_1.Param)('id')),
     __metadata("design:type", Function),
@@ -82,6 +88,7 @@ __decorate([
 ], AgentsController.prototype, "findOne", null);
 __decorate([
     (0, common_1.Patch)(':id'),
+    (0, permissions_decorator_1.Permissions)('agents:write', 'services:manage_staff'),
     __param(0, (0, common_1.Request)()),
     __param(1, (0, common_1.Param)('id')),
     __param(2, (0, common_1.Body)()),
@@ -91,6 +98,7 @@ __decorate([
 ], AgentsController.prototype, "update", null);
 __decorate([
     (0, common_1.Delete)(':id'),
+    (0, permissions_decorator_1.Permissions)('agents:write'),
     __param(0, (0, common_1.Request)()),
     __param(1, (0, common_1.Param)('id')),
     __metadata("design:type", Function),
@@ -99,7 +107,7 @@ __decorate([
 ], AgentsController.prototype, "remove", null);
 exports.AgentsController = AgentsController = __decorate([
     (0, common_1.Controller)('agents'),
-    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
+    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard, roles_guard_1.RolesGuard),
     __metadata("design:paramtypes", [agents_service_1.AgentsService])
 ], AgentsController);
 //# sourceMappingURL=agents.controller.js.map

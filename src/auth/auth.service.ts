@@ -2,8 +2,10 @@ import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { Agent } from '../agents/entities/agent.entity';
+import { Agent, UserRole, UserStatus } from '../agents/entities/agent.entity';
 import * as bcrypt from 'bcrypt';
+import { MailService } from '../mail/mail.service';
+import * as crypto from 'crypto';
 
 @Injectable()
 export class AuthService {
@@ -11,7 +13,81 @@ export class AuthService {
         @InjectRepository(Agent)
         private agentRepository: Repository<Agent>,
         private jwtService: JwtService,
+        private mailService: MailService,
     ) { }
+
+    async inviteUser(email: string, roleId: number, tenantId: string): Promise<Agent> {
+        const token = crypto.randomBytes(32).toString('hex');
+
+        // Check if user already exists
+        let agent = await this.agentRepository.findOne({ where: { email } });
+
+        if (agent) {
+            if (agent.status !== UserStatus.INVITED) {
+                throw new Error('User already exists and is not in invited status');
+            }
+            // Update existing invited user with new token/role
+            agent.invitationToken = token;
+            agent.roleId = roleId;
+        } else {
+            // Create new user (Agent entity)
+            const name = email.split('@')[0];
+            agent = this.agentRepository.create({
+                email,
+                nom: name,
+                roleId,
+                status: UserStatus.INVITED,
+                invitationToken: token,
+                tenantId,
+                matricule: `INV-${Date.now()}`,
+                telephone: 'N/A',
+            });
+        }
+
+        await this.agentRepository.save(agent);
+        await this.mailService.sendInvitation(email, token);
+
+        return agent;
+    }
+
+    async acceptInvite(token: string, password: string): Promise<any> {
+        const agent = await this.agentRepository.findOne({
+            where: { invitationToken: token },
+            select: ['id', 'email', 'password', 'status', 'invitationToken', 'tenantId']
+        });
+
+        if (!agent) {
+            throw new UnauthorizedException('Invalid or expired invitation token');
+        }
+
+        const hashedPassword = await bcrypt.hash(password, 10);
+        agent.password = hashedPassword;
+        agent.status = UserStatus.ACTIVE;
+        agent.invitationToken = null;
+
+        await this.agentRepository.save(agent);
+
+        return this.login(agent);
+    }
+
+    async changePassword(agentId: number, oldPass: string, newPass: string): Promise<void> {
+        const agent = await this.agentRepository.createQueryBuilder('agent')
+            .addSelect('agent.password')
+            .where('agent.id = :id', { id: agentId })
+            .getOne();
+
+        if (!agent || !agent.password) {
+            throw new UnauthorizedException('User not found');
+        }
+
+        const isMatch = await bcrypt.compare(oldPass, agent.password);
+        if (!isMatch) {
+            throw new UnauthorizedException('Invalid old password');
+        }
+
+        agent.password = await bcrypt.hash(newPass, 10);
+        await this.agentRepository.save(agent);
+    }
 
     async validateUser(email: string, pass: string): Promise<any> {
         console.log(`[AuthDebug] Attempting login for: ${email}`);
@@ -19,6 +95,7 @@ export class AuthService {
         // Explicitly select password as it is hidden by default
         const user = await this.agentRepository.createQueryBuilder('agent')
             .addSelect('agent.password')
+            .leftJoinAndSelect('agent.dbRole', 'role')
             .where('agent.email = :email', { email })
             .getOne();
 
@@ -42,14 +119,35 @@ export class AuthService {
         return null;
     }
 
+    async validate(payload: any) {
+        return {
+            id: payload.sub,
+            email: payload.username,
+            tenantId: payload.tenant,
+            role: payload.role
+        };
+    }
+
     async login(user: any) {
+        const roleName = user.dbRole?.name || user.role;
+        const permissions = user.dbRole?.permissions || [];
+
         const payload = {
             username: user.email,
             sub: user.id,
-            tenant: user.tenantId || 'DEFAULT_TENANT'
+            tenant: user.tenantId || 'DEFAULT_TENANT',
+            role: roleName,
+            permissions: permissions,
         };
         return {
             access_token: this.jwtService.sign(payload),
+            user: {
+                id: user.id,
+                email: user.email,
+                tenantId: user.tenantId || 'DEFAULT_TENANT',
+                role: roleName,
+                permissions: permissions,
+            },
         };
     }
 }

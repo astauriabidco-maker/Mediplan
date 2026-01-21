@@ -9,15 +9,34 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.Agent = void 0;
+exports.Agent = exports.UserStatus = exports.UserRole = void 0;
 const typeorm_1 = require("typeorm");
 const contract_entity_1 = require("./contract.entity");
 const agent_competency_entity_1 = require("../../competencies/entities/agent-competency.entity");
 const shift_entity_1 = require("../../planning/entities/shift.entity");
 const leave_entity_1 = require("../../planning/entities/leave.entity");
 const hospital_service_entity_1 = require("./hospital-service.entity");
+const role_entity_1 = require("../../auth/entities/role.entity");
+const grade_entity_1 = require("./grade.entity");
+var UserRole;
+(function (UserRole) {
+    UserRole["ADMIN"] = "ADMIN";
+    UserRole["MANAGER"] = "MANAGER";
+    UserRole["AGENT"] = "AGENT";
+})(UserRole || (exports.UserRole = UserRole = {}));
+var UserStatus;
+(function (UserStatus) {
+    UserStatus["INVITED"] = "INVITED";
+    UserStatus["ACTIVE"] = "ACTIVE";
+    UserStatus["DISABLED"] = "DISABLED";
+})(UserStatus || (exports.UserStatus = UserStatus = {}));
 let Agent = class Agent {
     id;
+    role;
+    roleId;
+    dbRole;
+    status;
+    invitationToken;
     nom;
     firstName;
     lastName;
@@ -27,10 +46,30 @@ let Agent = class Agent {
     nationality;
     address;
     department;
+    hospitalServiceId;
     hospitalService;
     jobTitle;
     hiringDate;
     contractType;
+    birthName;
+    nir;
+    maritalStatus;
+    childrenCount;
+    street;
+    zipCode;
+    city;
+    personalEmail;
+    workTimePercentage;
+    gradeLegacy;
+    step;
+    index;
+    gradeId;
+    grade;
+    contractEndDate;
+    iban;
+    bic;
+    mainDiploma;
+    diplomaYear;
     emergencyContactName;
     emergencyContactPhone;
     email;
@@ -51,6 +90,36 @@ __decorate([
     (0, typeorm_1.PrimaryGeneratedColumn)(),
     __metadata("design:type", Number)
 ], Agent.prototype, "id", void 0);
+__decorate([
+    (0, typeorm_1.Column)({
+        type: 'enum',
+        enum: UserRole,
+        default: UserRole.AGENT,
+        nullable: true
+    }),
+    __metadata("design:type", String)
+], Agent.prototype, "role", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ nullable: true }),
+    __metadata("design:type", Number)
+], Agent.prototype, "roleId", void 0);
+__decorate([
+    (0, typeorm_1.ManyToOne)(() => role_entity_1.Role, (role) => role.agents, { nullable: true }),
+    (0, typeorm_1.JoinColumn)({ name: 'roleId' }),
+    __metadata("design:type", role_entity_1.Role)
+], Agent.prototype, "dbRole", void 0);
+__decorate([
+    (0, typeorm_1.Column)({
+        type: 'enum',
+        enum: UserStatus,
+        default: UserStatus.ACTIVE,
+    }),
+    __metadata("design:type", String)
+], Agent.prototype, "status", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ type: 'varchar', nullable: true, select: false }),
+    __metadata("design:type", Object)
+], Agent.prototype, "invitationToken", void 0);
 __decorate([
     (0, typeorm_1.Column)(),
     __metadata("design:type", String)
@@ -88,6 +157,10 @@ __decorate([
     __metadata("design:type", String)
 ], Agent.prototype, "department", void 0);
 __decorate([
+    (0, typeorm_1.Column)({ nullable: true }),
+    __metadata("design:type", Number)
+], Agent.prototype, "hospitalServiceId", void 0);
+__decorate([
     (0, typeorm_1.ManyToOne)(() => hospital_service_entity_1.HospitalService, (service) => service.agents, { nullable: true }),
     (0, typeorm_1.JoinColumn)({ name: 'hospitalServiceId' }),
     __metadata("design:type", hospital_service_entity_1.HospitalService)
@@ -104,6 +177,83 @@ __decorate([
     (0, typeorm_1.Column)({ nullable: true }),
     __metadata("design:type", String)
 ], Agent.prototype, "contractType", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ nullable: true }),
+    __metadata("design:type", String)
+], Agent.prototype, "birthName", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ nullable: true }),
+    __metadata("design:type", String)
+], Agent.prototype, "nir", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ nullable: true }),
+    __metadata("design:type", String)
+], Agent.prototype, "maritalStatus", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ default: 0 }),
+    __metadata("design:type", Number)
+], Agent.prototype, "childrenCount", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ nullable: true }),
+    __metadata("design:type", String)
+], Agent.prototype, "street", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ nullable: true }),
+    __metadata("design:type", String)
+], Agent.prototype, "zipCode", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ nullable: true }),
+    __metadata("design:type", String)
+], Agent.prototype, "city", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ nullable: true }),
+    __metadata("design:type", String)
+], Agent.prototype, "personalEmail", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ type: 'float', default: 100 }),
+    __metadata("design:type", Number)
+], Agent.prototype, "workTimePercentage", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ nullable: true }),
+    __metadata("design:type", String)
+], Agent.prototype, "gradeLegacy", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ nullable: true }),
+    __metadata("design:type", String)
+], Agent.prototype, "step", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ nullable: true }),
+    __metadata("design:type", String)
+], Agent.prototype, "index", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ nullable: true }),
+    __metadata("design:type", Number)
+], Agent.prototype, "gradeId", void 0);
+__decorate([
+    (0, typeorm_1.ManyToOne)(() => grade_entity_1.Grade, (grade) => grade.agents, { nullable: true }),
+    (0, typeorm_1.JoinColumn)({ name: 'gradeId' }),
+    __metadata("design:type", grade_entity_1.Grade)
+], Agent.prototype, "grade", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ nullable: true }),
+    __metadata("design:type", String)
+], Agent.prototype, "contractEndDate", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ nullable: true, select: false }),
+    __metadata("design:type", String)
+], Agent.prototype, "iban", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ nullable: true, select: false }),
+    __metadata("design:type", String)
+], Agent.prototype, "bic", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ nullable: true }),
+    __metadata("design:type", String)
+], Agent.prototype, "mainDiploma", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ nullable: true }),
+    __metadata("design:type", String)
+], Agent.prototype, "diplomaYear", void 0);
 __decorate([
     (0, typeorm_1.Column)({ nullable: true }),
     __metadata("design:type", String)

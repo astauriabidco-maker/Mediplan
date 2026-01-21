@@ -11,7 +11,8 @@ import {
     fetchHospitalServicesStats,
     HospitalService
 } from '../api/hospital-services.api';
-import { fetchAgents, Agent } from '../api/agents.api';
+import { fetchAgents, updateAgent, Agent } from '../api/agents.api';
+import { useAuth } from '../store/useAuth';
 import {
     Layers, Plus, Search, Trash2, Edit2, X, Loader2, Users, TrendingUp, Building2,
     ChevronRight, ChevronDown, UserCircle, UserCheck, Stethoscope, Clipboard
@@ -272,13 +273,27 @@ export const HospitalServicesPage = () => {
                     agents={agents}
                     services={services}
                     onClose={handleCloseModal}
-                    onSubmit={(data) => {
+                    onSubmit={async (data: any) => {
                         if (editingService) {
-                            updateMutation.mutate({ id: editingService.id, data });
+                            await updateMutation.mutateAsync({ id: editingService.id, data });
                         } else if (parentServiceForNew) {
-                            createSubMutation.mutate({ parentId: parentServiceForNew, data });
+                            await createSubMutation.mutateAsync({ parentId: parentServiceForNew, data });
                         } else {
-                            createMutation.mutate(data);
+                            // Creation flow with potential agent assignment
+                            const agentsToAdd = data.agentsToAdd as number[];
+                            delete data.agentsToAdd; // Clean up before sending to API
+
+                            const newService = await createMutation.mutateAsync(data);
+
+                            // Chain agent assignment if any
+                            if (agentsToAdd && agentsToAdd.length > 0 && newService) {
+                                await Promise.all(agentsToAdd.map(agentId =>
+                                    updateAgent(agentId, { hospitalServiceId: newService.id })
+                                ));
+                                // Re-invalidate to show updated agents
+                                queryClient.invalidateQueries({ queryKey: ['agents'] });
+                                queryClient.invalidateQueries({ queryKey: ['hospital-services'] });
+                            }
                         }
                     }}
                     isLoading={createMutation.isPending || updateMutation.isPending || createSubMutation.isPending}
@@ -501,7 +516,22 @@ const ServiceModal = ({
     isLoading: boolean;
     themeColor: string;
 }) => {
+    const { user } = useAuth();
+    const queryClient = useQueryClient();
     const [activeTab, setActiveTab] = useState('general');
+    const [selectedAgentToAdd, setSelectedAgentToAdd] = useState<string>('');
+    const [selectedAgentsForCreate, setSelectedAgentsForCreate] = useState<Set<number>>(new Set());
+
+    const isAdminOrManager = user?.role === 'ADMIN' || user?.role === 'MANAGER';
+    const hasStaffPermission = user?.permissions?.includes('*') || user?.permissions?.includes('services:manage_staff') || isAdminOrManager;
+
+    const serviceAgents = service
+        ? agents.filter(a => a.hospitalServiceId === service.id)
+        : agents.filter(a => selectedAgentsForCreate.has(a.id));
+
+    const availableAgents = service
+        ? agents.filter(a => !a.hospitalServiceId || a.hospitalServiceId !== service.id)
+        : agents.filter(a => !selectedAgentsForCreate.has(a.id));
 
     const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
         e.preventDefault();
@@ -517,13 +547,19 @@ const ServiceModal = ({
         if (data.maxAgents) data.maxAgents = Number(data.maxAgents);
         if (data.minAgents) data.minAgents = Number(data.minAgents);
 
+        // Append temporarily selected agents if creating
+        if (!service) {
+            data.agentsToAdd = Array.from(selectedAgentsForCreate);
+        }
+
         onSubmit(data);
     };
 
     const tabs = [
-        { id: 'general', label: 'Informations Générales', icon: Building2 },
+        { id: 'general', label: 'Général', icon: Building2 },
         { id: 'responsibles', label: 'Responsables', icon: UserCheck },
-        { id: 'capacity', label: 'Capacités', icon: Users },
+        { id: 'capacity', label: 'Capacités', icon: Layers },
+        { id: 'staff', label: 'Personnel & Agents', icon: Users },
     ];
 
     return (
@@ -547,8 +583,8 @@ const ServiceModal = ({
                     </button>
                 </div>
 
-                {/* Form */}
-                <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto">
+                {/* Content */}
+                <div className="flex-1 overflow-y-auto">
                     {/* Tabs */}
                     <div className="flex gap-2 border-b border-slate-800 px-6 pt-4">
                         {tabs.map(tab => (
@@ -573,156 +609,287 @@ const ServiceModal = ({
                     </div>
 
                     <div className="p-6 space-y-6">
-                        {/* Tab: General */}
-                        {activeTab === 'general' && (
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-in fade-in slide-in-from-left-4 duration-300">
-                                <div className="space-y-2">
-                                    <label className="text-xs font-bold text-slate-500 uppercase">
-                                        Nom du Service <span className="text-red-500">*</span>
-                                    </label>
-                                    <input
-                                        name="name"
-                                        required
-                                        defaultValue={service?.name}
-                                        className="input-field"
-                                        placeholder="ex: Urgences, Cardiologie"
-                                    />
-                                </div>
+                        {activeTab !== 'staff' ? (
+                            <form id="service-form" onSubmit={handleSubmit}>
+                                {/* Tab: General */}
+                                {activeTab === 'general' && (
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-in fade-in slide-in-from-left-4 duration-300">
+                                        <div className="space-y-2">
+                                            <label className="text-xs font-bold text-slate-500 uppercase">
+                                                Nom du Service <span className="text-red-500">*</span>
+                                            </label>
+                                            <input
+                                                name="name"
+                                                required
+                                                defaultValue={service?.name}
+                                                className="input-field"
+                                                placeholder="ex: Urgences, Cardiologie"
+                                            />
+                                        </div>
 
-                                <div className="space-y-2">
-                                    <label className="text-xs font-bold text-slate-500 uppercase">Code Court</label>
-                                    <input
-                                        name="code"
-                                        defaultValue={service?.code}
-                                        className="input-field font-mono"
-                                        placeholder="ex: URG, CARD"
-                                        maxLength={10}
-                                    />
-                                </div>
+                                        <div className="space-y-2">
+                                            <label className="text-xs font-bold text-slate-500 uppercase">Code Court</label>
+                                            <input
+                                                name="code"
+                                                defaultValue={service?.code}
+                                                className="input-field font-mono"
+                                                placeholder="ex: URG, CARD"
+                                                maxLength={10}
+                                            />
+                                        </div>
 
-                                {!service && !parentServiceId && (
-                                    <div className="space-y-2">
-                                        <label className="text-xs font-bold text-slate-500 uppercase">Service Parent</label>
-                                        <select name="parentServiceId" className="input-field">
-                                            <option value="">-- Service Principal --</option>
-                                            {services.filter(s => s.level === 1).map(s => (
-                                                <option key={s.id} value={s.id}>{s.name}</option>
-                                            ))}
-                                        </select>
+                                        {!service && !parentServiceId && (
+                                            <div className="space-y-2">
+                                                <label className="text-xs font-bold text-slate-500 uppercase">Service Parent</label>
+                                                <select name="parentServiceId" className="input-field">
+                                                    <option value="">-- Service Principal --</option>
+                                                    {services.filter(s => s.level === 1).map(s => (
+                                                        <option key={s.id} value={s.id}>{s.name}</option>
+                                                    ))}
+                                                </select>
+                                            </div>
+                                        )}
+
+                                        <div className="col-span-2 space-y-2">
+                                            <label className="text-xs font-bold text-slate-500 uppercase">Description</label>
+                                            <textarea
+                                                name="description"
+                                                defaultValue={service?.description}
+                                                className="input-field min-h-[80px] resize-none"
+                                                placeholder="Description du service, spécialités, équipements..."
+                                            />
+                                        </div>
+
+                                        {/* Section Personnel Rapide */}
+                                        {service && (
+                                            <div className="col-span-2 p-4 bg-slate-950/30 border border-slate-800 rounded-xl space-y-3">
+                                                <div className="flex items-center justify-between">
+                                                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Aperçu du personnel ({serviceAgents.length})</label>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setActiveTab('staff')}
+                                                        className={cn("text-[10px] font-bold uppercase transition-colors hover:underline", `text-${themeColor}`)}
+                                                    >
+                                                        Gérer tout le personnel →
+                                                    </button>
+                                                </div>
+                                                <div className="flex flex-wrap gap-2">
+                                                    {serviceAgents.slice(0, 5).map(agent => (
+                                                        <div key={agent.id} className="flex items-center gap-1.5 px-2 py-1 bg-slate-800 rounded-lg border border-white/5">
+                                                            <div className={cn("w-4 h-4 rounded-full flex items-center justify-center text-[8px] font-bold text-white", `bg-${themeColor}`)}>
+                                                                {agent.nom.charAt(0)}
+                                                            </div>
+                                                            <span className="text-[10px] text-slate-300 font-medium">{agent.nom}</span>
+                                                        </div>
+                                                    ))}
+                                                    {serviceAgents.length > 5 && (
+                                                        <span className="text-[10px] text-slate-500 flex items-center">+{serviceAgents.length - 5} autres</span>
+                                                    )}
+                                                    {serviceAgents.length === 0 && (
+                                                        <p className="text-[10px] text-slate-600 italic">Aucun agent encore associé</p>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        )}
                                     </div>
                                 )}
 
-                                <div className="col-span-2 space-y-2">
-                                    <label className="text-xs font-bold text-slate-500 uppercase">Description</label>
-                                    <textarea
-                                        name="description"
-                                        defaultValue={service?.description}
-                                        className="input-field min-h-[100px] resize-none"
-                                        placeholder="Description du service, spécialités, équipements..."
-                                    />
-                                </div>
-                            </div>
-                        )}
+                                {/* Tab: Responsibles */}
+                                {activeTab === 'responsibles' && (
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-in fade-in slide-in-from-right-4 duration-300">
+                                        <div className="space-y-2">
+                                            <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-2">
+                                                <Stethoscope size={14} />
+                                                Chef de Service
+                                            </label>
+                                            <select name="chiefId" className="input-field" defaultValue={service?.chiefId || ''}>
+                                                <option value="">-- Aucun --</option>
+                                                {agents.map(agent => (
+                                                    <option key={agent.id} value={agent.id}>{agent.nom}</option>
+                                                ))}
+                                            </select>
+                                        </div>
 
-                        {/* Tab: Responsibles */}
-                        {activeTab === 'responsibles' && (
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-in fade-in slide-in-from-right-4 duration-300">
-                                <div className="space-y-2">
-                                    <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-2">
-                                        <Stethoscope size={14} />
-                                        Chef de Service
-                                    </label>
-                                    <select name="chiefId" className="input-field" defaultValue={service?.chiefId || ''}>
-                                        <option value="">-- Aucun --</option>
-                                        {agents.map(agent => (
-                                            <option key={agent.id} value={agent.id}>{agent.nom}</option>
-                                        ))}
-                                    </select>
-                                </div>
+                                        <div className="space-y-2">
+                                            <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-2">
+                                                <UserCircle size={14} />
+                                                Adjoint au Chef
+                                            </label>
+                                            <select name="deputyChiefId" className="input-field" defaultValue={service?.deputyChiefId || ''}>
+                                                <option value="">-- Aucun --</option>
+                                                {agents.map(agent => (
+                                                    <option key={agent.id} value={agent.id}>{agent.nom}</option>
+                                                ))}
+                                            </select>
+                                        </div>
 
-                                <div className="space-y-2">
-                                    <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-2">
-                                        <UserCircle size={14} />
-                                        Adjoint au Chef
-                                    </label>
-                                    <select name="deputyChiefId" className="input-field" defaultValue={service?.deputyChiefId || ''}>
-                                        <option value="">-- Aucun --</option>
-                                        {agents.map(agent => (
-                                            <option key={agent.id} value={agent.id}>{agent.nom}</option>
-                                        ))}
-                                    </select>
-                                </div>
+                                        <div className="space-y-2">
+                                            <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-2">
+                                                <UserCheck size={14} />
+                                                Major (Infirmier Principal)
+                                            </label>
+                                            <select name="majorId" className="input-field" defaultValue={service?.majorId || ''}>
+                                                <option value="">-- Aucun --</option>
+                                                {agents.map(agent => (
+                                                    <option key={agent.id} value={agent.id}>{agent.nom}</option>
+                                                ))}
+                                            </select>
+                                        </div>
 
-                                <div className="space-y-2">
-                                    <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-2">
-                                        <UserCheck size={14} />
-                                        Major (Infirmier Principal)
-                                    </label>
-                                    <select name="majorId" className="input-field" defaultValue={service?.majorId || ''}>
-                                        <option value="">-- Aucun --</option>
-                                        {agents.map(agent => (
-                                            <option key={agent.id} value={agent.id}>{agent.nom}</option>
-                                        ))}
-                                    </select>
-                                </div>
+                                        <div className="space-y-2">
+                                            <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-2">
+                                                <Clipboard size={14} />
+                                                Cadre Infirmier
+                                            </label>
+                                            <select name="nursingManagerId" className="input-field" defaultValue={service?.nursingManagerId || ''}>
+                                                <option value="">-- Aucun --</option>
+                                                {agents.map(agent => (
+                                                    <option key={agent.id} value={agent.id}>{agent.nom}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                    </div>
+                                )}
 
-                                <div className="space-y-2">
-                                    <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-2">
-                                        <Clipboard size={14} />
-                                        Cadre Infirmier
-                                    </label>
-                                    <select name="nursingManagerId" className="input-field" defaultValue={service?.nursingManagerId || ''}>
-                                        <option value="">-- Aucun --</option>
-                                        {agents.map(agent => (
-                                            <option key={agent.id} value={agent.id}>{agent.nom}</option>
-                                        ))}
-                                    </select>
-                                </div>
-                            </div>
-                        )}
+                                {/* Tab: Capacity */}
+                                {activeTab === 'capacity' && (
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-in fade-in slide-in-from-bottom-4 duration-300">
+                                        <div className="space-y-2">
+                                            <label className="text-xs font-bold text-slate-500 uppercase">Nombre Minimum d'Agents</label>
+                                            <input
+                                                name="minAgents"
+                                                type="number"
+                                                min="0"
+                                                defaultValue={service?.minAgents}
+                                                className="input-field"
+                                                placeholder="ex: 5"
+                                            />
+                                            <p className="text-xs text-slate-500">Alerte si en dessous de ce seuil</p>
+                                        </div>
 
-                        {/* Tab: Capacity */}
-                        {activeTab === 'capacity' && (
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-in fade-in slide-in-from-bottom-4 duration-300">
-                                <div className="space-y-2">
-                                    <label className="text-xs font-bold text-slate-500 uppercase">Nombre Minimum d'Agents</label>
-                                    <input
-                                        name="minAgents"
-                                        type="number"
-                                        min="0"
-                                        defaultValue={service?.minAgents}
-                                        className="input-field"
-                                        placeholder="ex: 5"
-                                    />
-                                    <p className="text-xs text-slate-500">Alerte si en dessous de ce seuil</p>
-                                </div>
+                                        <div className="space-y-2">
+                                            <label className="text-xs font-bold text-slate-500 uppercase">Nombre Maximum d'Agents</label>
+                                            <input
+                                                name="maxAgents"
+                                                type="number"
+                                                min="0"
+                                                defaultValue={service?.maxAgents}
+                                                className="input-field"
+                                                placeholder="ex: 20"
+                                            />
+                                            <p className="text-xs text-slate-500">Quota maximum autorisé</p>
+                                        </div>
+                                    </div>
+                                )}
+                            </form>
+                        ) : (
+                            activeTab === 'staff' && (
+                                <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-300">
+                                    {/* Removed blocking message for !service */}
 
-                                <div className="space-y-2">
-                                    <label className="text-xs font-bold text-slate-500 uppercase">Nombre Maximum d'Agents</label>
-                                    <input
-                                        name="maxAgents"
-                                        type="number"
-                                        min="0"
-                                        defaultValue={service?.maxAgents}
-                                        className="input-field"
-                                        placeholder="ex: 20"
-                                    />
-                                    <p className="text-xs text-slate-500">Quota maximum autorisé</p>
+                                    {hasStaffPermission && (
+                                        <div className="bg-slate-950/50 border border-slate-800 rounded-xl p-4 space-y-3">
+                                            <label className="text-xs font-bold text-slate-500 uppercase">Ajouter un agent au service</label>
+                                            <div className="flex gap-2">
+                                                <select
+                                                    value={selectedAgentToAdd}
+                                                    onChange={(e) => setSelectedAgentToAdd(e.target.value)}
+                                                    className="input-field flex-1"
+                                                >
+                                                    <option value="">-- Sélectionner un agent --</option>
+                                                    {availableAgents.map(a => (
+                                                        <option key={a.id} value={a.id}>
+                                                            {a.nom || 'Anonyme'} ({a.hospitalService?.name || 'Sans service'})
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                                <button
+                                                    type="button"
+                                                    disabled={!selectedAgentToAdd}
+                                                    onClick={async () => {
+                                                        const agentId = Number(selectedAgentToAdd);
+                                                        if (service) {
+                                                            await updateAgent(agentId, { hospitalServiceId: service.id });
+                                                            queryClient.invalidateQueries({ queryKey: ['agents'] });
+                                                        } else {
+                                                            // Temp state for creation
+                                                            const newSet = new Set(selectedAgentsForCreate);
+                                                            newSet.add(agentId);
+                                                            setSelectedAgentsForCreate(newSet);
+                                                        }
+                                                        setSelectedAgentToAdd('');
+                                                    }}
+                                                    className={cn("px-4 py-2 rounded-xl font-bold text-white transition-all disabled:opacity-50", `bg-${themeColor}`)}
+                                                >
+                                                    Ajouter
+                                                </button>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    <div className="space-y-3">
+                                        <h4 className="text-xs font-bold text-slate-500 uppercase">Liste du personnel ({serviceAgents.length})</h4>
+                                        <div className="grid grid-cols-1 gap-2">
+                                            {serviceAgents.length === 0 ? (
+                                                <div className="text-center py-8 border-2 border-dashed border-slate-800 rounded-xl">
+                                                    <Users size={24} className="mx-auto text-slate-700 mb-2" />
+                                                    <p className="text-sm text-slate-500">Aucun agent assigné à ce service</p>
+                                                </div>
+                                            ) : (
+                                                serviceAgents.map(agent => (
+                                                    <div key={agent.id} className="flex items-center justify-between p-3 bg-slate-800/50 rounded-xl border border-white/5">
+                                                        <div className="flex items-center gap-3">
+                                                            <div className={cn("w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs text-white", `bg-${themeColor}`)}>
+                                                                {(agent.nom || '?').charAt(0)}
+                                                            </div>
+                                                            <div>
+                                                                <p className="font-bold text-slate-200 text-sm">{agent.nom || 'Sans Nom'}</p>
+                                                                <p className="text-[10px] text-slate-500 uppercase tracking-widest">{agent.jobTitle || 'Agent'}</p>
+                                                            </div>
+                                                        </div>
+                                                        {hasStaffPermission && (
+                                                            <button
+                                                                type="button"
+                                                                onClick={async () => {
+                                                                    if (confirm(`Retirer ${agent.nom || 'cet agent'} de ce service ?`)) {
+                                                                        if (service) {
+                                                                            await updateAgent(agent.id, { hospitalServiceId: null } as any);
+                                                                            queryClient.invalidateQueries({ queryKey: ['agents'] });
+                                                                        } else {
+                                                                            const newSet = new Set(selectedAgentsForCreate);
+                                                                            newSet.delete(agent.id);
+                                                                            setSelectedAgentsForCreate(newSet);
+                                                                        }
+                                                                    }
+                                                                }}
+                                                                className="p-2 text-slate-500 hover:text-rose-500 hover:bg-rose-500/10 rounded-lg transition-all"
+                                                            >
+                                                                <X size={16} />
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                ))
+                                            )}
+                                        </div>
+                                    </div>
                                 </div>
-                            </div>
+                            )
                         )}
                     </div>
+                </div>
 
-                    {/* Footer */}
-                    <div className="p-6 border-t border-slate-800 flex justify-end gap-3 bg-slate-950/50">
+                {/* Footer */}
+                <div className="p-6 border-t border-slate-800 flex justify-end gap-3 bg-slate-950/50">
+                    <button
+                        type="button"
+                        onClick={onClose}
+                        className="px-6 py-3 rounded-xl font-medium text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+                    >
+                        Annuler
+                    </button>
+                    {activeTab !== 'staff' && (
                         <button
-                            type="button"
-                            onClick={onClose}
-                            className="px-6 py-3 rounded-xl font-medium text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
-                        >
-                            Annuler
-                        </button>
-                        <button
+                            form="service-form"
                             type="submit"
                             disabled={isLoading}
                             className={cn(
@@ -732,8 +899,8 @@ const ServiceModal = ({
                         >
                             {isLoading ? 'Enregistrement...' : service ? 'Mettre à jour' : 'Créer le Service'}
                         </button>
-                    </div>
-                </form>
+                    )}
+                </div>
 
                 <style>{`
                     .input-field {

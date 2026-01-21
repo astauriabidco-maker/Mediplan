@@ -9,14 +9,21 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.Shift = void 0;
+exports.Shift = exports.ShiftType = void 0;
 const typeorm_1 = require("typeorm");
 const agent_entity_1 = require("../../agents/entities/agent.entity");
+var ShiftType;
+(function (ShiftType) {
+    ShiftType["WORK"] = "WORK";
+    ShiftType["GARDE"] = "GARDE";
+    ShiftType["ASTREINTE"] = "ASTREINTE";
+})(ShiftType || (exports.ShiftType = ShiftType = {}));
 let Shift = class Shift {
     id;
     start;
     end;
     postId;
+    type;
     status;
     tenantId;
     agent;
@@ -38,6 +45,14 @@ __decorate([
     (0, typeorm_1.Column)(),
     __metadata("design:type", String)
 ], Shift.prototype, "postId", void 0);
+__decorate([
+    (0, typeorm_1.Column)({
+        type: 'enum',
+        enum: ShiftType,
+        default: ShiftType.WORK,
+    }),
+    __metadata("design:type", String)
+], Shift.prototype, "type", void 0);
 __decorate([
     (0, typeorm_1.Column)({ default: 'PLANNED' }),
     __metadata("design:type", String)

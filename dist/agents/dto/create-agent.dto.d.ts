@@ -1,3 +1,4 @@
+import { UserRole, UserStatus } from '../entities/agent.entity';
 export declare class CreateAgentDto {
     nom: string;
     firstName?: string;
@@ -13,10 +14,30 @@ export declare class CreateAgentDto {
     contractType?: string;
     emergencyContactName?: string;
     emergencyContactPhone?: string;
+    birthName?: string;
+    nir?: string;
+    maritalStatus?: string;
+    childrenCount?: number;
+    street?: string;
+    zipCode?: string;
+    city?: string;
+    personalEmail?: string;
+    workTimePercentage?: number;
+    gradeLegacy?: string;
+    step?: string;
+    index?: string;
+    contractEndDate?: string;
+    iban?: string;
+    bic?: string;
+    mainDiploma?: string;
+    diplomaYear?: string;
     email: string;
     matricule: string;
     telephone: string;
     password?: string;
     hospitalServiceId?: number;
     managerId?: number;
+    roleId?: number;
+    role?: UserRole;
+    status?: UserStatus;
 }

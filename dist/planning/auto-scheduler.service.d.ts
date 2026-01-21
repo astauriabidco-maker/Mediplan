@@ -4,6 +4,7 @@ import { Shift } from './entities/shift.entity';
 import { Leave } from './entities/leave.entity';
 import type { ILocaleRules } from '../core/config/locale-rules.interface';
 import { PlanningService } from './planning.service';
+import { AuditService } from '../audit/audit.service';
 export interface ShiftNeed {
     start: Date;
     end: Date;
@@ -17,7 +18,8 @@ export declare class AutoSchedulerService {
     private leaveRepository;
     private localeRules;
     private planningService;
-    constructor(agentRepository: Repository<Agent>, shiftRepository: Repository<Shift>, leaveRepository: Repository<Leave>, localeRules: ILocaleRules, planningService: PlanningService);
+    private auditService;
+    constructor(agentRepository: Repository<Agent>, shiftRepository: Repository<Shift>, leaveRepository: Repository<Leave>, localeRules: ILocaleRules, planningService: PlanningService, auditService: AuditService);
     generateSchedule(tenantId: string, startDate: Date, endDate: Date, needs: ShiftNeed[]): Promise<Shift[]>;
     private checkAvailability;
     private calculatePendingHours;

@@ -26,6 +26,32 @@ export interface Agent {
     hospitalServiceId?: number;
     manager?: Agent;
     hospitalService?: { id: number, name: string };
+    role?: string;
+    roleId?: number;
+    dbRole?: { id: number, name: string, permissions: string[] };
+    // Identification RH Complète
+    birthName?: string;
+    nir?: string;
+    maritalStatus?: string;
+    childrenCount?: number;
+    // Coordonnées Détaillées
+    street?: string;
+    zipCode?: string;
+    city?: string;
+    personalEmail?: string;
+    // Détails Contractuels
+    workTimePercentage?: number;
+    grade?: string;
+    step?: string;
+    index?: string;
+    contractEndDate?: string;
+    // Informations Bancaires (select: false in backend, but can be part of interface)
+    iban?: string;
+    bic?: string;
+    // Formation
+    mainDiploma?: string;
+    diplomaYear?: string;
+    status?: 'INVITED' | 'ACTIVE' | 'DISABLED';
 }
 
 export const fetchAgents = async (): Promise<Agent[]> => {
@@ -47,5 +73,15 @@ export const deleteAgent = async (id: number): Promise<void> => {
  */
 export const fetchMyTeam = async (): Promise<Agent[]> => {
     const response = await api.get('/api/agents/my-team');
+    return response.data;
+};
+
+export const updateAgent = async (id: number, data: Partial<Agent>): Promise<Agent> => {
+    const response = await api.patch(`/api/agents/${id}`, data);
+    return response.data;
+};
+
+export const inviteUser = async (data: { email: string, roleId: number }): Promise<Agent> => {
+    const response = await api.post('/auth/invite', data);
     return response.data;
 };

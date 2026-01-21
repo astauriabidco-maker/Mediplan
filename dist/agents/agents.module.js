@@ -16,15 +16,18 @@ const agent_entity_1 = require("./entities/agent.entity");
 const contract_entity_1 = require("./entities/contract.entity");
 const hospital_service_entity_1 = require("./entities/hospital-service.entity");
 const hospital_services_service_1 = require("./hospital-services.service");
+const grade_entity_1 = require("./entities/grade.entity");
+const grades_controller_1 = require("./grades.controller");
+const grades_service_1 = require("./grades.service");
 let AgentsModule = class AgentsModule {
 };
 exports.AgentsModule = AgentsModule;
 exports.AgentsModule = AgentsModule = __decorate([
     (0, common_1.Module)({
-        imports: [typeorm_1.TypeOrmModule.forFeature([agent_entity_1.Agent, contract_entity_1.Contract, hospital_service_entity_1.HospitalService])],
-        controllers: [agents_controller_1.AgentsController, hospital_services_controller_1.HospitalServicesController],
-        providers: [agents_service_1.AgentsService, hospital_services_service_1.HospitalServicesService],
-        exports: [agents_service_1.AgentsService, hospital_services_service_1.HospitalServicesService],
+        imports: [typeorm_1.TypeOrmModule.forFeature([agent_entity_1.Agent, contract_entity_1.Contract, hospital_service_entity_1.HospitalService, grade_entity_1.Grade])],
+        controllers: [agents_controller_1.AgentsController, hospital_services_controller_1.HospitalServicesController, grades_controller_1.GradesController],
+        providers: [agents_service_1.AgentsService, hospital_services_service_1.HospitalServicesService, grades_service_1.GradesService],
+        exports: [agents_service_1.AgentsService, hospital_services_service_1.HospitalServicesService, grades_service_1.GradesService],
     })
 ], AgentsModule);
 //# sourceMappingURL=agents.module.js.map

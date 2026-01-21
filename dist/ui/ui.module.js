@@ -12,13 +12,17 @@ const typeorm_1 = require("@nestjs/typeorm");
 const ui_controller_1 = require("./ui.controller");
 const agent_entity_1 = require("../agents/entities/agent.entity");
 const competency_entity_1 = require("../competencies/entities/competency.entity");
+const shift_entity_1 = require("../planning/entities/shift.entity");
+const leave_entity_1 = require("../planning/entities/leave.entity");
+const dashboard_service_1 = require("./dashboard.service");
 let UiModule = class UiModule {
 };
 exports.UiModule = UiModule;
 exports.UiModule = UiModule = __decorate([
     (0, common_1.Module)({
-        imports: [typeorm_1.TypeOrmModule.forFeature([agent_entity_1.Agent, competency_entity_1.Competency])],
+        imports: [typeorm_1.TypeOrmModule.forFeature([agent_entity_1.Agent, competency_entity_1.Competency, shift_entity_1.Shift, leave_entity_1.Leave])],
         controllers: [ui_controller_1.UiController],
+        providers: [dashboard_service_1.DashboardService],
     })
 ], UiModule);
 //# sourceMappingURL=ui.module.js.map

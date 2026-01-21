@@ -18,15 +18,22 @@ const auto_scheduler_service_1 = require("./auto-scheduler.service");
 const leave_entity_1 = require("./entities/leave.entity");
 const leaves_controller_1 = require("./leaves.controller");
 const leaves_service_1 = require("./leaves.service");
+const work_policy_entity_1 = require("./entities/work-policy.entity");
+const work_policies_controller_1 = require("./work-policies.controller");
+const work_policies_service_1 = require("./work-policies.service");
+const audit_module_1 = require("../audit/audit.module");
 let PlanningModule = class PlanningModule {
 };
 exports.PlanningModule = PlanningModule;
 exports.PlanningModule = PlanningModule = __decorate([
     (0, common_1.Module)({
-        imports: [typeorm_1.TypeOrmModule.forFeature([shift_entity_1.Shift, agent_entity_1.Agent, leave_entity_1.Leave])],
-        providers: [planning_service_1.PlanningService, optimization_service_1.OptimizationService, auto_scheduler_service_1.AutoSchedulerService, leaves_service_1.LeavesService],
-        exports: [planning_service_1.PlanningService, optimization_service_1.OptimizationService, auto_scheduler_service_1.AutoSchedulerService, leaves_service_1.LeavesService],
-        controllers: [planning_controller_1.PlanningController, leaves_controller_1.LeavesController],
+        imports: [
+            typeorm_1.TypeOrmModule.forFeature([shift_entity_1.Shift, agent_entity_1.Agent, leave_entity_1.Leave, work_policy_entity_1.WorkPolicy]),
+            audit_module_1.AuditModule
+        ],
+        providers: [planning_service_1.PlanningService, optimization_service_1.OptimizationService, auto_scheduler_service_1.AutoSchedulerService, leaves_service_1.LeavesService, work_policies_service_1.WorkPoliciesService],
+        exports: [planning_service_1.PlanningService, optimization_service_1.OptimizationService, auto_scheduler_service_1.AutoSchedulerService, leaves_service_1.LeavesService, work_policies_service_1.WorkPoliciesService],
+        controllers: [planning_controller_1.PlanningController, leaves_controller_1.LeavesController, work_policies_controller_1.WorkPoliciesController],
     })
 ], PlanningModule);
 //# sourceMappingURL=planning.module.js.map

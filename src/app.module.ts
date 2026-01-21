@@ -19,6 +19,11 @@ import { SyncModule } from './sync/sync.module';
 import { QvtModule } from './qvt/qvt.module';
 import { AuthModule } from './auth/auth.module';
 import { SeedModule } from './seed/seed.module';
+import { MailModule } from './mail/mail.module';
+import { NotificationsModule } from './notifications/notifications.module';
+import { AuditModule } from './audit/audit.module';
+import { AuditLog } from './audit/entities/audit-log.entity';
+import { WhatsappModule } from './whatsapp/whatsapp.module';
 
 @Module({
   imports: [
@@ -51,7 +56,7 @@ import { SeedModule } from './seed/seed.module';
         synchronize: true, // Auto-create tables (dev only)
       }),
     }),
-    TypeOrmModule.forFeature([Agent, Shift]),
+    TypeOrmModule.forFeature([Agent, Shift, AuditLog]),
     AgentsModule,
     CompetenciesModule,
     UiModule,
@@ -61,6 +66,10 @@ import { SeedModule } from './seed/seed.module';
     QvtModule,
     AuthModule,
     SeedModule,
+    MailModule,
+    NotificationsModule,
+    AuditModule,
+    WhatsappModule,
   ],
   controllers: [AppController],
   providers: [AppService, SeedService],

@@ -1,7 +1,7 @@
 import { Controller, Post } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { Agent } from '../agents/entities/agent.entity';
+import { Agent, UserRole } from '../agents/entities/agent.entity';
 import { HospitalService } from '../agents/entities/hospital-service.entity';
 import { Leave, LeaveStatus, LeaveType } from '../planning/entities/leave.entity';
 import * as bcrypt from 'bcrypt';
@@ -200,6 +200,7 @@ export class SeedController {
             hiringDate: '2018-01-15',
             hospitalServiceId: administration.id,
             tenantId,
+            role: UserRole.ADMIN,
             password: passwordHash, // password123
         });
 

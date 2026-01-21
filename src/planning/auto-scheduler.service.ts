@@ -7,6 +7,8 @@ import { Leave, LeaveStatus } from './entities/leave.entity';
 import { LOCALE_RULES } from '../core/config/locale.module';
 import type { ILocaleRules } from '../core/config/locale-rules.interface';
 import { PlanningService } from './planning.service';
+import { AuditService } from '../audit/audit.service';
+import { AuditAction, AuditEntityType } from '../audit/entities/audit-log.entity';
 
 export interface ShiftNeed {
     start: Date;
@@ -28,6 +30,7 @@ export class AutoSchedulerService {
         @Inject(LOCALE_RULES)
         private localeRules: ILocaleRules,
         private planningService: PlanningService, // To reuse getWeeklyHours
+        private auditService: AuditService,
     ) { }
 
     async generateSchedule(tenantId: string, startDate: Date, endDate: Date, needs: ShiftNeed[]): Promise<Shift[]> {
@@ -113,6 +116,15 @@ export class AutoSchedulerService {
         // 3. Save all assigned shifts
         if (generatedShifts.length > 0) {
             await this.shiftRepository.save(generatedShifts);
+
+            await this.auditService.log(
+                tenantId,
+                0, // System or bulk actor placeholder
+                AuditAction.AUTO_GENERATE,
+                AuditEntityType.PLANNING,
+                'BULK',
+                { count: generatedShifts.length, start: startDate, end: endDate }
+            );
         }
 
         return generatedShifts;

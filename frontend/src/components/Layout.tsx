@@ -1,9 +1,12 @@
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
-import { LayoutDashboard, Calendar, Settings, Bell, User, LogOut, Award, Smartphone, HeartPulse, Wifi, ChevronRight, ChevronDown, List, Layers, Network } from 'lucide-react'
+import { LayoutDashboard, Calendar, Settings, Bell, User, LogOut, Award, Smartphone, HeartPulse, Wifi, ChevronRight, ChevronDown, List, Layers, Network, MessageSquare } from 'lucide-react'
 import { useAppConfig } from '../store/useAppConfig'
+import { useAuth } from '../store/useAuth'
 import { clsx, type ClassValue } from 'clsx'
 import { twMerge } from 'tailwind-merge'
 import React, { useState } from 'react'
+import { useNotifications } from '../hooks/useNotifications'
+import NotificationBell from './NotificationBell'
 
 function cn(...inputs: ClassValue[]) {
     return twMerge(clsx(inputs))
@@ -71,6 +74,16 @@ const SidebarGroup = ({ icon: Icon, label, themeColor, children, activePaths }: 
 
 export const Layout = () => {
     const { region, themeColor } = useAppConfig()
+    const { user, logout } = useAuth()
+    useNotifications()
+
+    const handleLogout = () => {
+        logout()
+        window.location.href = '/login'
+    }
+
+    const isAdminOrManager = user?.role === 'ADMIN' || user?.role === 'MANAGER'
+    const hasPermission = (perm: string) => user?.permissions?.includes('*') || user?.permissions?.includes(perm) || isAdminOrManager
 
     return (
         <div className="flex h-screen w-full bg-slate-950 text-slate-100 overflow-hidden">
@@ -98,18 +111,30 @@ export const Layout = () => {
                     <SidebarItem to="/payment" icon={Smartphone} label="Paiements" themeColor={themeColor} />
                     <SidebarItem to="/qvt" icon={HeartPulse} label="Santé & QVT" themeColor={themeColor} />
                     <SidebarItem to="/sync" icon={Wifi} label="Synchronisation" themeColor={themeColor} />
-                    <SidebarItem to="/settings" icon={Settings} label="Paramètres" themeColor={themeColor} />
+                    <SidebarItem to="/whatsapp-inbox" icon={MessageSquare} label="Messages WhatsApp" themeColor={themeColor} />
+                    {hasPermission('settings:all') && (
+                        <SidebarItem to="/settings" icon={Settings} label="Paramètres" themeColor={themeColor} />
+                    )}
                 </nav>
 
                 <div className="p-4 border-t border-slate-800">
-                    <div className="flex items-center gap-3 px-2">
-                        <div className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center">
-                            <User size={16} />
+                    <div className="flex items-center justify-between group">
+                        <div className="flex items-center gap-3 px-2">
+                            <div className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center">
+                                <User size={16} />
+                            </div>
+                            <div className="text-xs">
+                                <p className="font-medium text-slate-200 truncate max-w-[100px]">{user?.email || 'Agent'}</p>
+                                <p className="text-slate-500">{user?.role || 'Connecté'}</p>
+                            </div>
                         </div>
-                        <div className="text-xs">
-                            <p className="font-medium text-slate-200">Session Admin</p>
-                            <p className="text-slate-500">Connecté</p>
-                        </div>
+                        <button
+                            onClick={handleLogout}
+                            className="p-2 text-slate-500 hover:text-rose-500 hover:bg-rose-500/10 rounded-lg transition-colors"
+                            title="Déconnexion"
+                        >
+                            <LogOut size={18} />
+                        </button>
                     </div>
                 </div>
             </aside>
@@ -129,9 +154,7 @@ export const Layout = () => {
                             <span className="text-xs font-bold text-white">{region}</span>
                         </div>
 
-                        <button className="text-white hover:opacity-80 transition-opacity">
-                            <Bell size={20} />
-                        </button>
+                        <NotificationBell />
                         <div className="w-8 h-8 rounded-full border border-white/30 bg-white/10 overflow-hidden" />
                     </div>
                 </header>

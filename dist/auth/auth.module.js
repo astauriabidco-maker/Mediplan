@@ -15,6 +15,8 @@ const jwt_1 = require("@nestjs/jwt");
 const typeorm_1 = require("@nestjs/typeorm");
 const agent_entity_1 = require("../agents/entities/agent.entity");
 const jwt_strategy_1 = require("./jwt.strategy");
+const mail_module_1 = require("../mail/mail.module");
+const roles_module_1 = require("./roles/roles.module");
 let AuthModule = class AuthModule {
 };
 exports.AuthModule = AuthModule;
@@ -27,6 +29,8 @@ exports.AuthModule = AuthModule = __decorate([
                 secret: process.env.JWT_SECRET || 'SECRET_KEY_DEV',
                 signOptions: { expiresIn: '60m' },
             }),
+            mail_module_1.MailModule,
+            roles_module_1.RolesModule,
         ],
         controllers: [auth_controller_1.AuthController],
         providers: [auth_service_1.AuthService, jwt_strategy_1.JwtStrategy],

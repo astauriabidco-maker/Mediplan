@@ -7,12 +7,15 @@ import { Agent } from './entities/agent.entity';
 import { Contract } from './entities/contract.entity';
 import { HospitalService } from './entities/hospital-service.entity';
 import { HospitalServicesService } from './hospital-services.service';
+import { Grade } from './entities/grade.entity';
+import { GradesController } from './grades.controller';
+import { GradesService } from './grades.service';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Agent, Contract, HospitalService])],
-  controllers: [AgentsController, HospitalServicesController],
-  providers: [AgentsService, HospitalServicesService],
-  exports: [AgentsService, HospitalServicesService],
+  imports: [TypeOrmModule.forFeature([Agent, Contract, HospitalService, Grade])],
+  controllers: [AgentsController, HospitalServicesController, GradesController],
+  providers: [AgentsService, HospitalServicesService, GradesService],
+  exports: [AgentsService, HospitalServicesService, GradesService],
 })
 export class AgentsModule { }
 

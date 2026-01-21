@@ -1,12 +1,15 @@
 import axios from './axios';
 
+export type ShiftType = 'WORK' | 'GARDE' | 'ASTREINTE';
+
 export interface Shift {
     id: string;
     agentName: string;
     start: Date;
     end: Date;
-    type: 'WORK' | 'REST';
-    status: 'VALIDATED' | 'PENDING' | 'CONFLICT';
+    type: ShiftType;
+    status: 'VALIDATED' | 'PENDING' | 'CONFLICT' | 'PLANNED';
+    agent?: any;
 }
 
 export const fetchShifts = async (startDate: Date, endDate: Date): Promise<Shift[]> => {
@@ -25,9 +28,9 @@ export const fetchShifts = async (startDate: Date, endDate: Date): Promise<Shift
             agentName: s.agent?.nom || 'Inconnu',
             start: new Date(s.start),
             end: new Date(s.end),
-            type: 'WORK', // Default, backend should provide
+            type: s.type || 'WORK', // Use explicit type from backend
             status: s.status,
-            agent: s.agent // Keep full agent if needed
+            agent: s.agent
         }));
 
     } catch (error) {

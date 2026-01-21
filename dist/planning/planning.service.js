@@ -19,16 +19,27 @@ const typeorm_2 = require("typeorm");
 const shift_entity_1 = require("./entities/shift.entity");
 const leave_entity_1 = require("./entities/leave.entity");
 const locale_module_1 = require("../core/config/locale.module");
+const agent_entity_1 = require("../agents/entities/agent.entity");
+const work_policy_entity_1 = require("./entities/work-policy.entity");
+const audit_service_1 = require("../audit/audit.service");
+const audit_log_entity_1 = require("../audit/entities/audit-log.entity");
 let PlanningService = class PlanningService {
     shiftRepository;
     leaveRepository;
+    agentRepository;
+    workPolicyRepository;
     localeRules;
-    constructor(shiftRepository, leaveRepository, localeRules) {
+    auditService;
+    constructor(shiftRepository, leaveRepository, agentRepository, workPolicyRepository, localeRules, auditService) {
         this.shiftRepository = shiftRepository;
         this.leaveRepository = leaveRepository;
+        this.agentRepository = agentRepository;
+        this.workPolicyRepository = workPolicyRepository;
         this.localeRules = localeRules;
+        this.auditService = auditService;
     }
     async validateShift(tenantId, agentId, start, end) {
+        const constraints = await this.getConstraintsForAgent(tenantId, agentId);
         const isAvailable = await this.checkLeaveAvailability(tenantId, agentId, start, end);
         if (!isAvailable) {
             return false;
@@ -39,7 +50,70 @@ let PlanningService = class PlanningService {
         if (currentWeeklyHours + shiftDuration > weeklyLimit) {
             return false;
         }
+        if (shiftDuration > constraints.maxGuardDuration) {
+            return false;
+        }
+        const previousShift = await this.shiftRepository.createQueryBuilder('shift')
+            .where('shift.agentId = :agentId', { agentId })
+            .andWhere('shift.end <= :start', { start })
+            .orderBy('shift.end', 'DESC')
+            .getOne();
+        if (previousShift) {
+            const restTime = (start.getTime() - previousShift.end.getTime()) / (1000 * 60 * 60);
+            if (restTime < constraints.restHoursAfterGuard) {
+                return false;
+            }
+        }
         return true;
+    }
+    async getConstraintsForAgent(tenantId, agentId) {
+        const defaults = {
+            restHoursAfterGuard: 24,
+            maxGuardDuration: 24,
+            onCallCompensationPercent: 0,
+        };
+        const agent = await this.agentRepository.findOne({
+            where: { id: agentId },
+            relations: ['hospitalService', 'grade']
+        });
+        if (!agent)
+            return defaults;
+        let policy = null;
+        if (agent.hospitalServiceId && agent.gradeId) {
+            policy = await this.workPolicyRepository.findOne({
+                where: {
+                    tenantId,
+                    hospitalServiceId: agent.hospitalServiceId,
+                    gradeId: agent.gradeId
+                }
+            });
+        }
+        if (!policy && agent.gradeId) {
+            policy = await this.workPolicyRepository.findOne({
+                where: {
+                    tenantId,
+                    gradeId: agent.gradeId,
+                    hospitalServiceId: (0, typeorm_2.IsNull)()
+                }
+            });
+        }
+        if (!policy && agent.hospitalServiceId) {
+            policy = await this.workPolicyRepository.findOne({
+                where: {
+                    tenantId,
+                    hospitalServiceId: agent.hospitalServiceId,
+                    gradeId: (0, typeorm_2.IsNull)()
+                }
+            });
+        }
+        if (policy) {
+            return {
+                restHoursAfterGuard: policy.restHoursAfterGuard,
+                maxGuardDuration: policy.maxGuardDuration,
+                onCallCompensationPercent: policy.onCallCompensationPercent,
+            };
+        }
+        return defaults;
     }
     async checkAvailability(tenantId, agentId, date) {
         return this.checkLeaveAvailability(tenantId, agentId, date, date);
@@ -94,7 +168,9 @@ let PlanningService = class PlanningService {
             postId,
             status: 'VALIDATED'
         });
-        return this.shiftRepository.save(shift);
+        const savedShift = await this.shiftRepository.save(shift);
+        await this.auditService.log(tenantId, agentId, audit_log_entity_1.AuditAction.CREATE, audit_log_entity_1.AuditEntityType.SHIFT, savedShift.id, { postId, start, end });
+        return savedShift;
     }
 };
 exports.PlanningService = PlanningService;
@@ -102,8 +178,12 @@ exports.PlanningService = PlanningService = __decorate([
     (0, common_1.Injectable)(),
     __param(0, (0, typeorm_1.InjectRepository)(shift_entity_1.Shift)),
     __param(1, (0, typeorm_1.InjectRepository)(leave_entity_1.Leave)),
-    __param(2, (0, common_1.Inject)(locale_module_1.LOCALE_RULES)),
+    __param(2, (0, typeorm_1.InjectRepository)(agent_entity_1.Agent)),
+    __param(3, (0, typeorm_1.InjectRepository)(work_policy_entity_1.WorkPolicy)),
+    __param(4, (0, common_1.Inject)(locale_module_1.LOCALE_RULES)),
     __metadata("design:paramtypes", [typeorm_2.Repository,
-        typeorm_2.Repository, Object])
+        typeorm_2.Repository,
+        typeorm_2.Repository,
+        typeorm_2.Repository, Object, audit_service_1.AuditService])
 ], PlanningService);
 //# sourceMappingURL=planning.service.js.map

@@ -21,18 +21,22 @@ const shift_entity_1 = require("./entities/shift.entity");
 const leave_entity_1 = require("./entities/leave.entity");
 const locale_module_1 = require("../core/config/locale.module");
 const planning_service_1 = require("./planning.service");
+const audit_service_1 = require("../audit/audit.service");
+const audit_log_entity_1 = require("../audit/entities/audit-log.entity");
 let AutoSchedulerService = class AutoSchedulerService {
     agentRepository;
     shiftRepository;
     leaveRepository;
     localeRules;
     planningService;
-    constructor(agentRepository, shiftRepository, leaveRepository, localeRules, planningService) {
+    auditService;
+    constructor(agentRepository, shiftRepository, leaveRepository, localeRules, planningService, auditService) {
         this.agentRepository = agentRepository;
         this.shiftRepository = shiftRepository;
         this.leaveRepository = leaveRepository;
         this.localeRules = localeRules;
         this.planningService = planningService;
+        this.auditService = auditService;
     }
     async generateSchedule(tenantId, startDate, endDate, needs) {
         const generatedShifts = [];
@@ -96,6 +100,7 @@ let AutoSchedulerService = class AutoSchedulerService {
         }
         if (generatedShifts.length > 0) {
             await this.shiftRepository.save(generatedShifts);
+            await this.auditService.log(tenantId, 0, audit_log_entity_1.AuditAction.AUTO_GENERATE, audit_log_entity_1.AuditEntityType.PLANNING, 'BULK', { count: generatedShifts.length, start: startDate, end: endDate });
         }
         return generatedShifts;
     }
@@ -188,6 +193,7 @@ exports.AutoSchedulerService = AutoSchedulerService = __decorate([
     __param(3, (0, common_1.Inject)(locale_module_1.LOCALE_RULES)),
     __metadata("design:paramtypes", [typeorm_2.Repository,
         typeorm_2.Repository,
-        typeorm_2.Repository, Object, planning_service_1.PlanningService])
+        typeorm_2.Repository, Object, planning_service_1.PlanningService,
+        audit_service_1.AuditService])
 ], AutoSchedulerService);
 //# sourceMappingURL=auto-scheduler.service.js.map

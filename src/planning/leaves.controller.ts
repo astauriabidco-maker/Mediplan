@@ -2,13 +2,16 @@ import { Controller, Get, Post, Body, Param, Patch, UseGuards, Request, Query } 
 import { LeavesService } from './leaves.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { LeaveStatus, LeaveType } from './entities/leave.entity';
+import { Permissions } from '../auth/permissions.decorator';
+import { RolesGuard } from '../auth/roles.guard';
 
 @Controller('leaves')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
 export class LeavesController {
     constructor(private readonly leavesService: LeavesService) { }
 
     @Post('request')
+    @Permissions('leaves:request')
     async requestLeave(
         @Request() req: any,
         @Body() body: { start: string; end: string; type: LeaveType; reason: string; agentId?: number }
@@ -29,17 +32,20 @@ export class LeavesController {
     }
 
     @Get('my-leaves')
+    @Permissions('leaves:read')
     async getMyLeaves(@Request() req: any) {
         return this.leavesService.getMyLeaves(req.user.tenant, req.user.sub);
     }
 
     @Get('team-requests')
+    @Permissions('leaves:validate')
     async getTeamRequests(@Request() req: any) {
         // managerId is the current user
         return this.leavesService.getTeamRequests(req.user.tenant, req.user.sub);
     }
 
     @Patch(':id/validate')
+    @Permissions('leaves:validate')
     async validateLeave(
         @Request() req: any,
         @Param('id') id: string,

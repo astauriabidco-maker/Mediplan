@@ -3,6 +3,9 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Leave, LeaveStatus, LeaveType } from './entities/leave.entity';
 import { Agent } from '../agents/entities/agent.entity';
+import { NotificationsService } from '../notifications/notifications.service';
+import { AuditService } from '../audit/audit.service';
+import { AuditAction, AuditEntityType } from '../audit/entities/audit-log.entity';
 
 @Injectable()
 export class LeavesService {
@@ -11,6 +14,8 @@ export class LeavesService {
         private leavesRepository: Repository<Leave>,
         @InjectRepository(Agent)
         private agentRepository: Repository<Agent>,
+        private readonly notificationsService: NotificationsService,
+        private readonly auditService: AuditService,
     ) { }
 
     async requestLeave(
@@ -51,7 +56,29 @@ export class LeavesService {
             status: LeaveStatus.PENDING
         });
 
-        return this.leavesRepository.save(leave);
+        const savedLeave = await this.leavesRepository.save(leave);
+
+        await this.auditService.log(
+            tenantId,
+            agent.id,
+            AuditAction.CREATE,
+            AuditEntityType.LEAVE,
+            savedLeave.id,
+            { type: savedLeave.type, start: savedLeave.start, end: savedLeave.end }
+        );
+
+        // Notify manager
+        if (agent.managerId) {
+            await this.notificationsService.notifyLeaveRequested(agent.managerId, {
+                leaveId: savedLeave.id,
+                agentName: agent.nom,
+                type: savedLeave.type,
+                start: savedLeave.start,
+                end: savedLeave.end,
+            });
+        }
+
+        return savedLeave;
     }
 
     async getMyLeaves(tenantId: string, agentId: number): Promise<Leave[]> {
@@ -124,7 +151,25 @@ export class LeavesService {
             leave.rejectionReason = rejectionReason || 'No reason provided';
         }
 
-        return this.leavesRepository.save(leave);
+        const savedLeave = await this.leavesRepository.save(leave);
+
+        await this.auditService.log(
+            tenantId,
+            managerId,
+            status === LeaveStatus.APPROVED ? AuditAction.VALIDATE : AuditAction.REJECT,
+            AuditEntityType.LEAVE,
+            savedLeave.id,
+            { status: savedLeave.status, reason: savedLeave.rejectionReason }
+        );
+
+        // Notify agent
+        await this.notificationsService.notifyLeaveProcessed(savedLeave.agent.id, {
+            leaveId: savedLeave.id,
+            status: savedLeave.status,
+            rejectionReason: savedLeave.rejectionReason,
+        });
+
+        return savedLeave;
     }
 
     async checkAvailability(tenantId: string, agentId: number, date: Date): Promise<boolean> {

@@ -16,6 +16,8 @@ exports.HospitalServicesController = void 0;
 const common_1 = require("@nestjs/common");
 const hospital_services_service_1 = require("./hospital-services.service");
 const jwt_auth_guard_1 = require("../auth/jwt-auth.guard");
+const permissions_decorator_1 = require("../auth/permissions.decorator");
+const roles_guard_1 = require("../auth/roles.guard");
 let HospitalServicesController = class HospitalServicesController {
     servicesService;
     constructor(servicesService) {
@@ -56,6 +58,7 @@ let HospitalServicesController = class HospitalServicesController {
 exports.HospitalServicesController = HospitalServicesController;
 __decorate([
     (0, common_1.Get)(),
+    (0, permissions_decorator_1.Permissions)('services:read'),
     __param(0, (0, common_1.Request)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [Object]),
@@ -63,6 +66,7 @@ __decorate([
 ], HospitalServicesController.prototype, "findAll", null);
 __decorate([
     (0, common_1.Get)('stats'),
+    (0, permissions_decorator_1.Permissions)('services:read'),
     __param(0, (0, common_1.Request)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [Object]),
@@ -70,6 +74,7 @@ __decorate([
 ], HospitalServicesController.prototype, "getStats", null);
 __decorate([
     (0, common_1.Get)('tree'),
+    (0, permissions_decorator_1.Permissions)('services:read'),
     __param(0, (0, common_1.Request)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [Object]),
@@ -77,6 +82,7 @@ __decorate([
 ], HospitalServicesController.prototype, "getTree", null);
 __decorate([
     (0, common_1.Get)(':id'),
+    (0, permissions_decorator_1.Permissions)('services:read'),
     __param(0, (0, common_1.Request)()),
     __param(1, (0, common_1.Param)('id', common_1.ParseIntPipe)),
     __metadata("design:type", Function),
@@ -85,6 +91,7 @@ __decorate([
 ], HospitalServicesController.prototype, "findOne", null);
 __decorate([
     (0, common_1.Get)(':id/hierarchy'),
+    (0, permissions_decorator_1.Permissions)('services:read'),
     __param(0, (0, common_1.Request)()),
     __param(1, (0, common_1.Param)('id', common_1.ParseIntPipe)),
     __metadata("design:type", Function),
@@ -93,6 +100,7 @@ __decorate([
 ], HospitalServicesController.prototype, "getHierarchy", null);
 __decorate([
     (0, common_1.Post)(),
+    (0, permissions_decorator_1.Permissions)('services:write'),
     __param(0, (0, common_1.Request)()),
     __param(1, (0, common_1.Body)()),
     __metadata("design:type", Function),
@@ -101,6 +109,7 @@ __decorate([
 ], HospitalServicesController.prototype, "create", null);
 __decorate([
     (0, common_1.Post)(':id/sub-service'),
+    (0, permissions_decorator_1.Permissions)('services:write'),
     __param(0, (0, common_1.Request)()),
     __param(1, (0, common_1.Param)('id', common_1.ParseIntPipe)),
     __param(2, (0, common_1.Body)()),
@@ -110,6 +119,7 @@ __decorate([
 ], HospitalServicesController.prototype, "createSubService", null);
 __decorate([
     (0, common_1.Put)(':id'),
+    (0, permissions_decorator_1.Permissions)('services:write'),
     __param(0, (0, common_1.Request)()),
     __param(1, (0, common_1.Param)('id', common_1.ParseIntPipe)),
     __param(2, (0, common_1.Body)()),
@@ -119,6 +129,7 @@ __decorate([
 ], HospitalServicesController.prototype, "update", null);
 __decorate([
     (0, common_1.Put)(':id/assign-responsible'),
+    (0, permissions_decorator_1.Permissions)('services:write'),
     __param(0, (0, common_1.Request)()),
     __param(1, (0, common_1.Param)('id', common_1.ParseIntPipe)),
     __param(2, (0, common_1.Body)()),
@@ -128,6 +139,7 @@ __decorate([
 ], HospitalServicesController.prototype, "assignResponsible", null);
 __decorate([
     (0, common_1.Delete)(':id'),
+    (0, permissions_decorator_1.Permissions)('services:write'),
     __param(0, (0, common_1.Request)()),
     __param(1, (0, common_1.Param)('id', common_1.ParseIntPipe)),
     __metadata("design:type", Function),
@@ -136,7 +148,7 @@ __decorate([
 ], HospitalServicesController.prototype, "remove", null);
 exports.HospitalServicesController = HospitalServicesController = __decorate([
     (0, common_1.Controller)('hospital-services'),
-    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
+    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard, roles_guard_1.RolesGuard),
     __metadata("design:paramtypes", [hospital_services_service_1.HospitalServicesService])
 ], HospitalServicesController);
 //# sourceMappingURL=hospital-services.controller.js.map

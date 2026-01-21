@@ -18,12 +18,19 @@ const typeorm_1 = require("@nestjs/typeorm");
 const typeorm_2 = require("typeorm");
 const leave_entity_1 = require("./entities/leave.entity");
 const agent_entity_1 = require("../agents/entities/agent.entity");
+const notifications_service_1 = require("../notifications/notifications.service");
+const audit_service_1 = require("../audit/audit.service");
+const audit_log_entity_1 = require("../audit/entities/audit-log.entity");
 let LeavesService = class LeavesService {
     leavesRepository;
     agentRepository;
-    constructor(leavesRepository, agentRepository) {
+    notificationsService;
+    auditService;
+    constructor(leavesRepository, agentRepository, notificationsService, auditService) {
         this.leavesRepository = leavesRepository;
         this.agentRepository = agentRepository;
+        this.notificationsService = notificationsService;
+        this.auditService = auditService;
     }
     async requestLeave(tenantId, agentId, start, end, type, reason, requesterId) {
         if (end <= start) {
@@ -48,7 +55,18 @@ let LeavesService = class LeavesService {
             reason,
             status: leave_entity_1.LeaveStatus.PENDING
         });
-        return this.leavesRepository.save(leave);
+        const savedLeave = await this.leavesRepository.save(leave);
+        await this.auditService.log(tenantId, agent.id, audit_log_entity_1.AuditAction.CREATE, audit_log_entity_1.AuditEntityType.LEAVE, savedLeave.id, { type: savedLeave.type, start: savedLeave.start, end: savedLeave.end });
+        if (agent.managerId) {
+            await this.notificationsService.notifyLeaveRequested(agent.managerId, {
+                leaveId: savedLeave.id,
+                agentName: agent.nom,
+                type: savedLeave.type,
+                start: savedLeave.start,
+                end: savedLeave.end,
+            });
+        }
+        return savedLeave;
     }
     async getMyLeaves(tenantId, agentId) {
         return this.leavesRepository.find({
@@ -95,7 +113,14 @@ let LeavesService = class LeavesService {
         if (status === leave_entity_1.LeaveStatus.REJECTED) {
             leave.rejectionReason = rejectionReason || 'No reason provided';
         }
-        return this.leavesRepository.save(leave);
+        const savedLeave = await this.leavesRepository.save(leave);
+        await this.auditService.log(tenantId, managerId, status === leave_entity_1.LeaveStatus.APPROVED ? audit_log_entity_1.AuditAction.VALIDATE : audit_log_entity_1.AuditAction.REJECT, audit_log_entity_1.AuditEntityType.LEAVE, savedLeave.id, { status: savedLeave.status, reason: savedLeave.rejectionReason });
+        await this.notificationsService.notifyLeaveProcessed(savedLeave.agent.id, {
+            leaveId: savedLeave.id,
+            status: savedLeave.status,
+            rejectionReason: savedLeave.rejectionReason,
+        });
+        return savedLeave;
     }
     async checkAvailability(tenantId, agentId, date) {
         const count = await this.leavesRepository
@@ -114,6 +139,8 @@ exports.LeavesService = LeavesService = __decorate([
     __param(0, (0, typeorm_1.InjectRepository)(leave_entity_1.Leave)),
     __param(1, (0, typeorm_1.InjectRepository)(agent_entity_1.Agent)),
     __metadata("design:paramtypes", [typeorm_2.Repository,
-        typeorm_2.Repository])
+        typeorm_2.Repository,
+        notifications_service_1.NotificationsService,
+        audit_service_1.AuditService])
 ], LeavesService);
 //# sourceMappingURL=leaves.service.js.map

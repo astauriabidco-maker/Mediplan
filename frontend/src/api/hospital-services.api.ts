@@ -1,16 +1,4 @@
-import axios from 'axios';
-
-const api = axios.create({
-    baseURL: '/api/hospital-services',
-});
-
-api.interceptors.request.use((config) => {
-    const token = localStorage.getItem('auth-storage') ? JSON.parse(localStorage.getItem('auth-storage')!).state.token : null;
-    if (token) {
-        config.headers.Authorization = `Bearer ${token}`;
-    }
-    return config;
-});
+import api from './axios';
 
 export interface HospitalService {
     id: number;
@@ -36,32 +24,32 @@ export interface HospitalService {
 }
 
 export const fetchHospitalServices = async (): Promise<HospitalService[]> => {
-    const { data } = await api.get('/');
+    const { data } = await api.get('/api/hospital-services');
     return data;
 };
 
 export const fetchHospitalServicesTree = async (): Promise<HospitalService[]> => {
-    const { data } = await api.get('/tree');
+    const { data } = await api.get('/api/hospital-services/tree');
     return data;
 };
 
 export const fetchHospitalServiceHierarchy = async (id: number): Promise<HospitalService> => {
-    const { data } = await api.get(`/${id}/hierarchy`);
+    const { data } = await api.get(`/api/hospital-services/${id}/hierarchy`);
     return data;
 };
 
 export const createHospitalService = async (service: Partial<HospitalService>): Promise<HospitalService> => {
-    const { data } = await api.post('/', service);
+    const { data } = await api.post('/api/hospital-services', service);
     return data;
 };
 
 export const createSubService = async (parentId: number, service: Partial<HospitalService>): Promise<HospitalService> => {
-    const { data } = await api.post(`/${parentId}/sub-service`, service);
+    const { data } = await api.post(`/api/hospital-services/${parentId}/sub-service`, service);
     return data;
 };
 
 export const updateHospitalService = async (id: number, service: Partial<HospitalService>): Promise<HospitalService> => {
-    const { data } = await api.put(`/${id}`, service);
+    const { data } = await api.put(`/api/hospital-services/${id}`, service);
     return data;
 };
 
@@ -70,12 +58,12 @@ export const assignResponsible = async (
     role: 'chief' | 'deputyChief' | 'major' | 'nursingManager',
     agentId: number | null
 ): Promise<HospitalService> => {
-    const { data } = await api.put(`/${serviceId}/assign-responsible`, { role, agentId });
+    const { data } = await api.put(`/api/hospital-services/${serviceId}/assign-responsible`, { role, agentId });
     return data;
 };
 
 export const deleteHospitalService = async (id: number): Promise<void> => {
-    await api.delete(`/${id}`);
+    await api.delete(`/api/hospital-services/${id}`);
 };
 
 export const fetchHospitalServicesStats = async (): Promise<{
@@ -83,6 +71,18 @@ export const fetchHospitalServicesStats = async (): Promise<{
     totalAgents: number;
     services: Array<{ id: number; name: string; code: string; agentCount: number; level: number; hasChief: boolean }>;
 }> => {
-    const { data } = await api.get('/stats');
+    const { data } = await api.get('/api/hospital-services/stats');
     return data;
+};
+
+export const hospitalServicesApi = {
+    getAll: fetchHospitalServices,
+    getTree: fetchHospitalServicesTree,
+    getHierarchy: fetchHospitalServiceHierarchy,
+    create: createHospitalService,
+    createSubService: createSubService,
+    update: updateHospitalService,
+    delete: deleteHospitalService,
+    assignResponsible: assignResponsible,
+    getStats: fetchHospitalServicesStats
 };

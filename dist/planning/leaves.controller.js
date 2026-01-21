@@ -16,6 +16,8 @@ exports.LeavesController = void 0;
 const common_1 = require("@nestjs/common");
 const leaves_service_1 = require("./leaves.service");
 const jwt_auth_guard_1 = require("../auth/jwt-auth.guard");
+const permissions_decorator_1 = require("../auth/permissions.decorator");
+const roles_guard_1 = require("../auth/roles.guard");
 let LeavesController = class LeavesController {
     leavesService;
     constructor(leavesService) {
@@ -40,6 +42,7 @@ let LeavesController = class LeavesController {
 exports.LeavesController = LeavesController;
 __decorate([
     (0, common_1.Post)('request'),
+    (0, permissions_decorator_1.Permissions)('leaves:request'),
     __param(0, (0, common_1.Request)()),
     __param(1, (0, common_1.Body)()),
     __metadata("design:type", Function),
@@ -48,6 +51,7 @@ __decorate([
 ], LeavesController.prototype, "requestLeave", null);
 __decorate([
     (0, common_1.Get)('my-leaves'),
+    (0, permissions_decorator_1.Permissions)('leaves:read'),
     __param(0, (0, common_1.Request)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [Object]),
@@ -55,6 +59,7 @@ __decorate([
 ], LeavesController.prototype, "getMyLeaves", null);
 __decorate([
     (0, common_1.Get)('team-requests'),
+    (0, permissions_decorator_1.Permissions)('leaves:validate'),
     __param(0, (0, common_1.Request)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [Object]),
@@ -62,6 +67,7 @@ __decorate([
 ], LeavesController.prototype, "getTeamRequests", null);
 __decorate([
     (0, common_1.Patch)(':id/validate'),
+    (0, permissions_decorator_1.Permissions)('leaves:validate'),
     __param(0, (0, common_1.Request)()),
     __param(1, (0, common_1.Param)('id')),
     __param(2, (0, common_1.Body)()),
@@ -71,7 +77,7 @@ __decorate([
 ], LeavesController.prototype, "validateLeave", null);
 exports.LeavesController = LeavesController = __decorate([
     (0, common_1.Controller)('leaves'),
-    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
+    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard, roles_guard_1.RolesGuard),
     __metadata("design:paramtypes", [leaves_service_1.LeavesService])
 ], LeavesController);
 //# sourceMappingURL=leaves.controller.js.map

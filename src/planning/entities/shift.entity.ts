@@ -1,6 +1,12 @@
 import { Entity, PrimaryGeneratedColumn, Column, ManyToOne } from 'typeorm';
 import { Agent } from '../../agents/entities/agent.entity';
 
+export enum ShiftType {
+    WORK = 'WORK',
+    GARDE = 'GARDE',
+    ASTREINTE = 'ASTREINTE',
+}
+
 @Entity()
 export class Shift {
     @PrimaryGeneratedColumn()
@@ -14,6 +20,13 @@ export class Shift {
 
     @Column()
     postId: string;
+
+    @Column({
+        type: 'enum',
+        enum: ShiftType,
+        default: ShiftType.WORK,
+    })
+    type: ShiftType;
 
     @Column({ default: 'PLANNED' })
     status: string;

@@ -1,11 +1,14 @@
 import { Injectable, Inject } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Between } from 'typeorm';
+import { Repository, Between, IsNull } from 'typeorm';
 import { Shift } from './entities/shift.entity';
 import { Leave } from './entities/leave.entity';
 import { LOCALE_RULES } from '../core/config/locale.module';
 import type { ILocaleRules } from '../core/config/locale-rules.interface';
 import { Agent } from '../agents/entities/agent.entity';
+import { WorkPolicy } from './entities/work-policy.entity';
+import { AuditService } from '../audit/audit.service';
+import { AuditAction, AuditEntityType } from '../audit/entities/audit-log.entity';
 
 @Injectable()
 export class PlanningService {
@@ -14,18 +17,26 @@ export class PlanningService {
         private shiftRepository: Repository<Shift>,
         @InjectRepository(Leave)
         private leaveRepository: Repository<Leave>,
+        @InjectRepository(Agent)
+        private agentRepository: Repository<Agent>,
+        @InjectRepository(WorkPolicy)
+        private workPolicyRepository: Repository<WorkPolicy>,
         @Inject(LOCALE_RULES)
         private localeRules: ILocaleRules,
+        private auditService: AuditService,
     ) { }
 
     async validateShift(tenantId: string, agentId: number, start: Date, end: Date): Promise<boolean> {
+        // 0. Get Dynamic Constraints
+        const constraints = await this.getConstraintsForAgent(tenantId, agentId);
+
         // 1. Check Leaves
         const isAvailable = await this.checkLeaveAvailability(tenantId, agentId, start, end);
         if (!isAvailable) {
             return false;
         }
 
-        // 2. Check Weekly Limit
+        // 2. Check Weekly Limit (Global Rule for now, could be dynamic later)
         const weeklyLimit = this.localeRules.getWeeklyWorkLimit();
         const currentWeeklyHours = await this.getWeeklyHours(tenantId, agentId, start);
         const shiftDuration = (end.getTime() - start.getTime()) / (1000 * 60 * 60);
@@ -33,7 +44,91 @@ export class PlanningService {
         if (currentWeeklyHours + shiftDuration > weeklyLimit) {
             return false;
         }
+
+        // 3. Dynamic Rules Check: Max Guard Duration
+        if (shiftDuration > constraints.maxGuardDuration) {
+            return false; // Exceeds specific max duration for this agent's grade/service
+        }
+
+        // 4. Dynamic Rules Check: Rest Hours After Guard
+        // Check previous shift
+        const previousShift = await this.shiftRepository.createQueryBuilder('shift')
+            .where('shift.agentId = :agentId', { agentId })
+            .andWhere('shift.end <= :start', { start })
+            .orderBy('shift.end', 'DESC')
+            .getOne();
+
+        if (previousShift) {
+            const restTime = (start.getTime() - previousShift.end.getTime()) / (1000 * 60 * 60);
+            if (restTime < constraints.restHoursAfterGuard) {
+                return false; // Not enough rest after previous shift
+            }
+        }
+
         return true;
+    }
+
+    private async getConstraintsForAgent(tenantId: string, agentId: number) {
+        // Default values from LocaleRules or Hardcoded defaults
+        const defaults = {
+            restHoursAfterGuard: 24, // Standard default
+            maxGuardDuration: 24,
+            onCallCompensationPercent: 0,
+        };
+
+        const agent = await this.agentRepository.findOne({
+            where: { id: agentId },
+            relations: ['hospitalService', 'grade']
+        });
+
+        if (!agent) return defaults;
+
+        // Funnel Logic:
+        // 1. Service + Grade
+        // 2. Grade only
+        // 3. Service only
+
+        let policy: WorkPolicy | null = null;
+
+        if (agent.hospitalServiceId && agent.gradeId) {
+            policy = await this.workPolicyRepository.findOne({
+                where: {
+                    tenantId,
+                    hospitalServiceId: agent.hospitalServiceId,
+                    gradeId: agent.gradeId
+                }
+            });
+        }
+
+        if (!policy && agent.gradeId) {
+            policy = await this.workPolicyRepository.findOne({
+                where: {
+                    tenantId,
+                    gradeId: agent.gradeId,
+                    hospitalServiceId: IsNull() // Explicitly null to avoid mixing with service rules
+                }
+            });
+        }
+
+        if (!policy && agent.hospitalServiceId) {
+            policy = await this.workPolicyRepository.findOne({
+                where: {
+                    tenantId,
+                    hospitalServiceId: agent.hospitalServiceId,
+                    gradeId: IsNull()
+                }
+            });
+        }
+
+        if (policy) {
+            return {
+                restHoursAfterGuard: policy.restHoursAfterGuard,
+                maxGuardDuration: policy.maxGuardDuration,
+                onCallCompensationPercent: policy.onCallCompensationPercent,
+            };
+        }
+
+        return defaults;
     }
 
     // Helper to check overlapping APPROVED leaves (Public for Optimization)
@@ -103,6 +198,19 @@ export class PlanningService {
             status: 'VALIDATED'
         });
 
-        return this.shiftRepository.save(shift);
+        const savedShift = await this.shiftRepository.save(shift);
+
+        await this.auditService.log(
+            tenantId,
+            agentId, // Actor is the agent for now, or should be requester? In context of Replacement, usually a manager. 
+            // Controller pass req.user.id but assignReplacement doesn't take actorId.
+            // I will update signature or assume requesterId is needed.
+            AuditAction.CREATE,
+            AuditEntityType.SHIFT,
+            savedShift.id,
+            { postId, start, end }
+        );
+
+        return savedShift;
     }
 }

@@ -52,17 +52,79 @@ const typeorm_1 = require("@nestjs/typeorm");
 const typeorm_2 = require("typeorm");
 const agent_entity_1 = require("../agents/entities/agent.entity");
 const bcrypt = __importStar(require("bcrypt"));
+const mail_service_1 = require("../mail/mail.service");
+const crypto = __importStar(require("crypto"));
 let AuthService = class AuthService {
     agentRepository;
     jwtService;
-    constructor(agentRepository, jwtService) {
+    mailService;
+    constructor(agentRepository, jwtService, mailService) {
         this.agentRepository = agentRepository;
         this.jwtService = jwtService;
+        this.mailService = mailService;
+    }
+    async inviteUser(email, roleId, tenantId) {
+        const token = crypto.randomBytes(32).toString('hex');
+        let agent = await this.agentRepository.findOne({ where: { email } });
+        if (agent) {
+            if (agent.status !== agent_entity_1.UserStatus.INVITED) {
+                throw new Error('User already exists and is not in invited status');
+            }
+            agent.invitationToken = token;
+            agent.roleId = roleId;
+        }
+        else {
+            const name = email.split('@')[0];
+            agent = this.agentRepository.create({
+                email,
+                nom: name,
+                roleId,
+                status: agent_entity_1.UserStatus.INVITED,
+                invitationToken: token,
+                tenantId,
+                matricule: `INV-${Date.now()}`,
+                telephone: 'N/A',
+            });
+        }
+        await this.agentRepository.save(agent);
+        await this.mailService.sendInvitation(email, token);
+        return agent;
+    }
+    async acceptInvite(token, password) {
+        const agent = await this.agentRepository.findOne({
+            where: { invitationToken: token },
+            select: ['id', 'email', 'password', 'status', 'invitationToken', 'tenantId']
+        });
+        if (!agent) {
+            throw new common_1.UnauthorizedException('Invalid or expired invitation token');
+        }
+        const hashedPassword = await bcrypt.hash(password, 10);
+        agent.password = hashedPassword;
+        agent.status = agent_entity_1.UserStatus.ACTIVE;
+        agent.invitationToken = null;
+        await this.agentRepository.save(agent);
+        return this.login(agent);
+    }
+    async changePassword(agentId, oldPass, newPass) {
+        const agent = await this.agentRepository.createQueryBuilder('agent')
+            .addSelect('agent.password')
+            .where('agent.id = :id', { id: agentId })
+            .getOne();
+        if (!agent || !agent.password) {
+            throw new common_1.UnauthorizedException('User not found');
+        }
+        const isMatch = await bcrypt.compare(oldPass, agent.password);
+        if (!isMatch) {
+            throw new common_1.UnauthorizedException('Invalid old password');
+        }
+        agent.password = await bcrypt.hash(newPass, 10);
+        await this.agentRepository.save(agent);
     }
     async validateUser(email, pass) {
         console.log(`[AuthDebug] Attempting login for: ${email}`);
         const user = await this.agentRepository.createQueryBuilder('agent')
             .addSelect('agent.password')
+            .leftJoinAndSelect('agent.dbRole', 'role')
             .where('agent.email = :email', { email })
             .getOne();
         if (!user) {
@@ -81,14 +143,33 @@ let AuthService = class AuthService {
         }
         return null;
     }
+    async validate(payload) {
+        return {
+            id: payload.sub,
+            email: payload.username,
+            tenantId: payload.tenant,
+            role: payload.role
+        };
+    }
     async login(user) {
+        const roleName = user.dbRole?.name || user.role;
+        const permissions = user.dbRole?.permissions || [];
         const payload = {
             username: user.email,
             sub: user.id,
-            tenant: user.tenantId || 'DEFAULT_TENANT'
+            tenant: user.tenantId || 'DEFAULT_TENANT',
+            role: roleName,
+            permissions: permissions,
         };
         return {
             access_token: this.jwtService.sign(payload),
+            user: {
+                id: user.id,
+                email: user.email,
+                tenantId: user.tenantId || 'DEFAULT_TENANT',
+                role: roleName,
+                permissions: permissions,
+            },
         };
     }
 };
@@ -97,6 +178,7 @@ exports.AuthService = AuthService = __decorate([
     (0, common_1.Injectable)(),
     __param(0, (0, typeorm_1.InjectRepository)(agent_entity_1.Agent)),
     __metadata("design:paramtypes", [typeorm_2.Repository,
-        jwt_1.JwtService])
+        jwt_1.JwtService,
+        mail_service_1.MailService])
 ], AuthService);
 //# sourceMappingURL=auth.service.js.map

@@ -61,6 +61,11 @@ const sync_module_1 = require("./sync/sync.module");
 const qvt_module_1 = require("./qvt/qvt.module");
 const auth_module_1 = require("./auth/auth.module");
 const seed_module_1 = require("./seed/seed.module");
+const mail_module_1 = require("./mail/mail.module");
+const notifications_module_1 = require("./notifications/notifications.module");
+const audit_module_1 = require("./audit/audit.module");
+const audit_log_entity_1 = require("./audit/entities/audit-log.entity");
+const whatsapp_module_1 = require("./whatsapp/whatsapp.module");
 let AppModule = class AppModule {
 };
 exports.AppModule = AppModule;
@@ -96,7 +101,7 @@ exports.AppModule = AppModule = __decorate([
                     synchronize: true,
                 }),
             }),
-            typeorm_1.TypeOrmModule.forFeature([agent_entity_1.Agent, shift_entity_1.Shift]),
+            typeorm_1.TypeOrmModule.forFeature([agent_entity_1.Agent, shift_entity_1.Shift, audit_log_entity_1.AuditLog]),
             agents_module_1.AgentsModule,
             competencies_module_1.CompetenciesModule,
             ui_module_1.UiModule,
@@ -106,6 +111,10 @@ exports.AppModule = AppModule = __decorate([
             qvt_module_1.QvtModule,
             auth_module_1.AuthModule,
             seed_module_1.SeedModule,
+            mail_module_1.MailModule,
+            notifications_module_1.NotificationsModule,
+            audit_module_1.AuditModule,
+            whatsapp_module_1.WhatsappModule,
         ],
         controllers: [app_controller_1.AppController],
         providers: [app_service_1.AppService, seed_service_1.SeedService],

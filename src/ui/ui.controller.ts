@@ -5,6 +5,7 @@ import { Agent } from '../agents/entities/agent.entity';
 import { Competency } from '../competencies/entities/competency.entity';
 import { LOCALE_RULES } from '../core/config/locale.module';
 import type { ILocaleRules } from '../core/config/locale-rules.interface';
+import { DashboardService } from './dashboard.service';
 
 @Controller('ui')
 export class UiController {
@@ -15,6 +16,7 @@ export class UiController {
         private competencyRepository: Repository<Competency>,
         @Inject(LOCALE_RULES)
         private localeRules: ILocaleRules,
+        private dashboardService: DashboardService,
     ) { }
 
     @Get('stats')
@@ -31,5 +33,10 @@ export class UiController {
                 offlineMode: this.localeRules.requiresOfflineMode(),
             },
         };
+    }
+
+    @Get('dashboard-kpis')
+    async getDashboardKPIs() {
+        return this.dashboardService.getKPIs();
     }
 }

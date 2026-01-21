@@ -1,4 +1,5 @@
-import { IsEmail, IsNotEmpty, IsString, IsPhoneNumber, IsOptional, IsNumber } from 'class-validator';
+import { IsEmail, IsNotEmpty, IsString, IsPhoneNumber, IsOptional, IsNumber, IsEnum } from 'class-validator';
+import { UserRole, UserStatus } from '../entities/agent.entity';
 
 export class CreateAgentDto {
     @IsString()
@@ -57,6 +58,79 @@ export class CreateAgentDto {
     @IsOptional()
     emergencyContactPhone?: string;
 
+    // HR Identification
+    @IsString()
+    @IsOptional()
+    birthName?: string;
+
+    @IsString()
+    @IsOptional()
+    nir?: string;
+
+    @IsString()
+    @IsOptional()
+    maritalStatus?: string;
+
+    @IsNumber()
+    @IsOptional()
+    childrenCount?: number;
+
+    // Detailed Coordinates
+    @IsString()
+    @IsOptional()
+    street?: string;
+
+    @IsString()
+    @IsOptional()
+    zipCode?: string;
+
+    @IsString()
+    @IsOptional()
+    city?: string;
+
+    @IsEmail()
+    @IsOptional()
+    personalEmail?: string;
+
+    // Contractual Details
+    @IsNumber()
+    @IsOptional()
+    workTimePercentage?: number;
+
+    @IsString()
+    @IsOptional()
+    gradeLegacy?: string;
+
+    @IsString()
+    @IsOptional()
+    step?: string;
+
+    @IsString()
+    @IsOptional()
+    index?: string;
+
+    @IsString()
+    @IsOptional()
+    contractEndDate?: string;
+
+    // Financial
+    @IsString()
+    @IsOptional()
+    iban?: string;
+
+    @IsString()
+    @IsOptional()
+    bic?: string;
+
+    // Education
+    @IsString()
+    @IsOptional()
+    mainDiploma?: string;
+
+    @IsString()
+    @IsOptional()
+    diplomaYear?: string;
+
     @IsEmail()
     email: string;
 
@@ -76,4 +150,16 @@ export class CreateAgentDto {
     @IsNumber()
     @IsOptional()
     managerId?: number;
+
+    @IsNumber()
+    @IsOptional()
+    roleId?: number;
+
+    @IsEnum(UserRole)
+    @IsOptional()
+    role?: UserRole;
+
+    @IsEnum(UserStatus)
+    @IsOptional()
+    status?: UserStatus;
 }

@@ -22,6 +22,8 @@ const typeorm_2 = require("typeorm");
 const jwt_auth_guard_1 = require("../auth/jwt-auth.guard");
 const auto_scheduler_service_1 = require("./auto-scheduler.service");
 const leave_entity_1 = require("./entities/leave.entity");
+const permissions_decorator_1 = require("../auth/permissions.decorator");
+const roles_guard_1 = require("../auth/roles.guard");
 let PlanningController = class PlanningController {
     planningService;
     optimizationService;
@@ -156,6 +158,7 @@ exports.PlanningController = PlanningController;
 __decorate([
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
     (0, common_1.Post)('leaves'),
+    (0, permissions_decorator_1.Permissions)('leaves:request'),
     __param(0, (0, common_1.Request)()),
     __param(1, (0, common_1.Body)()),
     __metadata("design:type", Function),
@@ -165,6 +168,7 @@ __decorate([
 __decorate([
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
     (0, common_1.Get)('replacements'),
+    (0, permissions_decorator_1.Permissions)('planning:read'),
     __param(0, (0, common_1.Request)()),
     __param(1, (0, common_1.Query)('start')),
     __param(2, (0, common_1.Query)('end')),
@@ -176,6 +180,7 @@ __decorate([
 __decorate([
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
     (0, common_1.Get)('leaves'),
+    (0, permissions_decorator_1.Permissions)('planning:read'),
     __param(0, (0, common_1.Request)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [Object]),
@@ -184,6 +189,7 @@ __decorate([
 __decorate([
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
     (0, common_1.Get)('shifts'),
+    (0, permissions_decorator_1.Permissions)('planning:read'),
     __param(0, (0, common_1.Request)()),
     __param(1, (0, common_1.Query)('start')),
     __param(2, (0, common_1.Query)('end')),
@@ -194,6 +200,7 @@ __decorate([
 __decorate([
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
     (0, common_1.Get)('validate'),
+    (0, permissions_decorator_1.Permissions)('planning:read'),
     __param(0, (0, common_1.Request)()),
     __param(1, (0, common_1.Query)('agentId', common_1.ParseIntPipe)),
     __param(2, (0, common_1.Query)('start')),
@@ -205,6 +212,7 @@ __decorate([
 __decorate([
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
     (0, common_1.Post)('optimize'),
+    (0, permissions_decorator_1.Permissions)('planning:manage'),
     __param(0, (0, common_1.Request)()),
     __param(1, (0, common_1.Body)('shifts')),
     __metadata("design:type", Function),
@@ -214,6 +222,7 @@ __decorate([
 __decorate([
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
     (0, common_1.Post)('auto-schedule'),
+    (0, permissions_decorator_1.Permissions)('planning:manage'),
     __param(0, (0, common_1.Request)()),
     __param(1, (0, common_1.Body)()),
     __metadata("design:type", Function),
@@ -223,6 +232,7 @@ __decorate([
 __decorate([
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
     (0, common_1.Post)('generate'),
+    (0, permissions_decorator_1.Permissions)('planning:manage'),
     __param(0, (0, common_1.Request)()),
     __param(1, (0, common_1.Body)()),
     __metadata("design:type", Function),
@@ -232,6 +242,7 @@ __decorate([
 __decorate([
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
     (0, common_1.Post)('assign-replacement'),
+    (0, permissions_decorator_1.Permissions)('planning:manage'),
     __param(0, (0, common_1.Body)()),
     __param(1, (0, common_1.Request)()),
     __metadata("design:type", Function),
@@ -240,6 +251,7 @@ __decorate([
 ], PlanningController.prototype, "assignReplacement", null);
 exports.PlanningController = PlanningController = __decorate([
     (0, common_1.Controller)('planning'),
+    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard, roles_guard_1.RolesGuard),
     __param(3, (0, typeorm_1.InjectRepository)(agent_entity_1.Agent)),
     __param(4, (0, typeorm_1.InjectRepository)(leave_entity_1.Leave)),
     __metadata("design:paramtypes", [planning_service_1.PlanningService,

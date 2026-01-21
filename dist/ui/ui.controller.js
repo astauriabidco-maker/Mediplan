@@ -19,14 +19,17 @@ const typeorm_2 = require("typeorm");
 const agent_entity_1 = require("../agents/entities/agent.entity");
 const competency_entity_1 = require("../competencies/entities/competency.entity");
 const locale_module_1 = require("../core/config/locale.module");
+const dashboard_service_1 = require("./dashboard.service");
 let UiController = class UiController {
     agentRepository;
     competencyRepository;
     localeRules;
-    constructor(agentRepository, competencyRepository, localeRules) {
+    dashboardService;
+    constructor(agentRepository, competencyRepository, localeRules, dashboardService) {
         this.agentRepository = agentRepository;
         this.competencyRepository = competencyRepository;
         this.localeRules = localeRules;
+        this.dashboardService = dashboardService;
     }
     async getStats() {
         const agentsCount = await this.agentRepository.count();
@@ -41,6 +44,9 @@ let UiController = class UiController {
             },
         };
     }
+    async getDashboardKPIs() {
+        return this.dashboardService.getKPIs();
+    }
 };
 exports.UiController = UiController;
 __decorate([
@@ -49,12 +55,18 @@ __decorate([
     __metadata("design:paramtypes", []),
     __metadata("design:returntype", Promise)
 ], UiController.prototype, "getStats", null);
+__decorate([
+    (0, common_1.Get)('dashboard-kpis'),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", []),
+    __metadata("design:returntype", Promise)
+], UiController.prototype, "getDashboardKPIs", null);
 exports.UiController = UiController = __decorate([
     (0, common_1.Controller)('ui'),
     __param(0, (0, typeorm_1.InjectRepository)(agent_entity_1.Agent)),
     __param(1, (0, typeorm_1.InjectRepository)(competency_entity_1.Competency)),
     __param(2, (0, common_1.Inject)(locale_module_1.LOCALE_RULES)),
     __metadata("design:paramtypes", [typeorm_2.Repository,
-        typeorm_2.Repository, Object])
+        typeorm_2.Repository, Object, dashboard_service_1.DashboardService])
 ], UiController);
 //# sourceMappingURL=ui.controller.js.map

@@ -7,6 +7,9 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { Agent } from '../agents/entities/agent.entity';
 import { JwtStrategy } from './jwt.strategy';
 
+import { MailModule } from '../mail/mail.module';
+import { RolesModule } from './roles/roles.module';
+
 @Module({
   imports: [
     TypeOrmModule.forFeature([Agent]),
@@ -15,6 +18,8 @@ import { JwtStrategy } from './jwt.strategy';
       secret: process.env.JWT_SECRET || 'SECRET_KEY_DEV',
       signOptions: { expiresIn: '60m' },
     }),
+    MailModule,
+    RolesModule,
   ],
   controllers: [AuthController],
   providers: [AuthService, JwtStrategy],

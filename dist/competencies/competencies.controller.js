@@ -16,6 +16,8 @@ exports.CompetenciesController = void 0;
 const common_1 = require("@nestjs/common");
 const jwt_auth_guard_1 = require("../auth/jwt-auth.guard");
 const competencies_service_1 = require("./competencies.service");
+const permissions_decorator_1 = require("../auth/permissions.decorator");
+const roles_guard_1 = require("../auth/roles.guard");
 let CompetenciesController = class CompetenciesController {
     competenciesService;
     constructor(competenciesService) {
@@ -42,6 +44,7 @@ let CompetenciesController = class CompetenciesController {
 exports.CompetenciesController = CompetenciesController;
 __decorate([
     (0, common_1.Get)('agent/:agentId'),
+    (0, permissions_decorator_1.Permissions)('competencies:read'),
     __param(0, (0, common_1.Param)('agentId', common_1.ParseIntPipe)),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [Number]),
@@ -49,6 +52,7 @@ __decorate([
 ], CompetenciesController.prototype, "getValidByAgent", null);
 __decorate([
     (0, common_1.Get)('matrix'),
+    (0, permissions_decorator_1.Permissions)('competencies:read'),
     __param(0, (0, common_1.Request)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [Object]),
@@ -56,12 +60,14 @@ __decorate([
 ], CompetenciesController.prototype, "findAllMatrix", null);
 __decorate([
     (0, common_1.Get)('seed-test-data'),
+    (0, permissions_decorator_1.Permissions)('competencies:write'),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", []),
     __metadata("design:returntype", Promise)
 ], CompetenciesController.prototype, "seed", null);
 __decorate([
     (0, common_1.Post)(),
+    (0, permissions_decorator_1.Permissions)('competencies:write'),
     __param(0, (0, common_1.Body)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [Object]),
@@ -69,6 +75,7 @@ __decorate([
 ], CompetenciesController.prototype, "create", null);
 __decorate([
     (0, common_1.Post)('agent'),
+    (0, permissions_decorator_1.Permissions)('competencies:write'),
     __param(0, (0, common_1.Body)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [Object]),
@@ -76,7 +83,7 @@ __decorate([
 ], CompetenciesController.prototype, "assignToAgent", null);
 exports.CompetenciesController = CompetenciesController = __decorate([
     (0, common_1.Controller)('competencies'),
-    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
+    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard, roles_guard_1.RolesGuard),
     __metadata("design:paramtypes", [competencies_service_1.CompetenciesService])
 ], CompetenciesController);
 //# sourceMappingURL=competencies.controller.js.map

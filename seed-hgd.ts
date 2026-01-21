@@ -3,14 +3,17 @@ import { AppModule } from './src/app.module';
 import { AgentsService } from './src/agents/agents.service';
 import { HospitalServicesService } from './src/agents/hospital-services.service';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { Agent } from './src/agents/entities/agent.entity';
+import { Agent, UserRole } from './src/agents/entities/agent.entity';
 import { HospitalService } from './src/agents/entities/hospital-service.entity';
 import { Repository } from 'typeorm';
+
+import { DataSource } from 'typeorm';
 
 async function bootstrap() {
     console.log('🌱 Starting seed for Hôpital Général de Douala...\n');
 
     const app = await NestFactory.createApplicationContext(AppModule);
+    const dataSource = app.get(DataSource);
 
     const agentRepo = app.get<Repository<Agent>>(getRepositoryToken(Agent));
     const serviceRepo = app.get<Repository<HospitalService>>(getRepositoryToken(HospitalService));
@@ -19,8 +22,13 @@ async function bootstrap() {
 
     // Clear existing data
     console.log('🗑️  Clearing existing data...');
-    await agentRepo.delete({ tenantId });
-    await serviceRepo.delete({ tenantId });
+    try {
+        await dataSource.query('TRUNCATE TABLE agent, hospital_service, leave, shift, contract, agent_competency RESTART IDENTITY CASCADE');
+    } catch (error) {
+        console.warn('⚠️  Could not truncate tables (might be first run):', error.message);
+    }
+    // await agentRepo.delete({ tenantId });
+    // await serviceRepo.delete({ tenantId });
 
     // Create services
     console.log('\n📁 Creating Hospital Services...');
@@ -156,7 +164,8 @@ async function bootstrap() {
         hiringDate: '2018-01-15',
         hospitalServiceId: administration.id,
         tenantId,
-        password: '$2b$10$YourHashedPasswordHere', // password123
+        role: UserRole.ADMIN,
+        password: '$2b$10$dNYDjlPp7KksILDRWu1Z0u54QcsdTdxxVqk8u27gVl0zmbwkD2d5m', // password123
     });
 
     const chefChirurgie = await agentRepo.save({
@@ -172,7 +181,7 @@ async function bootstrap() {
         hospitalServiceId: chirurgie.id,
         managerId: directeur.id,
         tenantId,
-        password: '$2b$10$YourHashedPasswordHere',
+        password: '$2b$10$dNYDjlPp7KksILDRWu1Z0u54QcsdTdxxVqk8u27gVl0zmbwkD2d5m',
     });
 
     await serviceRepo.update(chirurgie.id, { chiefId: chefChirurgie.id });
@@ -190,7 +199,7 @@ async function bootstrap() {
         hospitalServiceId: chirurgie.id,
         managerId: chefChirurgie.id,
         tenantId,
-        password: '$2b$10$YourHashedPasswordHere',
+        password: '$2b$10$dNYDjlPp7KksILDRWu1Z0u54QcsdTdxxVqk8u27gVl0zmbwkD2d5m',
     });
 
     await serviceRepo.update(chirurgie.id, { majorId: majorChirurgie.id });
@@ -208,7 +217,7 @@ async function bootstrap() {
         hospitalServiceId: urgences.id,
         managerId: directeur.id,
         tenantId,
-        password: '$2b$10$YourHashedPasswordHere',
+        password: '$2b$10$dNYDjlPp7KksILDRWu1Z0u54QcsdTdxxVqk8u27gVl0zmbwkD2d5m',
     });
 
     await serviceRepo.update(urgences.id, { chiefId: chefUrgences.id });
@@ -242,7 +251,7 @@ async function bootstrap() {
             hospitalServiceId: a.service,
             managerId: a.manager,
             tenantId,
-            password: '$2b$10$YourHashedPasswordHere',
+            password: '$2b$10$dNYDjlPp7KksILDRWu1Z0u54QcsdTdxxVqk8u27gVl0zmbwkD2d5m',
         });
     }
 

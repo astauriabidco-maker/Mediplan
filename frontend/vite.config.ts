@@ -11,10 +11,19 @@ export default defineConfig({
         },
     },
     server: {
+        host: true,
         port: 5175,
+        hmr: {
+            clientPort: 5173,
+        },
         proxy: {
             '/api': {
-                target: 'http://localhost:3005',
+                target: 'http://backend:3005',
+                changeOrigin: true,
+            },
+            '/socket.io': {
+                target: 'http://backend:3005',
+                ws: true,
                 changeOrigin: true,
             },
         },

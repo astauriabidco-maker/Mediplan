@@ -7,8 +7,11 @@ import { Repository } from 'typeorm';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { AutoSchedulerService, ShiftNeed } from './auto-scheduler.service';
 import { Leave, LeaveType, LeaveStatus } from './entities/leave.entity';
+import { Permissions } from '../auth/permissions.decorator';
+import { RolesGuard } from '../auth/roles.guard';
 
 @Controller('planning')
+@UseGuards(JwtAuthGuard, RolesGuard)
 export class PlanningController {
     constructor(
         private readonly planningService: PlanningService,
@@ -22,6 +25,7 @@ export class PlanningController {
 
     @UseGuards(JwtAuthGuard)
     @Post('leaves')
+    @Permissions('leaves:request')
     async createLeave(@Request() req: any, @Body() body: { agentId: number; start: string; end: string; type: LeaveType; reason?: string }) {
         const leave = this.leaveRepository.create({
             agent: { id: body.agentId },
@@ -37,6 +41,7 @@ export class PlanningController {
 
     @UseGuards(JwtAuthGuard)
     @Get('replacements')
+    @Permissions('planning:read')
     async getReplacements(
         @Request() req: any,
         @Query('start') start: string,
@@ -92,6 +97,7 @@ export class PlanningController {
 
     @UseGuards(JwtAuthGuard)
     @Get('leaves')
+    @Permissions('planning:read')
     async getLeaves(@Request() req: any) {
         return this.leaveRepository.find({
             where: { tenantId: req.user.tenantId },
@@ -101,6 +107,7 @@ export class PlanningController {
 
     @UseGuards(JwtAuthGuard)
     @Get('shifts')
+    @Permissions('planning:read')
     async getShifts(
         @Request() req: any,
         @Query('start') start: string,
@@ -123,6 +130,7 @@ export class PlanningController {
 
     @UseGuards(JwtAuthGuard)
     @Get('validate')
+    @Permissions('planning:read')
     async validate(
         @Request() req: any,
         @Query('agentId', ParseIntPipe) agentId: number,
@@ -140,6 +148,7 @@ export class PlanningController {
 
     @UseGuards(JwtAuthGuard)
     @Post('optimize')
+    @Permissions('planning:manage')
     async optimize(@Request() req: any, @Body('shifts') shifts: { id: string; start: string; end: string; requiredSkill: string }[]) {
         // Fetch agents belonging to the tenant
         const agents = await this.agentRepository.find({
@@ -159,6 +168,7 @@ export class PlanningController {
 
     @UseGuards(JwtAuthGuard)
     @Post('auto-schedule')
+    @Permissions('planning:manage')
     async autoSchedule(
         @Request() req: any,
         @Body() body: { start: string; end: string; needs: ShiftNeed[] }
@@ -179,6 +189,7 @@ export class PlanningController {
     // TÂCHE 3 : Endpoint API avec besoins fictifs
     @UseGuards(JwtAuthGuard)
     @Post('generate')
+    @Permissions('planning:manage')
     async generate(
         @Request() req: any,
         @Body() body: { start: string; end: string }
@@ -246,6 +257,7 @@ export class PlanningController {
 
     @UseGuards(JwtAuthGuard)
     @Post('assign-replacement')
+    @Permissions('planning:manage')
     async assignReplacement(@Body() body: { agentId: number; start: string; end: string; postId: string }, @Request() req: any) {
         return this.planningService.assignReplacement(
             req.user.tenantId,
