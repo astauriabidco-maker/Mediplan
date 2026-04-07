@@ -21,6 +21,8 @@ const agent_entity_1 = require("../agents/entities/agent.entity");
 const typeorm_2 = require("typeorm");
 const jwt_auth_guard_1 = require("../auth/jwt-auth.guard");
 const auto_scheduler_service_1 = require("./auto-scheduler.service");
+const documents_service_1 = require("../documents/documents.service");
+const shift_entity_1 = require("./entities/shift.entity");
 const leave_entity_1 = require("./entities/leave.entity");
 const permissions_decorator_1 = require("../auth/permissions.decorator");
 const roles_guard_1 = require("../auth/roles.guard");
@@ -30,12 +32,16 @@ let PlanningController = class PlanningController {
     autoSchedulerService;
     agentRepository;
     leaveRepository;
-    constructor(planningService, optimizationService, autoSchedulerService, agentRepository, leaveRepository) {
+    shiftRepository;
+    documentsService;
+    constructor(planningService, optimizationService, autoSchedulerService, agentRepository, leaveRepository, shiftRepository, documentsService) {
         this.planningService = planningService;
         this.optimizationService = optimizationService;
         this.autoSchedulerService = autoSchedulerService;
         this.agentRepository = agentRepository;
         this.leaveRepository = leaveRepository;
+        this.shiftRepository = shiftRepository;
+        this.documentsService = documentsService;
     }
     async createLeave(req, body) {
         const leave = this.leaveRepository.create({
@@ -138,6 +144,19 @@ let PlanningController = class PlanningController {
         catch (error) {
             throw new common_1.BadRequestException(error.message);
         }
+    }
+    async generateContract(req, id) {
+        const shift = await this.shiftRepository.findOne({
+            where: { id: parseInt(id, 10), tenantId: req.user.tenantId },
+            relations: ['agent', 'hospitalService']
+        });
+        if (!shift) {
+            throw new common_1.BadRequestException('Shift not found');
+        }
+        if (!shift.agent) {
+            throw new common_1.BadRequestException('Cannot generate contract for an unassigned shift');
+        }
+        return this.documentsService.generateContractForShift(req.user.tenantId, shift, shift.agent);
     }
 };
 exports.PlanningController = PlanningController;
@@ -276,15 +295,28 @@ __decorate([
     __metadata("design:paramtypes", [Object, String, Object]),
     __metadata("design:returntype", Promise)
 ], PlanningController.prototype, "updateShift", null);
+__decorate([
+    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
+    (0, common_1.Post)('shifts/:id/generate-contract'),
+    (0, permissions_decorator_1.Permissions)('documents:write'),
+    __param(0, (0, common_1.Request)()),
+    __param(1, (0, common_1.Param)('id')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, String]),
+    __metadata("design:returntype", Promise)
+], PlanningController.prototype, "generateContract", null);
 exports.PlanningController = PlanningController = __decorate([
     (0, common_1.Controller)('planning'),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard, roles_guard_1.RolesGuard),
     __param(3, (0, typeorm_1.InjectRepository)(agent_entity_1.Agent)),
     __param(4, (0, typeorm_1.InjectRepository)(leave_entity_1.Leave)),
+    __param(5, (0, typeorm_1.InjectRepository)(shift_entity_1.Shift)),
     __metadata("design:paramtypes", [planning_service_1.PlanningService,
         optimization_service_1.OptimizationService,
         auto_scheduler_service_1.AutoSchedulerService,
         typeorm_2.Repository,
-        typeorm_2.Repository])
+        typeorm_2.Repository,
+        typeorm_2.Repository,
+        documents_service_1.DocumentsService])
 ], PlanningController);
 //# sourceMappingURL=planning.controller.js.map

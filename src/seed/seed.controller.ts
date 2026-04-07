@@ -6,6 +6,7 @@ import { HospitalService } from '../agents/entities/hospital-service.entity';
 import { Leave, LeaveStatus, LeaveType } from '../planning/entities/leave.entity';
 import { Competency } from '../competencies/entities/competency.entity';
 import { AgentCompetency } from '../competencies/entities/agent-competency.entity';
+import { Document, DocumentType, DocumentStatus } from '../documents/entities/document.entity';
 import * as bcrypt from 'bcrypt';
 import { addDays, subDays } from 'date-fns';
 
@@ -22,6 +23,8 @@ export class SeedController {
         private compRepo: Repository<Competency>,
         @InjectRepository(AgentCompetency)
         private agentCompRepo: Repository<AgentCompetency>,
+        @InjectRepository(Document)
+        private documentRepo: Repository<Document>,
     ) { }
 
     @Post('hgd')
@@ -41,6 +44,9 @@ export class SeedController {
         });
 
         // 3. Clear data
+        await this.agentCompRepo.createQueryBuilder().delete().execute();
+        await this.compRepo.createQueryBuilder().delete().execute();
+        await this.documentRepo.delete({ tenantId });
         await this.leaveRepo.delete({ tenantId });
         await this.agentRepo.delete({ tenantId });
         await this.serviceRepo.delete({ tenantId });
@@ -404,6 +410,38 @@ export class SeedController {
                     competency: comp,
                     level,
                     expirationDate: expiry
+                });
+            }
+        }
+
+        // --- SEED GED DOCUMENTS ---
+        const fakeDocuments = [
+            { title: 'Contrat de travail à durée indéterminée', type: DocumentType.CONTRACT, fileUrl: 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf' },
+            { title: 'Attestation de formation AFGSU', type: DocumentType.CERTIFICATE, fileUrl: 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf' },
+            { title: 'Avenant au contrat - Nuit', type: DocumentType.AVENANT, fileUrl: 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf' },
+            { title: 'Fiche de paie Mai', type: DocumentType.PAYSLIP, fileUrl: 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf' },
+        ];
+
+        for (const agent of allAgents) {
+            // Assign 1 or 2 random documents to each agent
+            const nbDoc = Math.floor(Math.random() * 2) + 1;
+            for (let i = 0; i < nbDoc; i++) {
+                const docDesc = fakeDocuments[Math.floor(Math.random() * fakeDocuments.length)];
+                
+                // Random status
+                const randStatus = Math.random();
+                let status = DocumentStatus.SIGNED;
+                if (randStatus > 0.8) status = DocumentStatus.PENDING_SIGNATURE;
+
+                await this.documentRepo.save({
+                    tenantId,
+                    title: docDesc.title,
+                    type: docDesc.type,
+                    status: status,
+                    fileUrl: docDesc.fileUrl,
+                    agent,
+                    // Give OTP to pending docs
+                    otpSecret: status === DocumentStatus.PENDING_SIGNATURE ? Math.floor(1000 + Math.random() * 9000).toString() : undefined
                 });
             }
         }

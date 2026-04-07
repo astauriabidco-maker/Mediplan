@@ -6,6 +6,8 @@ import { Agent } from '../agents/entities/agent.entity';
 import { Repository } from 'typeorm';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { AutoSchedulerService, ShiftNeed } from './auto-scheduler.service';
+import { DocumentsService } from '../documents/documents.service';
+import { Shift } from './entities/shift.entity';
 import { Leave, LeaveType, LeaveStatus } from './entities/leave.entity';
 import { Permissions } from '../auth/permissions.decorator';
 import { RolesGuard } from '../auth/roles.guard';
@@ -21,6 +23,9 @@ export class PlanningController {
         private readonly agentRepository: Repository<Agent>,
         @InjectRepository(Leave)
         private readonly leaveRepository: Repository<Leave>,
+        @InjectRepository(Shift)
+        private readonly shiftRepository: Repository<Shift>,
+        private readonly documentsService: DocumentsService,
     ) { }
 
     @UseGuards(JwtAuthGuard)
@@ -260,5 +265,25 @@ export class PlanningController {
         } catch (error) {
             throw new BadRequestException(error.message);
         }
+    }
+
+    @UseGuards(JwtAuthGuard)
+    @Post('shifts/:id/generate-contract')
+    @Permissions('documents:write')
+    async generateContract(@Request() req: any, @Param('id') id: string) {
+        const shift = await this.shiftRepository.findOne({ 
+            where: { id: parseInt(id, 10), tenantId: req.user.tenantId },
+            relations: ['agent', 'hospitalService'] 
+        });
+
+        if (!shift) {
+            throw new BadRequestException('Shift not found');
+        }
+
+        if (!shift.agent) {
+            throw new BadRequestException('Cannot generate contract for an unassigned shift');
+        }
+
+        return this.documentsService.generateContractForShift(req.user.tenantId, shift, shift.agent);
     }
 }

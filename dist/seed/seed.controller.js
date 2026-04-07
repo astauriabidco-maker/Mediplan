@@ -54,6 +54,7 @@ const hospital_service_entity_1 = require("../agents/entities/hospital-service.e
 const leave_entity_1 = require("../planning/entities/leave.entity");
 const competency_entity_1 = require("../competencies/entities/competency.entity");
 const agent_competency_entity_1 = require("../competencies/entities/agent-competency.entity");
+const document_entity_1 = require("../documents/entities/document.entity");
 const bcrypt = __importStar(require("bcrypt"));
 const date_fns_1 = require("date-fns");
 let SeedController = class SeedController {
@@ -62,12 +63,14 @@ let SeedController = class SeedController {
     leaveRepo;
     compRepo;
     agentCompRepo;
-    constructor(agentRepo, serviceRepo, leaveRepo, compRepo, agentCompRepo) {
+    documentRepo;
+    constructor(agentRepo, serviceRepo, leaveRepo, compRepo, agentCompRepo, documentRepo) {
         this.agentRepo = agentRepo;
         this.serviceRepo = serviceRepo;
         this.leaveRepo = leaveRepo;
         this.compRepo = compRepo;
         this.agentCompRepo = agentCompRepo;
+        this.documentRepo = documentRepo;
     }
     async seedHGD() {
         const tenantId = 'HGD-DOUALA';
@@ -79,6 +82,9 @@ let SeedController = class SeedController {
             majorId: null,
             nursingManagerId: null
         });
+        await this.agentCompRepo.createQueryBuilder().delete().execute();
+        await this.compRepo.createQueryBuilder().delete().execute();
+        await this.documentRepo.delete({ tenantId });
         await this.leaveRepo.delete({ tenantId });
         await this.agentRepo.delete({ tenantId });
         await this.serviceRepo.delete({ tenantId });
@@ -406,6 +412,31 @@ let SeedController = class SeedController {
                 });
             }
         }
+        const fakeDocuments = [
+            { title: 'Contrat de travail à durée indéterminée', type: document_entity_1.DocumentType.CONTRACT, fileUrl: 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf' },
+            { title: 'Attestation de formation AFGSU', type: document_entity_1.DocumentType.CERTIFICATE, fileUrl: 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf' },
+            { title: 'Avenant au contrat - Nuit', type: document_entity_1.DocumentType.AVENANT, fileUrl: 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf' },
+            { title: 'Fiche de paie Mai', type: document_entity_1.DocumentType.PAYSLIP, fileUrl: 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf' },
+        ];
+        for (const agent of allAgents) {
+            const nbDoc = Math.floor(Math.random() * 2) + 1;
+            for (let i = 0; i < nbDoc; i++) {
+                const docDesc = fakeDocuments[Math.floor(Math.random() * fakeDocuments.length)];
+                const randStatus = Math.random();
+                let status = document_entity_1.DocumentStatus.SIGNED;
+                if (randStatus > 0.8)
+                    status = document_entity_1.DocumentStatus.PENDING_SIGNATURE;
+                await this.documentRepo.save({
+                    tenantId,
+                    title: docDesc.title,
+                    type: docDesc.type,
+                    status: status,
+                    fileUrl: docDesc.fileUrl,
+                    agent,
+                    otpSecret: status === document_entity_1.DocumentStatus.PENDING_SIGNATURE ? Math.floor(1000 + Math.random() * 9000).toString() : undefined
+                });
+            }
+        }
         const totalServices = await this.serviceRepo.count({ where: { tenantId } });
         const totalAgents = await this.agentRepo.count({ where: { tenantId } });
         const totalLeaves = await this.leaveRepo.count({ where: { tenantId } });
@@ -443,7 +474,9 @@ exports.SeedController = SeedController = __decorate([
     __param(2, (0, typeorm_1.InjectRepository)(leave_entity_1.Leave)),
     __param(3, (0, typeorm_1.InjectRepository)(competency_entity_1.Competency)),
     __param(4, (0, typeorm_1.InjectRepository)(agent_competency_entity_1.AgentCompetency)),
+    __param(5, (0, typeorm_1.InjectRepository)(document_entity_1.Document)),
     __metadata("design:paramtypes", [typeorm_2.Repository,
+        typeorm_2.Repository,
         typeorm_2.Repository,
         typeorm_2.Repository,
         typeorm_2.Repository,

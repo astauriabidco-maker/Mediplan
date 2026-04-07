@@ -132,7 +132,7 @@ export class DocumentsService {
         `;
 
         const filename = `contract-shift-${shift.id}-${agent.id}-${Date.now()}.html`;
-        const uploadDir = './uploads/documents';
+        const uploadDir = './public/uploads/documents';
         
         // Ensure directory exists
         if (!fs.existsSync(uploadDir)) {
