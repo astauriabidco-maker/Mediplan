@@ -1,11 +1,14 @@
 import React, { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { fetchAgents, createAgent, Agent } from '../api/agents.api';
+import { fetchAgents, createAgent, updateAgent, Agent } from '../api/agents.api';
 import { fetchHospitalServices, HospitalService } from '../api/hospital-services.api';
+import { useAuth } from '../store/useAuth';
 import {
     Users, Plus, Search, Trash2, Edit2, X, Loader2, Award, Network,
-    Filter, TrendingUp, AlertCircle, CheckCircle, XCircle, FileText
+    Filter, TrendingUp, AlertCircle, CheckCircle, XCircle, FileText,
+    Globe, Smartphone, ShieldCheck, Heart, Baby, Activity, Clock
 } from 'lucide-react';
+import { fetchBeneficiaries, createBeneficiary, deleteBeneficiary, updateBeneficiary, Beneficiary } from '../api/beneficiaries.api';
 import { useAppConfig } from '../store/useAppConfig';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -25,6 +28,7 @@ export const AgentsPage = () => {
     const { themeColor } = useAppConfig();
     const queryClient = useQueryClient();
     const [isModalOpen, setIsModalOpen] = useState(false);
+    const [editingAgent, setEditingAgent] = useState<Agent | null>(null);
     const [search, setSearch] = useState('');
     const [showFilters, setShowFilters] = useState(false);
     const [filters, setFilters] = useState<Filters>({
@@ -42,6 +46,23 @@ export const AgentsPage = () => {
     const { data: services = [], isLoading: isServicesLoading } = useQuery({
         queryKey: ['hospital-services'],
         queryFn: fetchHospitalServices,
+    });
+
+    const updateMutation = useMutation({
+        mutationFn: ({ id, data }: { id: number, data: Partial<Agent> }) => updateAgent(id, data),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['agents'] });
+            setIsModalOpen(false);
+            setEditingAgent(null);
+        },
+    });
+
+    const deleteMutation = useMutation({
+        mutationFn: createAgent,
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['agents'] });
+            setIsModalOpen(false);
+        },
     });
 
     const createMutation = useMutation({
@@ -78,7 +99,7 @@ export const AgentsPage = () => {
 
             // Status filter (you can extend this based on your needs)
             const matchesStatus = filters.status === 'all' ||
-                (filters.status === 'active' && agent.isActive !== false) ||
+                (filters.status === 'active' && agent.status === 'ACTIVE') ||
                 (filters.status === 'noManager' && !agent.managerId) ||
                 (filters.status === 'noService' && !agent.hospitalServiceId);
 
@@ -436,7 +457,13 @@ export const AgentsPage = () => {
                                         </td>
                                         <td className="p-4 text-right">
                                             <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                <button className="p-2 hover:bg-slate-700 rounded-lg text-slate-400 hover:text-white transition-colors">
+                                                <button
+                                                    onClick={() => {
+                                                        setEditingAgent(agent);
+                                                        setIsModalOpen(true);
+                                                    }}
+                                                    className="p-2 hover:bg-slate-700 rounded-lg text-slate-400 hover:text-white transition-colors"
+                                                >
                                                     <Edit2 size={16} />
                                                 </button>
                                                 <button className="p-2 hover:bg-red-500/10 rounded-lg text-slate-400 hover:text-red-500 transition-colors">
@@ -459,11 +486,18 @@ export const AgentsPage = () => {
                         {/* Header */}
                         <div className="p-6 border-b border-slate-800 flex items-center justify-between bg-slate-950/50">
                             <div>
-                                <h2 className="text-2xl font-bold text-white">Nouveau Dossier Personnel</h2>
-                                <p className="text-slate-400 text-sm">Créez une fiche complète incluant la hiérarchie et l'affectation.</p>
+                                <h2 className="text-2xl font-bold text-white">
+                                    {editingAgent ? `Modifier le Dossier : ${editingAgent.nom}` : 'Nouveau Dossier Personnel'}
+                                </h2>
+                                <p className="text-slate-400 text-sm">
+                                    {editingAgent ? 'Mettez à jour les informations de l\'agent.' : 'Créez une fiche complète incluant la hiérarchie et l\'affectation.'}
+                                </p>
                             </div>
                             <button
-                                onClick={() => setIsModalOpen(false)}
+                                onClick={() => {
+                                    setIsModalOpen(false);
+                                    setEditingAgent(null);
+                                }}
                                 className="p-2 hover:bg-slate-800 rounded-full text-slate-500 hover:text-white transition-colors"
                             >
                                 <X size={24} />
@@ -473,8 +507,15 @@ export const AgentsPage = () => {
                         {/* Content */}
                         <div className="flex-1 overflow-y-auto p-6">
                             <AgentForm
-                                onSubmit={(data) => createMutation.mutate(data)}
-                                isLoading={createMutation.isPending}
+                                agent={editingAgent}
+                                onSubmit={(data) => {
+                                    if (editingAgent) {
+                                        updateMutation.mutate({ id: editingAgent.id, data });
+                                    } else {
+                                        createMutation.mutate(data);
+                                    }
+                                }}
+                                isLoading={editingAgent ? updateMutation.isPending : createMutation.isPending}
                                 themeColor={themeColor}
                                 services={services}
                                 agents={agents}
@@ -487,8 +528,8 @@ export const AgentsPage = () => {
     );
 };
 
-// AgentForm component remains the same as before
-const AgentForm = ({ onSubmit, isLoading, themeColor, services, agents }: { onSubmit: (data: any) => void, isLoading: boolean, themeColor: string, services: HospitalService[], agents: Agent[] }) => {
+// AgentForm component
+const AgentForm = ({ agent, onSubmit, isLoading, themeColor, services, agents }: { agent: Agent | null, onSubmit: (data: any) => void, isLoading: boolean, themeColor: string, services: HospitalService[], agents: Agent[] }) => {
     const [activeTab, setActiveTab] = useState('identity');
 
     const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
@@ -499,6 +540,7 @@ const AgentForm = ({ onSubmit, isLoading, themeColor, services, agents }: { onSu
         // Transform numeric IDs
         if (data.hospitalServiceId) data.hospitalServiceId = Number(data.hospitalServiceId);
         if (data.managerId) data.managerId = Number(data.managerId);
+        data.isWhatsAppCompatible = formData.get('isWhatsAppCompatible') === 'on';
 
         onSubmit(data);
     };
@@ -506,6 +548,8 @@ const AgentForm = ({ onSubmit, isLoading, themeColor, services, agents }: { onSu
     const tabs = [
         { id: 'identity', label: 'Identité & État Civil', icon: Users },
         { id: 'professional', label: 'Professionnel & Hiérarchie', icon: Award },
+        { id: 'africa', label: 'Localisation / Afrique', icon: Globe },
+        { id: 'family', label: 'Ayants-droit / Famille', icon: Heart },
         { id: 'contact', label: 'Contacts & Urgences', icon: Network },
     ];
 
@@ -541,32 +585,32 @@ const AgentForm = ({ onSubmit, isLoading, themeColor, services, agents }: { onSu
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-in fade-in slide-in-from-left-4 duration-300">
                     <div className="space-y-2">
                         <label className="text-xs font-bold text-slate-500 uppercase">Nom de famille</label>
-                        <input name="nom" required className="input-field" placeholder="ex: MBARGA" />
+                        <input name="nom" defaultValue={agent?.nom} required className="input-field" placeholder="ex: MBARGA" />
                     </div>
                     <div className="space-y-2">
                         <label className="text-xs font-bold text-slate-500 uppercase">Prénoms</label>
-                        <input name="firstName" className="input-field" placeholder="ex: Jean Pierre" />
+                        <input name="firstName" defaultValue={agent?.firstName} className="input-field" placeholder="ex: Jean Pierre" />
                     </div>
 
                     <div className="space-y-2">
                         <label className="text-xs font-bold text-slate-500 uppercase">Sexe</label>
-                        <select name="gender" className="input-field">
+                        <select name="gender" defaultValue={agent?.gender} className="input-field">
                             <option value="M">Masculin</option>
                             <option value="F">Féminin</option>
                         </select>
                     </div>
                     <div className="space-y-2">
                         <label className="text-xs font-bold text-slate-500 uppercase">Date de Naissance</label>
-                        <input name="dateOfBirth" type="date" className="input-field" />
+                        <input name="dateOfBirth" type="date" defaultValue={agent?.dateOfBirth} className="input-field" />
                     </div>
 
                     <div className="space-y-2">
                         <label className="text-xs font-bold text-slate-500 uppercase">Lieu de Naissance</label>
-                        <input name="placeOfBirth" className="input-field" placeholder="ex: Yaoundé" />
+                        <input name="placeOfBirth" defaultValue={agent?.placeOfBirth} className="input-field" placeholder="ex: Yaoundé" />
                     </div>
                     <div className="space-y-2">
                         <label className="text-xs font-bold text-slate-500 uppercase">Nationalité</label>
-                        <input name="nationality" className="input-field" defaultValue="Camerounaise" />
+                        <input name="nationality" defaultValue={agent?.nationality || 'Camerounaise'} className="input-field" />
                     </div>
                 </div>
             )}
@@ -576,11 +620,11 @@ const AgentForm = ({ onSubmit, isLoading, themeColor, services, agents }: { onSu
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-in fade-in slide-in-from-right-4 duration-300">
                     <div className="space-y-2">
                         <label className="text-xs font-bold text-slate-500 uppercase">Matricule</label>
-                        <input name="matricule" required className="input-field font-mono" placeholder="MAT-2024-..." />
+                        <input name="matricule" defaultValue={agent?.matricule} required className="input-field font-mono" placeholder="MAT-2024-..." />
                     </div>
                     <div className="space-y-2">
                         <label className="text-xs font-bold text-slate-500 uppercase">Service Hospitalier</label>
-                        <select name="hospitalServiceId" className="input-field">
+                        <select name="hospitalServiceId" defaultValue={agent?.hospitalServiceId} className="input-field">
                             <option value="">-- Sélectionner un service --</option>
                             {services.map(s => (
                                 <option key={s.id} value={s.id}>{s.name}</option>
@@ -590,9 +634,9 @@ const AgentForm = ({ onSubmit, isLoading, themeColor, services, agents }: { onSu
 
                     <div className="space-y-2">
                         <label className="text-xs font-bold text-slate-500 uppercase">Supérieur Hiérarchique (N+1)</label>
-                        <select name="managerId" className="input-field">
+                        <select name="managerId" defaultValue={agent?.managerId} className="input-field">
                             <option value="">-- Aucun (Top level) --</option>
-                            {agents.map(a => (
+                            {agents.filter(a => a.id !== agent?.id).map(a => (
                                 <option key={a.id} value={a.id}>{a.nom}</option>
                             ))}
                         </select>
@@ -600,12 +644,12 @@ const AgentForm = ({ onSubmit, isLoading, themeColor, services, agents }: { onSu
 
                     <div className="space-y-2">
                         <label className="text-xs font-bold text-slate-500 uppercase">Poste / Grade</label>
-                        <input name="jobTitle" className="input-field" placeholder="ex: Médecin Chef d'Unité" />
+                        <input name="jobTitle" defaultValue={agent?.jobTitle} className="input-field" placeholder="ex: Médecin Chef d'Unité" />
                     </div>
 
                     <div className="space-y-2">
                         <label className="text-xs font-bold text-slate-500 uppercase">Type de Contrat</label>
-                        <select name="contractType" className="input-field">
+                        <select name="contractType" defaultValue={agent?.contractType} className="input-field">
                             <option>CDI</option>
                             <option>CDD</option>
                             <option>Stage</option>
@@ -615,9 +659,92 @@ const AgentForm = ({ onSubmit, isLoading, themeColor, services, agents }: { onSu
 
                     <div className="space-y-2">
                         <label className="text-xs font-bold text-slate-500 uppercase">Date d'embauche</label>
-                        <input name="hiringDate" type="date" className="input-field" />
+                        <input name="hiringDate" type="date" defaultValue={agent?.hiringDate} className="input-field" />
                     </div>
                 </div>
+            )}
+
+            {/* Tab: Localization Africa */}
+            {activeTab === 'africa' && (
+                <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div className="col-span-2">
+                            <h4 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-4 flex items-center gap-2">
+                                <ShieldCheck size={14} className="text-blue-500" />
+                                Identification Nationale & Sociale
+                            </h4>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-slate-950/30 p-4 rounded-2xl border border-slate-800">
+                                <div className="space-y-2">
+                                    <label className="text-[10px] font-bold text-slate-500 uppercase">NIU (Identifiant Unique Fiscal)</label>
+                                    <input name="niu" defaultValue={agent?.niu} className="input-field" placeholder="ex: P012345678912Z" />
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="text-[10px] font-bold text-slate-500 uppercase">N° CNPS / Prévoyance</label>
+                                    <input name="cnpsNumber" defaultValue={agent?.cnpsNumber} className="input-field" placeholder="ex: 345-000123-45" />
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="col-span-2">
+                            <h4 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-4 flex items-center gap-2">
+                                <FileText size={14} className="text-amber-500" />
+                                Pièce d'Identité
+                            </h4>
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-slate-950/30 p-4 rounded-2xl border border-slate-800">
+                                <div className="space-y-2">
+                                    <label className="text-[10px] font-bold text-slate-500 uppercase">Type de document</label>
+                                    <select name="idType" defaultValue={agent?.idType} className="input-field">
+                                        <option value="CNI">CNI (Carte Nationale)</option>
+                                        <option value="PASSPORT">Passeport</option>
+                                        <option value="ATTESTATION">Attestation d'Identité</option>
+                                        <option value="RESIDENCE_PERMIT">Titre de Séjour</option>
+                                    </select>
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="text-[10px] font-bold text-slate-500 uppercase">Numéro de pièce</label>
+                                    <input name="idNumber" defaultValue={agent?.idNumber} className="input-field" placeholder="ex: 112233445" />
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="text-[10px] font-bold text-slate-500 uppercase">Date d'expiration</label>
+                                    <input name="idExpiryDate" type="date" defaultValue={agent?.idExpiryDate} className="input-field" />
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="col-span-2">
+                            <h4 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-4 flex items-center gap-2">
+                                <Smartphone size={14} className="text-emerald-500" />
+                                Paiements Mobiles (Mobile Money)
+                            </h4>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-slate-950/30 p-4 rounded-2xl border border-slate-800">
+                                <div className="space-y-2">
+                                    <label className="text-[10px] font-bold text-slate-500 uppercase">Opérateur</label>
+                                    <select name="mobileMoneyProvider" defaultValue={agent?.mobileMoneyProvider} className="input-field font-bold text-emerald-500">
+                                        <option value="">-- Aucun --</option>
+                                        <option value="ORANGE_MONEY">Orange Money</option>
+                                        <option value="MTN_MOMO">MTN MoMo</option>
+                                        <option value="WAVE">Wave</option>
+                                        <option value="MOOV_MONEY">Moov Money</option>
+                                        <option value="AIRTEL_MONEY">Airtel Money</option>
+                                        <option value="TELMA_MONEY">Telma Money</option>
+                                    </select>
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="text-[10px] font-bold text-slate-500 uppercase">Numéro de compte MM</label>
+                                    <input name="mobileMoneyNumber" defaultValue={agent?.mobileMoneyNumber} className="input-field font-mono" placeholder="ex: 699000111" />
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Tab: Ayants-droit (Family) */}
+            {activeTab === 'family' && (
+                <BeneficiaryManager 
+                    agentId={agent?.id} 
+                    themeColor={themeColor} 
+                />
             )}
 
             {/* Tab: Contact */}
@@ -625,16 +752,23 @@ const AgentForm = ({ onSubmit, isLoading, themeColor, services, agents }: { onSu
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-in fade-in slide-in-from-bottom-4 duration-300">
                     <div className="col-span-2 space-y-2">
                         <label className="text-xs font-bold text-slate-500 uppercase">Adresse de résidence</label>
-                        <input name="address" className="input-field" placeholder="Quartier, Ville..." />
+                        <input name="address" defaultValue={agent?.address} className="input-field" placeholder="Quartier, Ville..." />
                     </div>
 
                     <div className="space-y-2">
                         <label className="text-xs font-bold text-slate-500 uppercase">Email Professionnel</label>
-                        <input name="email" type="email" required className="input-field" placeholder="nom@hopital.com" />
+                        <input name="email" type="email" defaultValue={agent?.email} required className="input-field" placeholder="nom@hopital.com" />
                     </div>
                     <div className="space-y-2">
                         <label className="text-xs font-bold text-slate-500 uppercase">Téléphone Personnel</label>
-                        <input name="telephone" required className="input-field" placeholder="+237 ..." />
+                        <div className="flex gap-2">
+                            <input name="telephone" required defaultValue={agent?.telephone} className="input-field flex-1" placeholder="+237 ..." />
+                            <label className="flex items-center gap-2 px-3 bg-slate-800 rounded-xl border border-slate-700 cursor-pointer hover:border-emerald-500/50 transition-colors">
+                                <input name="isWhatsAppCompatible" type="checkbox" defaultChecked={agent ? agent.isWhatsAppCompatible : true} className="w-4 h-4 rounded border-slate-700 bg-slate-900 text-emerald-500 focus:ring-emerald-500" />
+                                <Smartphone size={16} className="text-emerald-500" />
+                                <span className="text-[10px] font-bold text-slate-400 uppercase">WhatsApp</span>
+                            </label>
+                        </div>
                     </div>
 
                     <div className="col-span-2 border-t border-slate-800 pt-6 mt-2">
@@ -645,11 +779,11 @@ const AgentForm = ({ onSubmit, isLoading, themeColor, services, agents }: { onSu
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                             <div className="space-y-2">
                                 <label className="text-xs font-bold text-slate-500 uppercase">Nom du contact</label>
-                                <input name="emergencyContactName" className="input-field" />
+                                <input name="emergencyContactName" defaultValue={agent?.emergencyContactName} className="input-field" />
                             </div>
                             <div className="space-y-2">
                                 <label className="text-xs font-bold text-slate-500 uppercase">Téléphone d'urgence</label>
-                                <input name="emergencyContactPhone" className="input-field" />
+                                <input name="emergencyContactPhone" defaultValue={agent?.emergencyContactPhone} className="input-field" />
                             </div>
                         </div>
                     </div>
@@ -666,7 +800,7 @@ const AgentForm = ({ onSubmit, isLoading, themeColor, services, agents }: { onSu
                         `bg-${themeColor}`
                     )}
                 >
-                    {isLoading ? 'Enregistrement...' : 'Créer le Dossier Agent'}
+                    {isLoading ? 'Enregistrement...' : agent ? 'Mettre à jour le Dossier' : 'Créer le Dossier Agent'}
                 </button>
             </div>
 
@@ -687,5 +821,222 @@ const AgentForm = ({ onSubmit, isLoading, themeColor, services, agents }: { onSu
                 }
             `}</style>
         </form>
+    );
+}
+
+const BeneficiaryManager = ({ agentId, themeColor }: { agentId?: number, themeColor: string }) => {
+    const { user } = useAuth();
+    const queryClient = useQueryClient();
+    const [isAdding, setIsAdding] = useState(false);
+
+    const isAdminOrManager = user?.role === 'ADMIN' || user?.role === 'MANAGER' || user?.role === 'SUPER_ADMIN';
+
+    const { data: beneficiaries = [], isLoading } = useQuery({
+        queryKey: ['beneficiaries', agentId],
+        queryFn: () => agentId ? fetchBeneficiaries(agentId) : Promise.resolve([]),
+        enabled: !!agentId,
+    });
+
+    const addMutation = useMutation({
+        mutationFn: createBeneficiary,
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['beneficiaries', agentId] });
+            setIsAdding(false);
+        },
+    });
+
+    const removeMutation = useMutation({
+        mutationFn: deleteBeneficiary,
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['beneficiaries', agentId] });
+        },
+    });
+
+    const updateMutation = useMutation({
+        mutationFn: ({ id, data }: { id: number, data: any }) => updateBeneficiary(id, data),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['beneficiaries', agentId] });
+        },
+    });
+
+    if (!agentId) {
+        return (
+            <div className="p-12 text-center bg-slate-950/20 rounded-3xl border border-dashed border-slate-800">
+                <AlertCircle className="mx-auto text-amber-500 mb-4" size={48} />
+                <h3 className="text-white font-bold mb-2">Dossier Agent non enregistré</h3>
+                <p className="text-slate-400 text-sm max-w-md mx-auto">
+                    Veuillez d'abord créer le dossier de l'agent avant de pouvoir ajouter des ayants-droit.
+                </p>
+            </div>
+        );
+    }
+
+    return (
+        <div className="space-y-6">
+            <div className="flex items-center justify-between">
+                <div>
+                    <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                        <Heart size={20} className="text-red-500" />
+                        Membres de la Famille
+                    </h3>
+                    <p className="text-sm text-slate-500">Liste des bénéficiaires rattachés à cet agent</p>
+                </div>
+                <button
+                    onClick={() => setIsAdding(true)}
+                    className={cn(
+                        "flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold text-white transition-all hover:scale-105",
+                        `bg-${themeColor}`
+                    )}
+                >
+                    <Plus size={16} />
+                    Ajouter un membre
+                </button>
+            </div>
+
+            {isLoading ? (
+                <div className="p-12 flex justify-center"><Loader2 className="animate-spin text-slate-500" /></div>
+            ) : beneficiaries.length === 0 ? (
+                <div className="p-12 text-center bg-slate-950/20 rounded-3xl border border-dashed border-slate-800">
+                    <Baby className="mx-auto text-slate-700 mb-4" size={48} />
+                    <p className="text-slate-500">Aucun ayant-droit enregistré</p>
+                </div>
+            ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {beneficiaries.map((b) => (
+                        <div key={b.id} className="p-4 bg-slate-900 border border-slate-800 rounded-2xl flex items-center justify-between group">
+                            <div className="flex items-center gap-4">
+                                <div className={cn(
+                                    "w-12 h-12 rounded-xl flex items-center justify-center",
+                                    b.status === 'APPROVED' ? "bg-emerald-500/10 text-emerald-500" :
+                                    b.status === 'REJECTED' ? "bg-red-500/10 text-red-500" :
+                                    "bg-yellow-500/10 text-yellow-500"
+                                )}>
+                                    <Users size={24} />
+                                </div>
+                                <div>
+                                    <p className="font-bold text-white flex items-center gap-2">
+                                        {b.firstName} {b.lastName}
+                                        {b.status === 'PENDING' && <span className="text-[9px] uppercase tracking-wider bg-yellow-500/20 text-yellow-400 px-1.5 py-0.5 rounded flex items-center gap-1"><Clock size={10}/> En attente</span>}
+                                        {b.status === 'APPROVED' && <span className="text-[9px] uppercase tracking-wider bg-emerald-500/20 text-emerald-400 px-1.5 py-0.5 rounded flex items-center gap-1"><CheckCircle size={10}/> Approuvé</span>}
+                                        {b.status === 'REJECTED' && <span className="text-[9px] uppercase tracking-wider bg-red-500/20 text-red-400 px-1.5 py-0.5 rounded flex items-center gap-1"><XCircle size={10}/> Rejeté</span>}
+                                    </p>
+                                    <div className="flex items-center gap-2 text-xs mt-1">
+                                        <span className={cn(
+                                            "px-2 py-0.5 rounded-full font-bold uppercase",
+                                            b.relationship === 'CONJOINT' ? "bg-pink-500/10 text-pink-500" :
+                                            b.relationship === 'ENFANT' ? "bg-blue-500/10 text-blue-500" :
+                                            "bg-slate-500/10 text-slate-500"
+                                        )}>
+                                            {b.relationship}
+                                        </span>
+                                        <span className="text-slate-500">•</span>
+                                        <span className="text-slate-400">{b.dateOfBirth || 'Date inconnue'}</span>
+                                    </div>
+                                    {b.proofDocumentUrl && (
+                                        <a href={b.proofDocumentUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 mt-2">
+                                            <FileText size={12} /> Voir le justificatif
+                                        </a>
+                                    )}
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-all">
+                                {isAdminOrManager && b.status === 'PENDING' && (
+                                    <>
+                                        <button
+                                            onClick={() => updateMutation.mutate({ id: b.id, data: { status: 'APPROVED' } })}
+                                            className="p-2 text-emerald-500 hover:bg-emerald-500/10 rounded-lg transition-all"
+                                            title="Approuver"
+                                        >
+                                            <CheckCircle size={16} />
+                                        </button>
+                                        <button
+                                            onClick={() => updateMutation.mutate({ id: b.id, data: { status: 'REJECTED' } })}
+                                            className="p-2 text-amber-500 hover:bg-amber-500/10 rounded-lg transition-all"
+                                            title="Rejeter"
+                                        >
+                                            <XCircle size={16} />
+                                        </button>
+                                    </>
+                                )}
+                                <button
+                                    onClick={() => removeMutation.mutate(b.id)}
+                                    className="p-2 text-slate-600 hover:text-red-500 hover:bg-red-500/10 rounded-lg transition-all"
+                                    title="Supprimer"
+                                >
+                                    <Trash2 size={16} />
+                                </button>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            )}
+
+            {isAdding && (
+                <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+                    <div className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-lg overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200">
+                        <div className="p-6 border-b border-slate-800 flex justify-between items-center">
+                            <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                                <Plus size={20} className={cn(`text-${themeColor}`)} />
+                                Nouvel Ayant-droit
+                            </h3>
+                            <button onClick={() => setIsAdding(false)} className="text-slate-500 hover:text-white"><X /></button>
+                        </div>
+                        <form onSubmit={(e) => {
+                            e.preventDefault();
+                            const formData = new FormData(e.currentTarget);
+                            const data = Object.fromEntries(formData.entries());
+                            addMutation.mutate({ ...data, agentId } as any);
+                        }} className="p-6 space-y-4">
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="space-y-2">
+                                    <label className="text-xs font-bold text-slate-500 uppercase">Nom</label>
+                                    <input name="lastName" required className="input-field" />
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="text-xs font-bold text-slate-500 uppercase">Prénom</label>
+                                    <input name="firstName" required className="input-field" />
+                                </div>
+                            </div>
+                            <div className="space-y-2">
+                                <label className="text-xs font-bold text-slate-500 uppercase">Lien de parenté</label>
+                                <select name="relationship" className="input-field">
+                                    <option value="CONJOINT">Conjoint(e)</option>
+                                    <option value="ENFANT">Enfant</option>
+                                    <option value="PARENT">Parent</option>
+                                    <option value="TUTEUR">Tuteur / Pupille</option>
+                                    <option value="AUTRE">Autre</option>
+                                </select>
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="space-y-2">
+                                    <label className="text-xs font-bold text-slate-500 uppercase">Date de naissance</label>
+                                    <input name="dateOfBirth" type="date" className="input-field" />
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="text-xs font-bold text-slate-500 uppercase">Sexe</label>
+                                    <select name="gender" className="input-field">
+                                        <option value="M">Masculin</option>
+                                        <option value="F">Féminin</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div className="space-y-2 col-span-2 mt-4 bg-slate-950/30 p-4 rounded-xl border border-slate-800">
+                                <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-2">
+                                    <FileText size={14} /> Pièce Justificative (Obligatoire pour validation)
+                                </label>
+                                <p className="text-xs text-slate-400 mb-2">Veuillez insérer un lien vers l'acte de naissance, de mariage ou un justificatif officiel. Sans cette pièce, le service RH ne pourra pas valider ce dossier.</p>
+                                <input name="proofDocumentUrl" className="input-field" placeholder="ex: https://drive.google.com/doc..." />
+                            </div>
+                            <div className="pt-4 flex justify-end gap-3">
+                                <button type="button" onClick={() => setIsAdding(false)} className="px-6 py-2 rounded-xl font-bold text-slate-400 hover:text-white transition-colors">Annuler</button>
+                                <button type="submit" disabled={addMutation.isPending} className={cn("px-8 py-2 rounded-xl font-bold text-white transition-all hover:scale-105", `bg-${themeColor}`)}>
+                                    {addMutation.isPending ? 'Ajout...' : 'Ajouter'}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+        </div>
     );
 }

@@ -12,13 +12,15 @@ export interface Shift {
     agent?: any;
 }
 
-export const fetchShifts = async (startDate: Date, endDate: Date): Promise<Shift[]> => {
+export const fetchShifts = async (startDate: Date, endDate: Date, facilityId?: number, serviceId?: number): Promise<Shift[]> => {
     try {
-        console.log(`Fetching shifts from ${startDate} to ${endDate}`);
+        console.log(`Fetching shifts from ${startDate} to ${endDate} for facility ${facilityId || 'GHT'}`);
         const response = await axios.get('/api/planning/shifts', {
             params: {
                 start: startDate.toISOString(),
-                end: endDate.toISOString()
+                end: endDate.toISOString(),
+                facilityId: facilityId || undefined,
+                serviceId: serviceId || undefined
             }
         });
 
@@ -70,5 +72,25 @@ export const fetchReplacements = async (start: string, end: string, competency?:
 
 export const assignReplacement = async (data: { agentId: number, start: string, end: string, postId: string }): Promise<any> => {
     const response = await axios.post('/api/planning/assign-replacement', data);
+    return response.data;
+};
+
+export const updateShift = async (id: string, data: { start: string, end: string }): Promise<Shift> => {
+    const response = await axios.patch(`/api/planning/shifts/${id}`, data);
+    return response.data;
+};
+
+export const fetchShiftApplications = async (): Promise<any[]> => {
+    const response = await axios.get('/api/planning/shift-applications');
+    return response.data;
+};
+
+export const approveGhtApplication = async (id: string | number): Promise<any> => {
+    const response = await axios.post(`/api/planning/shift-applications/${id}/approve`);
+    return response.data;
+};
+
+export const rejectGhtApplication = async (id: string | number): Promise<any> => {
+    const response = await axios.post(`/api/planning/shift-applications/${id}/reject`);
     return response.data;
 };

@@ -172,6 +172,22 @@ let AuthService = class AuthService {
             },
         };
     }
+    async loginWithProSanteConnect(rpps, userinfo) {
+        const agent = await this.agentRepository.findOne({
+            where: [
+                { matricule: rpps },
+                { nir: rpps }
+            ],
+            relations: ['dbRole']
+        });
+        if (!agent) {
+            throw new common_1.UnauthorizedException(`Aucun compte rattaché au RPPS ${rpps}. Accès refusé selon la norme Ségur.`);
+        }
+        if (agent.status !== agent_entity_1.UserStatus.ACTIVE) {
+            throw new common_1.UnauthorizedException('Compte désactivé');
+        }
+        return this.login(agent);
+    }
 };
 exports.AuthService = AuthService;
 exports.AuthService = AuthService = __decorate([

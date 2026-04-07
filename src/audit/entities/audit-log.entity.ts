@@ -3,6 +3,7 @@ import { Agent } from '../../agents/entities/agent.entity';
 
 export enum AuditAction {
     CREATE = 'CREATE',
+    READ = 'READ',
     UPDATE = 'UPDATE',
     DELETE = 'DELETE',
     VALIDATE = 'VALIDATE',
@@ -14,6 +15,10 @@ export enum AuditEntityType {
     SHIFT = 'SHIFT',
     LEAVE = 'LEAVE',
     PLANNING = 'PLANNING',
+    AGENT = 'AGENT',
+    CONTRACT = 'CONTRACT',
+    PAYROLL = 'PAYROLL',
+    DOCUMENT = 'DOCUMENT',
 }
 
 @Entity()

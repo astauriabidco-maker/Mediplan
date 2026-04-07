@@ -27,10 +27,13 @@ let AgentsController = class AgentsController {
     }
     create(req, createAgentDto) {
         const tenantId = req.user.tenantId;
-        return this.agentsService.create({ ...createAgentDto, tenantId });
+        const actorId = req.user.userId;
+        return this.agentsService.create({ ...createAgentDto, tenantId }, actorId);
     }
-    findAll(req) {
-        const tenantId = req.user.tenantId;
+    findAll(req, queryTenantId) {
+        const tenantId = (req.user.role === 'SUPER_ADMIN' && queryTenantId)
+            ? queryTenantId
+            : req.user.tenantId;
         return this.agentsService.findAll(tenantId);
     }
     getMyTeam(req) {
@@ -38,17 +41,24 @@ let AgentsController = class AgentsController {
         const agentId = req.user.userId;
         return this.agentsService.getMyTeam(agentId, tenantId);
     }
-    findOne(req, id) {
-        const tenantId = req.user.tenantId;
-        return this.agentsService.findOne(+id, tenantId);
+    findOne(req, id, queryTenantId) {
+        const tenantId = (req.user.role === 'SUPER_ADMIN' && queryTenantId)
+            ? queryTenantId
+            : req.user.tenantId;
+        const actorId = req.user.userId;
+        return this.agentsService.findOne(+id, tenantId, actorId);
     }
-    update(req, id, updateAgentDto) {
-        const tenantId = req.user.tenantId;
-        return this.agentsService.update(+id, updateAgentDto, tenantId);
+    update(req, id, updateAgentDto, queryTenantId) {
+        const tenantId = (req.user.role === 'SUPER_ADMIN' && queryTenantId)
+            ? queryTenantId
+            : req.user.tenantId;
+        const actorId = req.user.userId;
+        return this.agentsService.update(+id, updateAgentDto, tenantId, actorId);
     }
     remove(req, id) {
         const tenantId = req.user.tenantId;
-        return this.agentsService.remove(+id, tenantId);
+        const actorId = req.user.userId;
+        return this.agentsService.remove(+id, tenantId, actorId);
     }
 };
 exports.AgentsController = AgentsController;
@@ -65,8 +75,9 @@ __decorate([
     (0, common_1.Get)(),
     (0, permissions_decorator_1.Permissions)('agents:read'),
     __param(0, (0, common_1.Request)()),
+    __param(1, (0, common_1.Query)('tenantId')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Object]),
+    __metadata("design:paramtypes", [Object, String]),
     __metadata("design:returntype", void 0)
 ], AgentsController.prototype, "findAll", null);
 __decorate([
@@ -82,8 +93,9 @@ __decorate([
     (0, permissions_decorator_1.Permissions)('agents:read'),
     __param(0, (0, common_1.Request)()),
     __param(1, (0, common_1.Param)('id')),
+    __param(2, (0, common_1.Query)('tenantId')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Object, String]),
+    __metadata("design:paramtypes", [Object, String, String]),
     __metadata("design:returntype", void 0)
 ], AgentsController.prototype, "findOne", null);
 __decorate([
@@ -92,8 +104,9 @@ __decorate([
     __param(0, (0, common_1.Request)()),
     __param(1, (0, common_1.Param)('id')),
     __param(2, (0, common_1.Body)()),
+    __param(3, (0, common_1.Query)('tenantId')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Object, String, update_agent_dto_1.UpdateAgentDto]),
+    __metadata("design:paramtypes", [Object, String, update_agent_dto_1.UpdateAgentDto, String]),
     __metadata("design:returntype", void 0)
 ], AgentsController.prototype, "update", null);
 __decorate([

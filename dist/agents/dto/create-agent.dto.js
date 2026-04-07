@@ -47,6 +47,14 @@ class CreateAgentDto {
     email;
     matricule;
     telephone;
+    isWhatsAppCompatible;
+    niu;
+    cnpsNumber;
+    idType;
+    idNumber;
+    idExpiryDate;
+    mobileMoneyProvider;
+    mobileMoneyNumber;
     password;
     hospitalServiceId;
     managerId;
@@ -223,6 +231,46 @@ __decorate([
     (0, class_validator_1.IsPhoneNumber)(),
     __metadata("design:type", String)
 ], CreateAgentDto.prototype, "telephone", void 0);
+__decorate([
+    (0, class_validator_1.IsBoolean)(),
+    (0, class_validator_1.IsOptional)(),
+    __metadata("design:type", Boolean)
+], CreateAgentDto.prototype, "isWhatsAppCompatible", void 0);
+__decorate([
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.IsOptional)(),
+    __metadata("design:type", String)
+], CreateAgentDto.prototype, "niu", void 0);
+__decorate([
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.IsOptional)(),
+    __metadata("design:type", String)
+], CreateAgentDto.prototype, "cnpsNumber", void 0);
+__decorate([
+    (0, class_validator_1.IsEnum)(agent_entity_1.IdType),
+    (0, class_validator_1.IsOptional)(),
+    __metadata("design:type", String)
+], CreateAgentDto.prototype, "idType", void 0);
+__decorate([
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.IsOptional)(),
+    __metadata("design:type", String)
+], CreateAgentDto.prototype, "idNumber", void 0);
+__decorate([
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.IsOptional)(),
+    __metadata("design:type", String)
+], CreateAgentDto.prototype, "idExpiryDate", void 0);
+__decorate([
+    (0, class_validator_1.IsEnum)(agent_entity_1.MobileMoneyProvider),
+    (0, class_validator_1.IsOptional)(),
+    __metadata("design:type", String)
+], CreateAgentDto.prototype, "mobileMoneyProvider", void 0);
+__decorate([
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.IsOptional)(),
+    __metadata("design:type", String)
+], CreateAgentDto.prototype, "mobileMoneyNumber", void 0);
 __decorate([
     (0, class_validator_1.IsNumber)(),
     (0, class_validator_1.IsOptional)(),

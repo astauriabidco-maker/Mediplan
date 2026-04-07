@@ -37,6 +37,9 @@ let Leave = class Leave {
     agent;
     approvedBy;
     rejectionReason;
+    aiRecommendation;
+    aiScore;
+    isAutoRejected;
 };
 exports.Leave = Leave;
 __decorate([
@@ -87,6 +90,18 @@ __decorate([
     (0, typeorm_1.Column)({ nullable: true }),
     __metadata("design:type", String)
 ], Leave.prototype, "rejectionReason", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ nullable: true, type: 'text' }),
+    __metadata("design:type", String)
+], Leave.prototype, "aiRecommendation", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ nullable: true, type: 'int' }),
+    __metadata("design:type", Number)
+], Leave.prototype, "aiScore", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ default: false }),
+    __metadata("design:type", Boolean)
+], Leave.prototype, "isAutoRejected", void 0);
 exports.Leave = Leave = __decorate([
     (0, typeorm_1.Entity)()
 ], Leave);

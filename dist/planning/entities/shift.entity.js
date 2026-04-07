@@ -12,6 +12,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.Shift = exports.ShiftType = void 0;
 const typeorm_1 = require("typeorm");
 const agent_entity_1 = require("../../agents/entities/agent.entity");
+const facility_entity_1 = require("../../agents/entities/facility.entity");
 var ShiftType;
 (function (ShiftType) {
     ShiftType["WORK"] = "WORK";
@@ -26,6 +27,8 @@ let Shift = class Shift {
     type;
     status;
     tenantId;
+    facilityId;
+    facility;
     agent;
 };
 exports.Shift = Shift;
@@ -61,6 +64,15 @@ __decorate([
     (0, typeorm_1.Column)({ default: 'DEFAULT_TENANT' }),
     __metadata("design:type", String)
 ], Shift.prototype, "tenantId", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ nullable: true }),
+    __metadata("design:type", Number)
+], Shift.prototype, "facilityId", void 0);
+__decorate([
+    (0, typeorm_1.ManyToOne)(() => facility_entity_1.Facility, { nullable: true }),
+    (0, typeorm_1.JoinColumn)({ name: 'facilityId' }),
+    __metadata("design:type", facility_entity_1.Facility)
+], Shift.prototype, "facility", void 0);
 __decorate([
     (0, typeorm_1.ManyToOne)(() => agent_entity_1.Agent, (agent) => agent.shifts),
     __metadata("design:type", agent_entity_1.Agent)

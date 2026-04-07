@@ -1,5 +1,14 @@
 import { Entity, PrimaryGeneratedColumn, Column, OneToMany, ManyToOne, JoinColumn, CreateDateColumn, UpdateDateColumn } from 'typeorm';
 import { Agent } from './agent.entity';
+import { Facility } from './facility.entity';
+
+export enum RiskLevel {
+    NONE = 'NONE',
+    LOW = 'LOW',         // Ex: Prime d'éloignement / Zone difficile
+    MEDIUM = 'MEDIUM',   // Ex: Urgences, gardes intensives
+    HIGH = 'HIGH',       // Ex: Réanimation, forte exposition
+    CRITICAL = 'CRITICAL'// Ex: Maladie contagieuse (Ebola/Covid)
+}
 
 @Entity()
 export class HospitalService {
@@ -17,6 +26,13 @@ export class HospitalService {
 
     @Column({ default: 'DEFAULT_TENANT' })
     tenantId: string;
+
+    @Column({ nullable: true })
+    facilityId: number;
+
+    @ManyToOne(() => Facility, { nullable: true })
+    @JoinColumn({ name: 'facilityId' })
+    facility: Facility;
 
     // HIÉRARCHIE DE SERVICES
     @ManyToOne(() => HospitalService, (service) => service.subServices, { nullable: true, onDelete: 'SET NULL' })
@@ -75,6 +91,22 @@ export class HospitalService {
     // MÉTADONNÉES
     @Column({ default: true })
     isActive: boolean;
+
+    @Column({ default: true })
+    is24x7: boolean;
+
+    @Column({ nullable: true })
+    bedCapacity: number;
+
+    @Column({ nullable: true })
+    contactNumber: string;
+
+    @Column({
+        type: 'enum',
+        enum: RiskLevel,
+        default: RiskLevel.NONE
+    })
+    riskLevel: RiskLevel;
 
     @CreateDateColumn()
     createdAt: Date;

@@ -11,11 +11,12 @@ import {
     fetchHospitalServicesStats,
     HospitalService
 } from '../api/hospital-services.api';
+import { facilityApi, Facility } from '../api/facility.api';
 import { fetchAgents, updateAgent, Agent } from '../api/agents.api';
 import { useAuth } from '../store/useAuth';
 import {
     Layers, Plus, Search, Trash2, Edit2, X, Loader2, Users, TrendingUp, Building2,
-    ChevronRight, ChevronDown, UserCircle, UserCheck, Stethoscope, Clipboard
+    ChevronRight, ChevronDown, UserCircle, UserCheck, Stethoscope, Clipboard, Clock, BedDouble, Phone, AlertTriangle
 } from 'lucide-react';
 import { useAppConfig } from '../store/useAppConfig';
 import { clsx, type ClassValue } from 'clsx';
@@ -25,6 +26,21 @@ function cn(...inputs: ClassValue[]) {
     return twMerge(clsx(inputs));
 }
 
+const renderRiskBadge = (level?: string | null) => {
+    if (!level || level === 'NONE') return null;
+    let config = { bg: 'bg-slate-500/10', text: 'text-slate-400', border: 'border-slate-500/20', label: 'Inconnu' };
+    if (level === 'LOW') config = { bg: 'bg-yellow-500/10', text: 'text-yellow-400', border: 'border-yellow-500/20', label: 'Faible' };
+    if (level === 'MEDIUM') config = { bg: 'bg-orange-500/10', text: 'text-orange-400', border: 'border-orange-500/20', label: 'Moyen' };
+    if (level === 'HIGH') config = { bg: 'bg-red-500/10', text: 'text-red-400', border: 'border-red-500/20', label: 'Élevé' };
+    if (level === 'CRITICAL') config = { bg: 'bg-purple-500/10', text: 'text-purple-400', border: 'border-purple-500/20', label: 'Critique' };
+
+    return (
+        <span className={cn("text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded flex items-center gap-1 border", config.bg, config.text, config.border)}>
+            <AlertTriangle size={10} /> Risque: {config.label}
+        </span>
+    );
+};
+
 export const HospitalServicesPage = () => {
     const { themeColor } = useAppConfig();
     const queryClient = useQueryClient();
@@ -33,6 +49,7 @@ export const HospitalServicesPage = () => {
     const [parentServiceForNew, setParentServiceForNew] = useState<number | null>(null);
     const [search, setSearch] = useState('');
     const [viewMode, setViewMode] = useState<'tree' | 'grid'>('tree');
+    const [selectedFacilityId, setSelectedFacilityId] = useState<string>('all');
 
     const { data: servicesTree = [], isLoading: isTreeLoading } = useQuery({
         queryKey: ['hospital-services-tree'],
@@ -52,6 +69,11 @@ export const HospitalServicesPage = () => {
     const { data: stats } = useQuery({
         queryKey: ['hospital-services-stats'],
         queryFn: fetchHospitalServicesStats,
+    });
+
+    const { data: facilities = [] } = useQuery({
+        queryKey: ['facilities'],
+        queryFn: facilityApi.getAll,
     });
 
     const createMutation = useMutation({
@@ -107,10 +129,12 @@ export const HospitalServicesPage = () => {
         },
     });
 
-    const filteredServices = services.filter(service =>
-        service.name.toLowerCase().includes(search.toLowerCase()) ||
-        (service.code?.toLowerCase() || '').includes(search.toLowerCase())
-    );
+    const filteredServices = services.filter(service => {
+        const matchesSearch = service.name.toLowerCase().includes(search.toLowerCase()) ||
+            (service.code?.toLowerCase() || '').includes(search.toLowerCase());
+        const matchesFacility = selectedFacilityId === 'all' || service.facilityId === Number(selectedFacilityId);
+        return matchesSearch && matchesFacility;
+    });
 
     const handleEdit = (service: HospitalService) => {
         setEditingService(service);
@@ -148,7 +172,17 @@ export const HospitalServicesPage = () => {
                     <h1 className="text-3xl font-bold text-white tracking-tight">Services Hospitaliers</h1>
                     <p className="text-slate-400">Gérez la hiérarchie des services, sous-services et responsables.</p>
                 </div>
-                <div className="flex gap-3">
+                <div className="flex flex-wrap gap-3">
+                    <select
+                        value={selectedFacilityId}
+                        onChange={(e) => setSelectedFacilityId(e.target.value)}
+                        className="px-4 py-2 bg-slate-800 text-white rounded-lg border border-slate-700 outline-none focus:border-blue-500 transition-colors"
+                    >
+                        <option value="all">Tous les sites</option>
+                        {facilities.map(f => (
+                            <option key={f.id} value={f.id}>{f.name}</option>
+                        ))}
+                    </select>
                     <button
                         onClick={() => setViewMode(viewMode === 'tree' ? 'grid' : 'tree')}
                         className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg transition-colors"
@@ -272,6 +306,7 @@ export const HospitalServicesPage = () => {
                     parentServiceId={parentServiceForNew}
                     agents={agents}
                     services={services}
+                    facilities={facilities}
                     onClose={handleCloseModal}
                     onSubmit={async (data: any) => {
                         if (editingService) {
@@ -376,8 +411,27 @@ const ServiceTreeView = ({
                                             {service.code}
                                         </span>
                                     )}
-                                    <span className="text-xs text-slate-500">
-                                        {service.agents?.length || 0} agent{(service.agents?.length || 0) > 1 ? 's' : ''}
+                                    {service.is24x7 === false && (
+                                        <span className="text-[10px] uppercase font-bold tracking-wider bg-orange-500/10 text-orange-400 px-2 py-0.5 rounded-full flex items-center gap-1 border border-orange-500/20">
+                                            <Clock size={10} /> Jour
+                                        </span>
+                                    )}
+                                    {renderRiskBadge(service.riskLevel)}
+                                    {service.contactNumber && (
+                                        <span className="text-[10px] font-mono tracking-wider bg-slate-800 text-slate-300 px-2 py-0.5 rounded flex items-center gap-1 border border-slate-700">
+                                            <Phone size={10} /> {service.contactNumber}
+                                        </span>
+                                    )}
+                                    <span className="text-xs text-slate-500 flex items-center gap-2">
+                                        <span>{service.agents?.length || 0} agent{(service.agents?.length || 0) > 1 ? 's' : ''}</span>
+                                        {service.bedCapacity ? (
+                                            <>
+                                                <span className="w-1 h-1 rounded-full bg-slate-700" />
+                                                <span className="flex items-center gap-1 text-blue-400">
+                                                    <BedDouble size={12} /> {service.bedCapacity} lit{service.bedCapacity > 1 ? 's' : ''}
+                                                </span>
+                                            </>
+                                        ) : null}
                                     </span>
                                 </div>
 
@@ -476,21 +530,57 @@ const ServiceCard = ({
                 </div>
             </div>
 
-            <h3 className="text-lg font-bold text-white mb-1">{service.name}</h3>
+            <h3 className="text-lg font-bold text-white mb-1 flex justify-between items-start">
+                {service.name}
+                {service.is24x7 === false && (
+                    <span className="text-[9px] uppercase font-bold tracking-wider bg-orange-500/10 text-orange-400 px-2 py-1 rounded-full flex items-center gap-1 border border-orange-500/20">
+                        <Clock size={10} /> Jour
+                    </span>
+                )}
+            </h3>
             {service.code && (
                 <p className="text-xs font-mono text-slate-500 mb-3 bg-slate-800 px-2 py-1 rounded inline-block">
                     {service.code}
                 </p>
             )}
+            {service.facility && (
+                <div className="flex items-center gap-1.5 mb-3">
+                    <Building2 size={12} className="text-blue-400" />
+                    <span className="text-[10px] font-bold text-blue-400 uppercase tracking-wider">{service.facility.name}</span>
+                </div>
+            )}
+            {service.riskLevel && service.riskLevel !== 'NONE' && (
+                <div className="mb-3 w-fit">
+                    {renderRiskBadge(service.riskLevel)}
+                </div>
+            )}
+            {service.contactNumber && (
+                <div className="flex items-center gap-2 mb-3">
+                    <span className="px-2 py-1 bg-slate-800/80 rounded-md border border-slate-700 text-xs font-mono text-slate-300 flex items-center gap-1.5 w-fit">
+                        <Phone size={12} className="text-slate-500" />
+                        {service.contactNumber}
+                    </span>
+                </div>
+            )}
             {service.description && (
                 <p className="text-sm text-slate-400 mb-4 line-clamp-2">{service.description}</p>
             )}
 
-            <div className="flex items-center gap-2 text-sm">
-                <Users size={16} className="text-slate-500" />
-                <span className="text-slate-400">
-                    {serviceStats?.agentCount || 0} agent{(serviceStats?.agentCount || 0) > 1 ? 's' : ''}
-                </span>
+            <div className="flex items-center gap-4 mt-4 bg-slate-950/50 p-2 rounded-lg border border-slate-800">
+                <div className="flex items-center gap-2 text-sm flex-1">
+                    <Users size={16} className="text-slate-500" />
+                    <span className="text-slate-400 font-medium">
+                        {serviceStats?.agentCount || 0} agent{(serviceStats?.agentCount || 0) > 1 ? 's' : ''}
+                    </span>
+                </div>
+                {service.bedCapacity ? (
+                    <div className="flex items-center gap-2 text-sm flex-1 border-l border-slate-800 pl-4">
+                        <BedDouble size={16} className="text-blue-500" />
+                        <span className="text-blue-400 font-medium">
+                            {service.bedCapacity} lit{service.bedCapacity > 1 ? 's' : ''}
+                        </span>
+                    </div>
+                ) : null}
             </div>
         </div>
     );
@@ -502,6 +592,7 @@ const ServiceModal = ({
     parentServiceId,
     agents,
     services,
+    facilities,
     onClose,
     onSubmit,
     isLoading,
@@ -511,6 +602,7 @@ const ServiceModal = ({
     parentServiceId: number | null;
     agents: Agent[];
     services: HospitalService[];
+    facilities: Facility[];
     onClose: () => void;
     onSubmit: (data: Partial<HospitalService>) => void;
     isLoading: boolean;
@@ -546,6 +638,11 @@ const ServiceModal = ({
         if (data.nursingManagerId) data.nursingManagerId = Number(data.nursingManagerId);
         if (data.maxAgents) data.maxAgents = Number(data.maxAgents);
         if (data.minAgents) data.minAgents = Number(data.minAgents);
+        if (data.facilityId) data.facilityId = Number(data.facilityId);
+        if (data.bedCapacity) data.bedCapacity = Number(data.bedCapacity);
+
+        // Convert boolean switch
+        data.is24x7 = data.is24x7 === 'on';
 
         // Append temporarily selected agents if creating
         if (!service) {
@@ -650,6 +747,31 @@ const ServiceModal = ({
                                             </div>
                                         )}
 
+                                        <div className="space-y-2">
+                                            <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-2">
+                                                <Building2 size={14} />
+                                                Site / Établissement
+                                            </label>
+                                            <select name="facilityId" className="input-field" defaultValue={service?.facilityId || ''}>
+                                                <option value="">-- Sélectionner un site --</option>
+                                                {facilities.map(f => (
+                                                    <option key={f.id} value={f.id}>{f.name}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+
+                                        <div className="space-y-2">
+                                            <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-2">
+                                                <Phone size={14} /> Ligne Directe / Mobile (Garde)
+                                            </label>
+                                            <input
+                                                name="contactNumber"
+                                                defaultValue={service?.contactNumber || ''}
+                                                className="input-field"
+                                                placeholder="ex: +237 600 00 00 00"
+                                            />
+                                        </div>
+
                                         <div className="col-span-2 space-y-2">
                                             <label className="text-xs font-bold text-slate-500 uppercase">Description</label>
                                             <textarea
@@ -658,6 +780,44 @@ const ServiceModal = ({
                                                 className="input-field min-h-[80px] resize-none"
                                                 placeholder="Description du service, spécialités, équipements..."
                                             />
+                                        </div>
+
+                                        <div className="space-y-2 col-span-2">
+                                            <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-2">
+                                                <AlertTriangle size={14} className="text-yellow-500" /> 
+                                                Niveau de Risque (Prime)
+                                            </label>
+                                            <select name="riskLevel" className="input-field" defaultValue={service?.riskLevel || 'NONE'}>
+                                                <option value="NONE">Aucun Risque (0)</option>
+                                                <option value="LOW">Faible (Éloignement / Zone Difficile)</option>
+                                                <option value="MEDIUM">Moyen (Urgences / Gardes Intensives)</option>
+                                                <option value="HIGH">Élevé (Réanimation / Surmenage)</option>
+                                                <option value="CRITICAL">Critique (Maladie Contagieuse / Ebola)</option>
+                                            </select>
+                                            <p className="text-xs text-slate-500">Utilisé pour calculer automatiquement les primes de risque des agents associés lors de la paie.</p>
+                                        </div>
+
+                                        <div className="col-span-2 space-y-2 bg-slate-800/30 p-4 rounded-xl border border-slate-800">
+                                            <label className="flex items-center gap-3 cursor-pointer">
+                                                <div className="relative">
+                                                    <input 
+                                                        type="checkbox" 
+                                                        name="is24x7" 
+                                                        className="sr-only peer" 
+                                                        defaultChecked={service ? service.is24x7 : true}
+                                                    />
+                                                    <div className="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-500"></div>
+                                                </div>
+                                                <div>
+                                                    <div className="text-sm font-bold text-white flex items-center gap-2">
+                                                        <Clock size={16} className="text-purple-400" />
+                                                        Fonctionne en H24 (Urgences, Réa, Gardes)
+                                                    </div>
+                                                    <div className="text-xs text-slate-400">
+                                                        Décochez si ce service ferme la nuit (ex: Administration, Consultation).
+                                                    </div>
+                                                </div>
+                                            </label>
                                         </div>
 
                                         {/* Section Personnel Rapide */}
@@ -760,7 +920,7 @@ const ServiceModal = ({
                                                 name="minAgents"
                                                 type="number"
                                                 min="0"
-                                                defaultValue={service?.minAgents}
+                                                defaultValue={service?.minAgents ?? ''}
                                                 className="input-field"
                                                 placeholder="ex: 5"
                                             />
@@ -773,11 +933,26 @@ const ServiceModal = ({
                                                 name="maxAgents"
                                                 type="number"
                                                 min="0"
-                                                defaultValue={service?.maxAgents}
+                                                defaultValue={service?.maxAgents ?? ''}
                                                 className="input-field"
                                                 placeholder="ex: 20"
                                             />
                                             <p className="text-xs text-slate-500">Quota maximum autorisé</p>
+                                        </div>
+
+                                        <div className="space-y-2 col-span-1 md:col-span-2">
+                                            <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-2">
+                                                <BedDouble size={14} /> Capacité d'accueil (Lits)
+                                            </label>
+                                            <input
+                                                name="bedCapacity"
+                                                type="number"
+                                                min="0"
+                                                defaultValue={service?.bedCapacity ?? ''}
+                                                className="input-field"
+                                                placeholder="ex: 15"
+                                            />
+                                            <p className="text-xs text-slate-500">Nombre de lits d'hospitalisation disponibles dans ce service</p>
                                         </div>
                                     </div>
                                 )}

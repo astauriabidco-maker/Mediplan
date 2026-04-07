@@ -51,14 +51,20 @@ const typeorm_1 = require("@nestjs/typeorm");
 const typeorm_2 = require("typeorm");
 const agent_entity_1 = require("./agents/entities/agent.entity");
 const shift_entity_1 = require("./planning/entities/shift.entity");
+const competency_entity_1 = require("./competencies/entities/competency.entity");
+const agent_competency_entity_1 = require("./competencies/entities/agent-competency.entity");
 const bcrypt = __importStar(require("bcrypt"));
 const date_fns_1 = require("date-fns");
 let SeedService = class SeedService {
     agentRepository;
     shiftRepository;
-    constructor(agentRepository, shiftRepository) {
+    competencyRepository;
+    agentCompRepository;
+    constructor(agentRepository, shiftRepository, competencyRepository, agentCompRepository) {
         this.agentRepository = agentRepository;
         this.shiftRepository = shiftRepository;
+        this.competencyRepository = competencyRepository;
+        this.agentCompRepository = agentCompRepository;
     }
     async seed() {
         try {
@@ -69,6 +75,15 @@ let SeedService = class SeedService {
         }
         const hashedPassword = await bcrypt.hash('password123', 10);
         const agentsData = [
+            {
+                nom: 'Admin Mediplan',
+                email: 'admin@mediplan.com',
+                matricule: 'PLATFORM-001',
+                telephone: '+33600000000',
+                password: hashedPassword,
+                tenantId: 'PLATFORM',
+                role: agent_entity_1.UserRole.SUPER_ADMIN,
+            },
             {
                 nom: 'Jean Dupont',
                 email: 'jean.dupont@mediplan.com',
@@ -99,8 +114,23 @@ let SeedService = class SeedService {
             const agent = this.agentRepository.create(agentData);
             savedAgents.push(await this.agentRepository.save(agent));
         }
-        const [jean, samuel, marie] = savedAgents;
+        const [admin, jean, samuel, marie] = savedAgents;
+        const comp1 = await this.competencyRepository.save({ name: 'AFGSU Niveau 2', category: 'Urgences' });
+        const comp2 = await this.competencyRepository.save({ name: 'Manipulation Respirateur', category: 'Réanimation' });
+        const comp3 = await this.competencyRepository.save({ name: 'Gestion Incendie', category: 'Sécurité' });
         const today = new Date();
+        const futureDate = new Date();
+        futureDate.setFullYear(today.getFullYear() + 2);
+        const pastDate = new Date();
+        pastDate.setMonth(today.getMonth() - 2);
+        const soonDate = new Date();
+        soonDate.setDate(today.getDate() + 15);
+        await this.agentCompRepository.save([
+            { agent: jean, competency: comp1, level: 3, expirationDate: futureDate },
+            { agent: jean, competency: comp2, level: 5, expirationDate: pastDate },
+            { agent: samuel, competency: comp1, level: 2, expirationDate: soonDate },
+            { agent: marie, competency: comp3, level: 4, expirationDate: futureDate }
+        ]);
         const startOfCurrentWeek = (0, date_fns_1.startOfWeek)(today, { weekStartsOn: 1 });
         const shift由于 = [];
         for (let i = 0; i < 5; i++) {
@@ -134,7 +164,11 @@ exports.SeedService = SeedService = __decorate([
     (0, common_1.Injectable)(),
     __param(0, (0, typeorm_1.InjectRepository)(agent_entity_1.Agent)),
     __param(1, (0, typeorm_1.InjectRepository)(shift_entity_1.Shift)),
+    __param(2, (0, typeorm_1.InjectRepository)(competency_entity_1.Competency)),
+    __param(3, (0, typeorm_1.InjectRepository)(agent_competency_entity_1.AgentCompetency)),
     __metadata("design:paramtypes", [typeorm_2.Repository,
+        typeorm_2.Repository,
+        typeorm_2.Repository,
         typeorm_2.Repository])
 ], SeedService);
 //# sourceMappingURL=seed.service.js.map

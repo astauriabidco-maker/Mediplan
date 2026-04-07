@@ -19,8 +19,8 @@ export declare class PlanningController {
         reason?: string;
     }): Promise<Leave>;
     getReplacements(req: any, start: string, end: string, competency: string): Promise<Agent[]>;
-    getLeaves(req: any): Promise<Leave[]>;
-    getShifts(req: any, start: string, end: string): Promise<import("./entities/shift.entity").Shift[]>;
+    getLeaves(req: any, queryTenantId?: string): Promise<Leave[]>;
+    getShifts(req: any, start: string, end: string, facilityId?: string, serviceId?: string, queryTenantId?: string): Promise<import("./entities/shift.entity").Shift[]>;
     validate(req: any, agentId: number, start: string, end: string): Promise<{
         isValid: boolean;
     }>;
@@ -39,10 +39,17 @@ export declare class PlanningController {
         start: string;
         end: string;
     }): Promise<import("./entities/shift.entity").Shift[]>;
-    assignReplacement(body: {
+    getShiftApplications(req: any): Promise<import("./entities/shift-application.entity").ShiftApplication[]>;
+    approveGhtApplication(req: any, id: string): Promise<import("./entities/shift-application.entity").ShiftApplication>;
+    rejectGhtApplication(req: any, id: string): Promise<import("./entities/shift-application.entity").ShiftApplication>;
+    assignReplacement(req: any, data: {
         agentId: number;
         start: string;
         end: string;
         postId: string;
-    }, req: any): Promise<import("./entities/shift.entity").Shift>;
+    }): Promise<import("./entities/shift.entity").Shift>;
+    updateShift(req: any, id: string, data: {
+        start: string;
+        end: string;
+    }): Promise<import("./entities/shift.entity").Shift>;
 }

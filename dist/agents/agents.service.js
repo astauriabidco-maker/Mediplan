@@ -51,27 +51,33 @@ const typeorm_1 = require("@nestjs/typeorm");
 const typeorm_2 = require("typeorm");
 const agent_entity_1 = require("./entities/agent.entity");
 const bcrypt = __importStar(require("bcrypt"));
+const audit_service_1 = require("../audit/audit.service");
+const audit_log_entity_1 = require("../audit/entities/audit-log.entity");
 let AgentsService = class AgentsService {
     agentRepository;
-    constructor(agentRepository) {
+    auditService;
+    constructor(agentRepository, auditService) {
         this.agentRepository = agentRepository;
+        this.auditService = auditService;
     }
-    async create(createAgentDto) {
+    async create(createAgentDto, actorId) {
         const hashedPassword = await bcrypt.hash(createAgentDto.password || 'password123', 10);
         const agent = this.agentRepository.create({
             ...createAgentDto,
             password: hashedPassword,
         });
-        return this.agentRepository.save(agent);
+        const savedAgent = await this.agentRepository.save(agent);
+        await this.auditService.log(createAgentDto.tenantId, actorId, audit_log_entity_1.AuditAction.CREATE, audit_log_entity_1.AuditEntityType.AGENT, savedAgent.id.toString(), { email: savedAgent.email });
+        return savedAgent;
     }
     findAll(tenantId) {
         return this.agentRepository.find({
             where: { tenantId },
-            relations: ['hospitalService', 'manager'],
+            relations: ['hospitalService', 'manager', 'grade'],
             order: { nom: 'ASC' },
         });
     }
-    async findOne(id, tenantId) {
+    async findOne(id, tenantId, actorId) {
         const agent = await this.agentRepository.findOne({
             where: { id, tenantId },
             relations: ['contracts', 'agentCompetencies', 'agentCompetencies.competency', 'hospitalService', 'manager'],
@@ -79,19 +85,24 @@ let AgentsService = class AgentsService {
         if (!agent) {
             throw new common_1.NotFoundException(`Agent #${id} not found`);
         }
+        await this.auditService.log(tenantId, actorId, audit_log_entity_1.AuditAction.READ, audit_log_entity_1.AuditEntityType.AGENT, id.toString(), { accessedBy: actorId });
         return agent;
     }
-    async update(id, updateAgentDto, tenantId) {
-        const agent = await this.findOne(id, tenantId);
+    async update(id, updateAgentDto, tenantId, actorId) {
+        const agent = await this.findOne(id, tenantId, actorId);
         if (updateAgentDto.password) {
             updateAgentDto.password = await bcrypt.hash(updateAgentDto.password, 10);
         }
         Object.assign(agent, updateAgentDto);
-        return this.agentRepository.save(agent);
+        const updatedAgent = await this.agentRepository.save(agent);
+        await this.auditService.log(tenantId, actorId, audit_log_entity_1.AuditAction.UPDATE, audit_log_entity_1.AuditEntityType.AGENT, id.toString(), { updatedFields: Object.keys(updateAgentDto) });
+        return updatedAgent;
     }
-    async remove(id, tenantId) {
-        const agent = await this.findOne(id, tenantId);
-        return this.agentRepository.remove(agent);
+    async remove(id, tenantId, actorId) {
+        const agent = await this.findOne(id, tenantId, actorId);
+        const result = await this.agentRepository.remove(agent);
+        await this.auditService.log(tenantId, actorId, audit_log_entity_1.AuditAction.DELETE, audit_log_entity_1.AuditEntityType.AGENT, id.toString(), { email: agent.email });
+        return result;
     }
     async getMyTeam(agentId, tenantId) {
         const currentAgent = await this.agentRepository.findOne({
@@ -113,6 +124,7 @@ exports.AgentsService = AgentsService;
 exports.AgentsService = AgentsService = __decorate([
     (0, common_1.Injectable)(),
     __param(0, (0, typeorm_1.InjectRepository)(agent_entity_1.Agent)),
-    __metadata("design:paramtypes", [typeorm_2.Repository])
+    __metadata("design:paramtypes", [typeorm_2.Repository,
+        audit_service_1.AuditService])
 ], AgentsService);
 //# sourceMappingURL=agents.service.js.map

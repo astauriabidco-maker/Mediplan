@@ -23,13 +23,24 @@ import { MailModule } from './mail/mail.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { AuditModule } from './audit/audit.module';
 import { AuditLog } from './audit/entities/audit-log.entity';
+import { Competency } from './competencies/entities/competency.entity';
+import { AgentCompetency } from './competencies/entities/agent-competency.entity';
 import { WhatsappModule } from './whatsapp/whatsapp.module';
+import { FhirModule } from './fhir/fhir.module';
+import { PayrollModule } from './payroll/payroll.module';
+import { ScheduleModule } from '@nestjs/schedule';
+import { DocumentsModule } from './documents/documents.module';
+import { EventsModule } from './events/events.module';
+import { GhtModule } from './ght/ght.module';
+import { FacilityModule } from './facility/facility.module';
+import { SettingsModule } from './settings/settings.module';
 
 @Module({
   imports: [
     ServeStaticModule.forRoot({
       rootPath: join(process.cwd(), 'public'),
     }),
+    ScheduleModule.forRoot(),
     LocaleConfigModule,
     ConfigModule.forRoot({
       isGlobal: true,
@@ -56,7 +67,7 @@ import { WhatsappModule } from './whatsapp/whatsapp.module';
         synchronize: true, // Auto-create tables (dev only)
       }),
     }),
-    TypeOrmModule.forFeature([Agent, Shift, AuditLog]),
+    TypeOrmModule.forFeature([Agent, Shift, AuditLog, Competency, AgentCompetency]),
     AgentsModule,
     CompetenciesModule,
     UiModule,
@@ -70,6 +81,13 @@ import { WhatsappModule } from './whatsapp/whatsapp.module';
     NotificationsModule,
     AuditModule,
     WhatsappModule,
+    FhirModule,
+    PayrollModule,
+    DocumentsModule,
+    EventsModule,
+    GhtModule,
+    FacilityModule,
+    SettingsModule,
   ],
   controllers: [AppController],
   providers: [AppService, SeedService],

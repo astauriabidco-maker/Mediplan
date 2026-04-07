@@ -31,6 +31,13 @@ export class LeavesController {
         );
     }
 
+    @Get('balances')
+    @Permissions('leaves:read')
+    async getMyBalances(@Request() req: any, @Query('year') year?: string) {
+        const targetYear = year ? parseInt(year, 10) : new Date().getFullYear();
+        return this.leavesService.getMyBalances(req.user.tenant, req.user.sub, targetYear);
+    }
+
     @Get('my-leaves')
     @Permissions('leaves:read')
     async getMyLeaves(@Request() req: any) {

@@ -22,4 +22,7 @@ export declare class Leave {
     agent: Agent;
     approvedBy: Agent;
     rejectionReason: string;
+    aiRecommendation: string;
+    aiScore: number;
+    isAutoRejected: boolean;
 }

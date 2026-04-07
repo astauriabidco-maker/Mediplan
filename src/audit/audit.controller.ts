@@ -1,4 +1,4 @@
-import { Controller, Get, UseGuards, Request } from '@nestjs/common';
+import { Controller, Get, UseGuards, Request, Query } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Permissions } from '../auth/permissions.decorator';
@@ -11,7 +11,10 @@ export class AuditController {
 
     @Get()
     @Permissions('planning:read') // Reusing planning read permission for history
-    async getLogs(@Request() req: any) {
-        return this.auditService.getLogs(req.user.tenantId);
+    async getLogs(@Request() req: any, @Query('tenantId') queryTenantId?: string) {
+        const tenantId = (req.user.role === 'SUPER_ADMIN' && queryTenantId) 
+            ? queryTenantId 
+            : req.user.tenantId;
+        return this.auditService.getLogs(tenantId);
     }
 }

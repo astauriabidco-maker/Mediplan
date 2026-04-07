@@ -23,20 +23,35 @@ const agent_entity_1 = require("../agents/entities/agent.entity");
 const work_policy_entity_1 = require("./entities/work-policy.entity");
 const audit_service_1 = require("../audit/audit.service");
 const audit_log_entity_1 = require("../audit/entities/audit-log.entity");
+const shift_application_entity_1 = require("./entities/shift-application.entity");
+const whatsapp_service_1 = require("../whatsapp/whatsapp.service");
+const events_gateway_1 = require("../events/events.gateway");
+const documents_service_1 = require("../documents/documents.service");
+const settings_service_1 = require("../settings/settings.service");
 let PlanningService = class PlanningService {
     shiftRepository;
     leaveRepository;
     agentRepository;
     workPolicyRepository;
+    shiftApplicationRepository;
     localeRules;
     auditService;
-    constructor(shiftRepository, leaveRepository, agentRepository, workPolicyRepository, localeRules, auditService) {
+    whatsappService;
+    eventsGateway;
+    documentsService;
+    settingsService;
+    constructor(shiftRepository, leaveRepository, agentRepository, workPolicyRepository, shiftApplicationRepository, localeRules, auditService, whatsappService, eventsGateway, documentsService, settingsService) {
         this.shiftRepository = shiftRepository;
         this.leaveRepository = leaveRepository;
         this.agentRepository = agentRepository;
         this.workPolicyRepository = workPolicyRepository;
+        this.shiftApplicationRepository = shiftApplicationRepository;
         this.localeRules = localeRules;
         this.auditService = auditService;
+        this.whatsappService = whatsappService;
+        this.eventsGateway = eventsGateway;
+        this.documentsService = documentsService;
+        this.settingsService = settingsService;
     }
     async validateShift(tenantId, agentId, start, end) {
         const constraints = await this.getConstraintsForAgent(tenantId, agentId);
@@ -44,7 +59,7 @@ let PlanningService = class PlanningService {
         if (!isAvailable) {
             return false;
         }
-        const weeklyLimit = this.localeRules.getWeeklyWorkLimit();
+        const weeklyLimit = await this.settingsService.getSetting(tenantId, null, 'planning.weekly_hours_limit') || 48;
         const currentWeeklyHours = await this.getWeeklyHours(tenantId, agentId, start);
         const shiftDuration = (end.getTime() - start.getTime()) / (1000 * 60 * 60);
         if (currentWeeklyHours + shiftDuration > weeklyLimit) {
@@ -63,6 +78,15 @@ let PlanningService = class PlanningService {
             if (restTime < constraints.restHoursAfterGuard) {
                 return false;
             }
+        }
+        const overlappingShift = await this.shiftRepository.createQueryBuilder('shift')
+            .where('shift.tenantId = :tenantId', { tenantId })
+            .andWhere('shift.agentId = :agentId', { agentId })
+            .andWhere('shift.start < :end', { end })
+            .andWhere('shift.end > :start', { start })
+            .getOne();
+        if (overlappingShift) {
+            return false;
         }
         return true;
     }
@@ -147,13 +171,20 @@ let PlanningService = class PlanningService {
             return total + duration;
         }, 0);
     }
-    async getShifts(tenantId, start, end) {
-        return this.shiftRepository.createQueryBuilder('shift')
+    async getShifts(tenantId, start, end, facilityId, serviceId) {
+        const query = this.shiftRepository.createQueryBuilder('shift')
             .leftJoinAndSelect('shift.agent', 'agent')
+            .leftJoinAndSelect('shift.facility', 'facility')
             .where('shift.tenantId = :tenantId', { tenantId: tenantId || 'DEFAULT_TENANT' })
             .andWhere('shift.start >= :start', { start })
-            .andWhere('shift.end <= :end', { end })
-            .getMany();
+            .andWhere('shift.end <= :end', { end });
+        if (facilityId) {
+            query.andWhere('shift.facilityId = :facilityId', { facilityId });
+        }
+        if (serviceId) {
+            query.andWhere('agent.hospitalServiceId = :serviceId', { serviceId });
+        }
+        return query.getMany();
     }
     async assignReplacement(tenantId, agentId, start, end, postId) {
         const isValid = await this.validateShift(tenantId, agentId, start, end);
@@ -172,6 +203,81 @@ let PlanningService = class PlanningService {
         await this.auditService.log(tenantId, agentId, audit_log_entity_1.AuditAction.CREATE, audit_log_entity_1.AuditEntityType.SHIFT, savedShift.id, { postId, start, end });
         return savedShift;
     }
+    async updateShift(tenantId, shiftId, start, end, actorId) {
+        const shift = await this.shiftRepository.findOne({
+            where: { id: Number(shiftId), tenantId },
+            relations: ['agent']
+        });
+        if (!shift) {
+            throw new Error('Shift not found');
+        }
+        if (shift.agent) {
+            const isValid = await this.validateShift(tenantId, shift.agent.id, start, end);
+            if (!isValid) {
+                throw new Error('Agent cannot work this schedule (validation failed).');
+            }
+        }
+        shift.start = start;
+        shift.end = end;
+        const savedShift = await this.shiftRepository.save(shift);
+        await this.auditService.log(tenantId, actorId, audit_log_entity_1.AuditAction.UPDATE, audit_log_entity_1.AuditEntityType.SHIFT, savedShift.id, { start, end });
+        return savedShift;
+    }
+    async getShiftApplications(tenantId) {
+        return this.shiftApplicationRepository.find({
+            where: { tenantId },
+            relations: ['agent', 'shift', 'shift.facility'],
+            order: { appliedAt: 'DESC' }
+        });
+    }
+    async approveGhtApplication(tenantId, applicationId, actorId) {
+        const application = await this.shiftApplicationRepository.findOne({
+            where: { id: Number(applicationId), tenantId },
+            relations: ['shift', 'agent']
+        });
+        if (!application)
+            throw new Error('Application not found');
+        if (application.status !== shift_application_entity_1.ShiftApplicationStatus.PENDING_GHT_APPROVAL)
+            throw new Error('Application is not pending GHT approval');
+        application.status = shift_application_entity_1.ShiftApplicationStatus.ACCEPTED;
+        const shift = await this.shiftRepository.findOne({ where: { id: application.shift.id, tenantId } });
+        if (shift) {
+            shift.status = 'PUBLISHED';
+            await this.shiftRepository.save(shift);
+        }
+        await this.shiftApplicationRepository.save(application);
+        if (application.agent.telephone) {
+            this.whatsappService.sendMessage(application.agent.telephone, `✅ Bonne nouvelle ! Le Superviseur RH GHT a validé votre déplacement pour la garde #${application.shift.id}. La garde vous est officiellement affectée.`).catch(() => { });
+        }
+        await this.auditService.log(tenantId, actorId, audit_log_entity_1.AuditAction.UPDATE, audit_log_entity_1.AuditEntityType.SHIFT, shift?.id || 0, { action: 'approve_ght' });
+        this.eventsGateway.broadcastPlanningUpdate();
+        await this.documentsService.generateContractForShift(tenantId, shift, application.agent);
+        return application;
+    }
+    async rejectGhtApplication(tenantId, applicationId, actorId) {
+        const application = await this.shiftApplicationRepository.findOne({
+            where: { id: Number(applicationId), tenantId },
+            relations: ['shift', 'agent']
+        });
+        if (!application)
+            throw new Error('Application not found');
+        if (application.status !== shift_application_entity_1.ShiftApplicationStatus.PENDING_GHT_APPROVAL)
+            throw new Error('Application is not pending GHT approval');
+        application.status = shift_application_entity_1.ShiftApplicationStatus.REJECTED;
+        const shift = await this.shiftRepository.findOne({ where: { id: application.shift.id, tenantId } });
+        if (shift) {
+            shift.agent = null;
+            shift.status = 'BROADCASTED_GHT';
+            await this.shiftRepository.save(shift);
+        }
+        await this.shiftApplicationRepository.save(application);
+        if (application.agent.telephone) {
+            this.whatsappService.sendMessage(application.agent.telephone, `❌ Désolé, le Superviseur RH GHT a refusé la validation de votre déplacement pour la garde #${application.shift.id}.`).catch(() => { });
+        }
+        await this.auditService.log(tenantId, actorId, audit_log_entity_1.AuditAction.UPDATE, audit_log_entity_1.AuditEntityType.SHIFT, shift?.id || 0, { action: 'reject_ght' });
+        this.eventsGateway.broadcastPlanningUpdate();
+        return application;
+    }
 };
 exports.PlanningService = PlanningService;
 exports.PlanningService = PlanningService = __decorate([
@@ -180,10 +286,16 @@ exports.PlanningService = PlanningService = __decorate([
     __param(1, (0, typeorm_1.InjectRepository)(leave_entity_1.Leave)),
     __param(2, (0, typeorm_1.InjectRepository)(agent_entity_1.Agent)),
     __param(3, (0, typeorm_1.InjectRepository)(work_policy_entity_1.WorkPolicy)),
-    __param(4, (0, common_1.Inject)(locale_module_1.LOCALE_RULES)),
+    __param(4, (0, typeorm_1.InjectRepository)(shift_application_entity_1.ShiftApplication)),
+    __param(5, (0, common_1.Inject)(locale_module_1.LOCALE_RULES)),
     __metadata("design:paramtypes", [typeorm_2.Repository,
         typeorm_2.Repository,
         typeorm_2.Repository,
-        typeorm_2.Repository, Object, audit_service_1.AuditService])
+        typeorm_2.Repository,
+        typeorm_2.Repository, Object, audit_service_1.AuditService,
+        whatsapp_service_1.WhatsappService,
+        events_gateway_1.EventsGateway,
+        documents_service_1.DocumentsService,
+        settings_service_1.SettingsService])
 ], PlanningService);
 //# sourceMappingURL=planning.service.js.map

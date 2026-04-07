@@ -2,7 +2,10 @@ import React, { useEffect } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Layout } from './components/Layout'
-import { DashboardPage, SettingsPage, PaymentPage, QvtPage, SyncPage, HierarchyPage } from './pages/PlaceholderPages'
+import { DashboardPage, QvtPage, SyncPage } from './pages/PlaceholderPages'
+import { HierarchyPage } from './pages/HierarchyPage'
+import SettingsPage from './pages/Settings'
+import { PayrollPage } from './pages/PayrollPage'
 import { HospitalServicesPage } from './pages/HospitalServicesPage'
 import { AgentsPage } from './pages/AgentsPage'
 import { CompetenciesPage } from './pages/CompetenciesPage'
@@ -11,6 +14,7 @@ import { LeavesPage } from './pages/LeavesPage'
 import { LoginPage } from './pages/LoginPage'
 import { WhatsAppInbox } from './pages/WhatsAppInbox'
 import { AcceptInvitePage } from './pages/AcceptInvitePage'
+import { GedPage } from './pages/GedPage'
 import { useAppConfig } from './store/useAppConfig'
 import { useAuth } from './store/useAuth'
 
@@ -62,7 +66,8 @@ function App() {
                                 <Route path="hierarchy" element={<HierarchyPage />} />
                             </Route>
                             <Route path="competencies" element={<CompetenciesPage />} />
-                            <Route path="payment" element={<PaymentPage />} />
+                            <Route path="payment" element={<PayrollPage />} />
+                            <Route path="ged" element={<GedPage />} />
                             <Route path="qvt" element={<QvtPage />} />
                             <Route path="sync" element={<SyncPage />} />
                             <Route path="whatsapp-inbox" element={<WhatsAppInbox />} />

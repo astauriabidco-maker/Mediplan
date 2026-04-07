@@ -6,8 +6,11 @@ import { Leave } from '../../planning/entities/leave.entity';
 import { HospitalService } from './hospital-service.entity';
 import { Role } from '../../auth/entities/role.entity';
 import { Grade } from './grade.entity';
+import { Facility } from './facility.entity';
+import { AgentBeneficiary } from './beneficiary.entity';
 
 export enum UserRole {
+    SUPER_ADMIN = 'SUPER_ADMIN',
     ADMIN = 'ADMIN',
     MANAGER = 'MANAGER',
     AGENT = 'AGENT',
@@ -17,6 +20,22 @@ export enum UserStatus {
     INVITED = 'INVITED',
     ACTIVE = 'ACTIVE',
     DISABLED = 'DISABLED',
+}
+
+export enum IdType {
+    CNI = 'CNI',
+    PASSPORT = 'PASSPORT',
+    ATTESTATION = 'ATTESTATION',
+    RESIDENCE_PERMIT = 'RESIDENCE_PERMIT',
+}
+
+export enum MobileMoneyProvider {
+    ORANGE_MONEY = 'ORANGE_MONEY',
+    MTN_MOMO = 'MTN_MOMO',
+    WAVE = 'WAVE',
+    MOOV_MONEY = 'MOOV_MONEY',
+    AIRTEL_MONEY = 'AIRTEL_MONEY',
+    TELMA_MONEY = 'TELMA_MONEY',
 }
 
 @Entity()
@@ -149,6 +168,39 @@ export class Agent {
     @Column({ nullable: true, select: false })
     bic: string;
 
+    // LOCALIZATION AFRICA
+    @Column({ nullable: true })
+    niu: string; // Numéro d'Identifiant Unique
+
+    @Column({ nullable: true })
+    cnpsNumber: string; // Prévoyance Sociale
+
+    @Column({
+        type: 'enum',
+        enum: IdType,
+        nullable: true
+    })
+    idType: IdType;
+
+    @Column({ nullable: true })
+    idNumber: string;
+
+    @Column({ nullable: true })
+    idExpiryDate: string;
+
+    @Column({
+        type: 'enum',
+        enum: MobileMoneyProvider,
+        nullable: true
+    })
+    mobileMoneyProvider: MobileMoneyProvider;
+
+    @Column({ nullable: true })
+    mobileMoneyNumber: string;
+
+    @Column({ default: true })
+    isWhatsAppCompatible: boolean;
+
     // Formation
     @Column({ nullable: true })
     mainDiploma: string;
@@ -178,6 +230,13 @@ export class Agent {
     @Column({ default: 'DEFAULT_TENANT' })
     tenantId: string;
 
+    @Column({ nullable: true })
+    facilityId: number;
+
+    @ManyToOne(() => Facility, { nullable: true })
+    @JoinColumn({ name: 'facilityId' })
+    facility: Facility;
+
     // Hierarchy (N+1)
     @Column({ nullable: true })
     managerId: number;
@@ -200,5 +259,8 @@ export class Agent {
 
     @OneToMany(() => Leave, (leave) => leave.agent)
     leaves: Leave[];
+
+    @OneToMany(() => AgentBeneficiary, (beneficiary) => beneficiary.agent)
+    beneficiaries: AgentBeneficiary[];
 }
 

@@ -4,6 +4,8 @@ import { Repository } from 'typeorm';
 import { Agent, UserRole } from '../agents/entities/agent.entity';
 import { HospitalService } from '../agents/entities/hospital-service.entity';
 import { Leave, LeaveStatus, LeaveType } from '../planning/entities/leave.entity';
+import { Competency } from '../competencies/entities/competency.entity';
+import { AgentCompetency } from '../competencies/entities/agent-competency.entity';
 import * as bcrypt from 'bcrypt';
 import { addDays, subDays } from 'date-fns';
 
@@ -16,6 +18,10 @@ export class SeedController {
         private serviceRepo: Repository<HospitalService>,
         @InjectRepository(Leave)
         private leaveRepo: Repository<Leave>,
+        @InjectRepository(Competency)
+        private compRepo: Repository<Competency>,
+        @InjectRepository(AgentCompetency)
+        private agentCompRepo: Repository<AgentCompetency>,
     ) { }
 
     @Post('hgd')
@@ -360,6 +366,44 @@ export class SeedController {
                     reason: data.reason,
                     approvedBy: data.status !== LeaveStatus.PENDING ? agent.manager || undefined : undefined,
                     rejectionReason: data.rejection
+                });
+            }
+        }
+
+        // --- SEED COMPETENCIES ---
+        const compDesc = [
+            { name: 'AFGSU Niveau 1', category: 'Urgences' },
+            { name: 'AFGSU Niveau 2', category: 'Urgences' },
+            { name: 'Manipulation Respirateur', category: 'Réanimation' },
+            { name: 'Gestion Incendie', category: 'Sécurité' },
+            { name: 'Prélèvement Sanguin', category: 'Soins' }
+        ];
+
+        const savedComps = [];
+        for (const comp of compDesc) {
+            savedComps.push(await this.compRepo.save(comp));
+        }
+
+        // Assign to a few agents
+        for (const agent of allAgents) {
+            // Randomize assigning 1 to 3 competencies to everyone
+            const numComps = Math.floor(Math.random() * 3) + 1;
+            const shuffledComps = savedComps.sort(() => 0.5 - Math.random());
+            for (let i = 0; i < numComps; i++) {
+                const comp = shuffledComps[i];
+                const level = Math.floor(Math.random() * 5) + 1;
+                // Expiry: 60% valid, 20% expiring soon, 20% expired
+                const rand = Math.random();
+                const expiry = new Date();
+                if (rand < 0.6) expiry.setFullYear(expiry.getFullYear() + 1);
+                else if (rand < 0.8) expiry.setDate(expiry.getDate() + 15);
+                else expiry.setMonth(expiry.getMonth() - 2);
+
+                await this.agentCompRepo.save({
+                    agent,
+                    competency: comp,
+                    level,
+                    expirationDate: expiry
                 });
             }
         }

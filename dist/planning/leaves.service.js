@@ -17,17 +17,20 @@ const common_1 = require("@nestjs/common");
 const typeorm_1 = require("@nestjs/typeorm");
 const typeorm_2 = require("typeorm");
 const leave_entity_1 = require("./entities/leave.entity");
+const leave_balance_entity_1 = require("./entities/leave-balance.entity");
 const agent_entity_1 = require("../agents/entities/agent.entity");
 const notifications_service_1 = require("../notifications/notifications.service");
 const audit_service_1 = require("../audit/audit.service");
 const audit_log_entity_1 = require("../audit/entities/audit-log.entity");
 let LeavesService = class LeavesService {
     leavesRepository;
+    leaveBalanceRepository;
     agentRepository;
     notificationsService;
     auditService;
-    constructor(leavesRepository, agentRepository, notificationsService, auditService) {
+    constructor(leavesRepository, leaveBalanceRepository, agentRepository, notificationsService, auditService) {
         this.leavesRepository = leavesRepository;
+        this.leaveBalanceRepository = leaveBalanceRepository;
         this.agentRepository = agentRepository;
         this.notificationsService = notificationsService;
         this.auditService = auditService;
@@ -114,6 +117,25 @@ let LeavesService = class LeavesService {
             leave.rejectionReason = rejectionReason || 'No reason provided';
         }
         const savedLeave = await this.leavesRepository.save(leave);
+        if (status === leave_entity_1.LeaveStatus.APPROVED) {
+            const year = leave.start.getFullYear();
+            const daysToDebit = Math.ceil((leave.end.getTime() - leave.start.getTime()) / (1000 * 3600 * 24));
+            let balance = await this.leaveBalanceRepository.findOne({
+                where: { agent: { id: leave.agent.id }, type: leave.type, year, tenantId }
+            });
+            if (!balance) {
+                balance = this.leaveBalanceRepository.create({
+                    agent: leave.agent,
+                    type: leave.type,
+                    year,
+                    tenantId,
+                    allowance: 30,
+                    consumed: 0
+                });
+            }
+            balance.consumed += daysToDebit;
+            await this.leaveBalanceRepository.save(balance);
+        }
         await this.auditService.log(tenantId, managerId, status === leave_entity_1.LeaveStatus.APPROVED ? audit_log_entity_1.AuditAction.VALIDATE : audit_log_entity_1.AuditAction.REJECT, audit_log_entity_1.AuditEntityType.LEAVE, savedLeave.id, { status: savedLeave.status, reason: savedLeave.rejectionReason });
         await this.notificationsService.notifyLeaveProcessed(savedLeave.agent.id, {
             leaveId: savedLeave.id,
@@ -132,13 +154,37 @@ let LeavesService = class LeavesService {
             .getCount();
         return count === 0;
     }
+    async getMyBalances(tenantId, agentId, year) {
+        const agent = await this.agentRepository.findOneBy({ id: agentId, tenantId });
+        if (!agent)
+            throw new common_1.NotFoundException('Agent non trouvé');
+        let balances = await this.leaveBalanceRepository.find({
+            where: { tenantId, agent: { id: agentId }, year },
+            order: { type: 'ASC' }
+        });
+        if (!balances.find(b => b.type === leave_entity_1.LeaveType.CONGE_ANNUEL)) {
+            const defaultBalance = this.leaveBalanceRepository.create({
+                agent,
+                type: leave_entity_1.LeaveType.CONGE_ANNUEL,
+                year,
+                tenantId,
+                allowance: 30,
+                consumed: 0
+            });
+            await this.leaveBalanceRepository.save(defaultBalance);
+            balances.push(defaultBalance);
+        }
+        return balances;
+    }
 };
 exports.LeavesService = LeavesService;
 exports.LeavesService = LeavesService = __decorate([
     (0, common_1.Injectable)(),
     __param(0, (0, typeorm_1.InjectRepository)(leave_entity_1.Leave)),
-    __param(1, (0, typeorm_1.InjectRepository)(agent_entity_1.Agent)),
+    __param(1, (0, typeorm_1.InjectRepository)(leave_balance_entity_1.LeaveBalance)),
+    __param(2, (0, typeorm_1.InjectRepository)(agent_entity_1.Agent)),
     __metadata("design:paramtypes", [typeorm_2.Repository,
+        typeorm_2.Repository,
         typeorm_2.Repository,
         notifications_service_1.NotificationsService,
         audit_service_1.AuditService])

@@ -19,11 +19,23 @@ export class AuthController {
         return this.authService.login(user);
     }
 
+    @Post('sso/segur/callback')
+    async ssoSegurCallback(@Body() body: { rpps: string; userinfo?: any }) {
+        // En conditions réelles, ce endpoint recevrait un authorization_code 
+        // qu'il échangerait contre un id_token contenant les claims RPPS/Userinfo.
+        // Ici nous simulons la réception directe de l'identité vérifiée.
+        return this.authService.loginWithProSanteConnect(body.rpps, body.userinfo);
+    }
+
     @UseGuards(JwtAuthGuard, RolesGuard)
-    @Roles(UserRole.ADMIN, UserRole.MANAGER)
+    @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.MANAGER)
     @Post('invite')
-    async invite(@Body() body: { email: string; roleId: number }, @Request() req: any) {
-        return this.authService.inviteUser(body.email, body.roleId, req.user.tenantId);
+    async invite(@Body() body: { email: string; roleId: number; tenantId?: string }, @Request() req: any) {
+        // SUPER_ADMIN can assign to any GHT; regular admins are locked to their own tenant
+        const targetTenantId = (req.user.role === 'SUPER_ADMIN' && body.tenantId)
+            ? body.tenantId
+            : req.user.tenantId;
+        return this.authService.inviteUser(body.email, body.roleId, targetTenantId);
     }
 
     @Post('accept-invite')

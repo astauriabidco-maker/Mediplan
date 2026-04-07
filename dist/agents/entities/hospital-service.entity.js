@@ -9,15 +9,26 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.HospitalService = void 0;
+exports.HospitalService = exports.RiskLevel = void 0;
 const typeorm_1 = require("typeorm");
 const agent_entity_1 = require("./agent.entity");
+const facility_entity_1 = require("./facility.entity");
+var RiskLevel;
+(function (RiskLevel) {
+    RiskLevel["NONE"] = "NONE";
+    RiskLevel["LOW"] = "LOW";
+    RiskLevel["MEDIUM"] = "MEDIUM";
+    RiskLevel["HIGH"] = "HIGH";
+    RiskLevel["CRITICAL"] = "CRITICAL";
+})(RiskLevel || (exports.RiskLevel = RiskLevel = {}));
 let HospitalService = class HospitalService {
     id;
     name;
     code;
     description;
     tenantId;
+    facilityId;
+    facility;
     parentService;
     parentServiceId;
     subServices;
@@ -34,6 +45,10 @@ let HospitalService = class HospitalService {
     minAgents;
     agents;
     isActive;
+    is24x7;
+    bedCapacity;
+    contactNumber;
+    riskLevel;
     createdAt;
     updatedAt;
 };
@@ -58,6 +73,15 @@ __decorate([
     (0, typeorm_1.Column)({ default: 'DEFAULT_TENANT' }),
     __metadata("design:type", String)
 ], HospitalService.prototype, "tenantId", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ nullable: true }),
+    __metadata("design:type", Number)
+], HospitalService.prototype, "facilityId", void 0);
+__decorate([
+    (0, typeorm_1.ManyToOne)(() => facility_entity_1.Facility, { nullable: true }),
+    (0, typeorm_1.JoinColumn)({ name: 'facilityId' }),
+    __metadata("design:type", facility_entity_1.Facility)
+], HospitalService.prototype, "facility", void 0);
 __decorate([
     (0, typeorm_1.ManyToOne)(() => HospitalService, (service) => service.subServices, { nullable: true, onDelete: 'SET NULL' }),
     (0, typeorm_1.JoinColumn)({ name: 'parentServiceId' }),
@@ -127,6 +151,26 @@ __decorate([
     (0, typeorm_1.Column)({ default: true }),
     __metadata("design:type", Boolean)
 ], HospitalService.prototype, "isActive", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ default: true }),
+    __metadata("design:type", Boolean)
+], HospitalService.prototype, "is24x7", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ nullable: true }),
+    __metadata("design:type", Number)
+], HospitalService.prototype, "bedCapacity", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ nullable: true }),
+    __metadata("design:type", String)
+], HospitalService.prototype, "contactNumber", void 0);
+__decorate([
+    (0, typeorm_1.Column)({
+        type: 'enum',
+        enum: RiskLevel,
+        default: RiskLevel.NONE
+    }),
+    __metadata("design:type", String)
+], HospitalService.prototype, "riskLevel", void 0);
 __decorate([
     (0, typeorm_1.CreateDateColumn)(),
     __metadata("design:type", Date)

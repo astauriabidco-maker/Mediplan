@@ -31,8 +31,14 @@ let AuthController = class AuthController {
         }
         return this.authService.login(user);
     }
+    async ssoSegurCallback(body) {
+        return this.authService.loginWithProSanteConnect(body.rpps, body.userinfo);
+    }
     async invite(body, req) {
-        return this.authService.inviteUser(body.email, body.roleId, req.user.tenantId);
+        const targetTenantId = (req.user.role === 'SUPER_ADMIN' && body.tenantId)
+            ? body.tenantId
+            : req.user.tenantId;
+        return this.authService.inviteUser(body.email, body.roleId, targetTenantId);
     }
     async acceptInvite(body) {
         return this.authService.acceptInvite(body.token, body.password);
@@ -51,8 +57,15 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], AuthController.prototype, "login", null);
 __decorate([
+    (0, common_1.Post)('sso/segur/callback'),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", Promise)
+], AuthController.prototype, "ssoSegurCallback", null);
+__decorate([
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard, roles_guard_1.RolesGuard),
-    (0, roles_decorator_1.Roles)(agent_entity_1.UserRole.ADMIN, agent_entity_1.UserRole.MANAGER),
+    (0, roles_decorator_1.Roles)(agent_entity_1.UserRole.SUPER_ADMIN, agent_entity_1.UserRole.ADMIN, agent_entity_1.UserRole.MANAGER),
     (0, common_1.Post)('invite'),
     __param(0, (0, common_1.Body)()),
     __param(1, (0, common_1.Request)()),

@@ -74,7 +74,7 @@ const SidebarGroup = ({ icon: Icon, label, themeColor, children, activePaths }: 
 
 export const Layout = () => {
     const { region, themeColor } = useAppConfig()
-    const { user, logout } = useAuth()
+    const { user, logout, impersonatedTenantId, setImpersonatedTenantId } = useAuth()
     useNotifications()
 
     const handleLogout = () => {
@@ -82,7 +82,7 @@ export const Layout = () => {
         window.location.href = '/login'
     }
 
-    const isAdminOrManager = user?.role === 'ADMIN' || user?.role === 'MANAGER'
+    const isAdminOrManager = user?.role === 'SUPER_ADMIN' || user?.role === 'ADMIN' || user?.role === 'MANAGER'
     const hasPermission = (perm: string) => user?.permissions?.includes('*') || user?.permissions?.includes(perm) || isAdminOrManager
 
     return (
@@ -108,7 +108,8 @@ export const Layout = () => {
                     </SidebarGroup>
 
                     <SidebarItem to="/competencies" icon={Award} label="Compétences" themeColor={themeColor} />
-                    <SidebarItem to="/payment" icon={Smartphone} label="Paiements" themeColor={themeColor} />
+                    <SidebarItem to="/payment" icon={Smartphone} label="Facturation & Paies" themeColor={themeColor} />
+                    <SidebarItem to="/ged" icon={Layers} label="GED & Documents" themeColor={themeColor} />
                     <SidebarItem to="/qvt" icon={HeartPulse} label="Santé & QVT" themeColor={themeColor} />
                     <SidebarItem to="/sync" icon={Wifi} label="Synchronisation" themeColor={themeColor} />
                     <SidebarItem to="/whatsapp-inbox" icon={MessageSquare} label="Messages WhatsApp" themeColor={themeColor} />
@@ -147,6 +148,20 @@ export const Layout = () => {
                         <h2 className="text-lg font-semibold text-white uppercase tracking-wider">
                             SaaS Hospitalier
                         </h2>
+                        {impersonatedTenantId && (
+                            <div className="flex items-center gap-3 bg-red-500/20 border border-red-500/30 px-3 py-1.5 rounded-xl animate-pulse">
+                                <ShieldCheck size={16} className="text-red-400" />
+                                <span className="text-[10px] font-bold text-red-500 uppercase tracking-widest leading-none">
+                                    ADMIN: {impersonatedTenantId}
+                                </span>
+                                <button
+                                    onClick={() => setImpersonatedTenantId(null)}
+                                    className="px-2 py-0.5 bg-red-500 text-white text-[9px] font-black rounded hover:bg-red-600 transition"
+                                >
+                                    QUITTER
+                                </button>
+                            </div>
+                        )}
                     </div>
 
                     <div className="flex items-center gap-6">

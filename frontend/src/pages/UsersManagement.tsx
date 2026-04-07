@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { fetchAgents, inviteUser, updateAgent, Agent } from '../api/agents.api';
 import { fetchRoles, Role } from '../api/roles.api';
+import { fetchGhts, Ght } from '../api/ght.api';
 import { Plus, Search, Shield, UserPlus, Mail, Loader2, MoreVertical, Ban, ShieldCheck, X } from 'lucide-react';
 import { useAppConfig } from '../store/useAppConfig';
 import { clsx, type ClassValue } from 'clsx';
@@ -218,19 +219,29 @@ export const UsersManagement = () => {
 
 const InviteModal = ({ roles, onClose, onSuccess }: { roles: Role[], onClose: () => void, onSuccess: () => void }) => {
     const { themeColor } = useAppConfig();
+    const { user } = useAuth();
+    const isSuperAdmin = user?.role === 'SUPER_ADMIN';
     const [email, setEmail] = useState('');
     const [roleId, setRoleId] = useState<number | string>(roles[0]?.id || '');
+    const [selectedTenantId, setSelectedTenantId] = useState<string>('');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
 
+    const { data: ghts = [] } = useQuery({
+        queryKey: ['ghts'],
+        queryFn: fetchGhts,
+        enabled: isSuperAdmin
+    });
+
     const handleInvite = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!roleId) return setError('Veuillez choisir un rôle');
+        if (!roleId) return setError('Veuillez choisir un r\u00f4le');
+        if (isSuperAdmin && !selectedTenantId) return setError('Veuillez affecter \u00e0 un \u00e9tablissement');
 
         setLoading(true);
         setError('');
         try {
-            await inviteUser({ email, roleId: Number(roleId) });
+            await inviteUser({ email, roleId: Number(roleId), ...(isSuperAdmin && selectedTenantId ? { tenantId: selectedTenantId } : {}) });
             onSuccess();
         } catch (err: any) {
             setError(err.response?.data?.message || 'Erreur lors de l\'invitation');
@@ -279,6 +290,24 @@ const InviteModal = ({ roles, onClose, onSuccess }: { roles: Role[], onClose: ()
                             </p>
                         )}
                     </div>
+
+                    {isSuperAdmin && (
+                        <div className="space-y-2">
+                            <label className="text-xs font-bold text-slate-500 uppercase">Affectation GHT (\u00c9tablissement)</label>
+                            <select
+                                required
+                                value={selectedTenantId}
+                                onChange={(e) => setSelectedTenantId(e.target.value)}
+                                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white outline-none focus:border-blue-500 transition-colors text-sm"
+                            >
+                                <option value="">-- Choisir un \u00e9tablissement --</option>
+                                {ghts.filter((g: Ght) => g.isActive).map((g: Ght) => (
+                                    <option key={g.id} value={g.id}>{g.name} ({g.id})</option>
+                                ))}
+                            </select>
+                            <p className="text-[10px] text-blue-400 italic">En tant que Super Admin, vous affectez cet utilisateur \u00e0 un \u00e9tablissement sp\u00e9cifique.</p>
+                        </div>
+                    )}
 
                     {error && <p className="text-rose-500 text-xs px-1">{error}</p>}
 

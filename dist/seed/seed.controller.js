@@ -52,16 +52,22 @@ const typeorm_2 = require("typeorm");
 const agent_entity_1 = require("../agents/entities/agent.entity");
 const hospital_service_entity_1 = require("../agents/entities/hospital-service.entity");
 const leave_entity_1 = require("../planning/entities/leave.entity");
+const competency_entity_1 = require("../competencies/entities/competency.entity");
+const agent_competency_entity_1 = require("../competencies/entities/agent-competency.entity");
 const bcrypt = __importStar(require("bcrypt"));
 const date_fns_1 = require("date-fns");
 let SeedController = class SeedController {
     agentRepo;
     serviceRepo;
     leaveRepo;
-    constructor(agentRepo, serviceRepo, leaveRepo) {
+    compRepo;
+    agentCompRepo;
+    constructor(agentRepo, serviceRepo, leaveRepo, compRepo, agentCompRepo) {
         this.agentRepo = agentRepo;
         this.serviceRepo = serviceRepo;
         this.leaveRepo = leaveRepo;
+        this.compRepo = compRepo;
+        this.agentCompRepo = agentCompRepo;
     }
     async seedHGD() {
         const tenantId = 'HGD-DOUALA';
@@ -367,6 +373,39 @@ let SeedController = class SeedController {
                 });
             }
         }
+        const compDesc = [
+            { name: 'AFGSU Niveau 1', category: 'Urgences' },
+            { name: 'AFGSU Niveau 2', category: 'Urgences' },
+            { name: 'Manipulation Respirateur', category: 'Réanimation' },
+            { name: 'Gestion Incendie', category: 'Sécurité' },
+            { name: 'Prélèvement Sanguin', category: 'Soins' }
+        ];
+        const savedComps = [];
+        for (const comp of compDesc) {
+            savedComps.push(await this.compRepo.save(comp));
+        }
+        for (const agent of allAgents) {
+            const numComps = Math.floor(Math.random() * 3) + 1;
+            const shuffledComps = savedComps.sort(() => 0.5 - Math.random());
+            for (let i = 0; i < numComps; i++) {
+                const comp = shuffledComps[i];
+                const level = Math.floor(Math.random() * 5) + 1;
+                const rand = Math.random();
+                const expiry = new Date();
+                if (rand < 0.6)
+                    expiry.setFullYear(expiry.getFullYear() + 1);
+                else if (rand < 0.8)
+                    expiry.setDate(expiry.getDate() + 15);
+                else
+                    expiry.setMonth(expiry.getMonth() - 2);
+                await this.agentCompRepo.save({
+                    agent,
+                    competency: comp,
+                    level,
+                    expirationDate: expiry
+                });
+            }
+        }
         const totalServices = await this.serviceRepo.count({ where: { tenantId } });
         const totalAgents = await this.agentRepo.count({ where: { tenantId } });
         const totalLeaves = await this.leaveRepo.count({ where: { tenantId } });
@@ -402,7 +441,11 @@ exports.SeedController = SeedController = __decorate([
     __param(0, (0, typeorm_1.InjectRepository)(agent_entity_1.Agent)),
     __param(1, (0, typeorm_1.InjectRepository)(hospital_service_entity_1.HospitalService)),
     __param(2, (0, typeorm_1.InjectRepository)(leave_entity_1.Leave)),
+    __param(3, (0, typeorm_1.InjectRepository)(competency_entity_1.Competency)),
+    __param(4, (0, typeorm_1.InjectRepository)(agent_competency_entity_1.AgentCompetency)),
     __metadata("design:paramtypes", [typeorm_2.Repository,
+        typeorm_2.Repository,
+        typeorm_2.Repository,
         typeorm_2.Repository,
         typeorm_2.Repository])
 ], SeedController);

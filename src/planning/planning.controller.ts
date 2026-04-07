@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Query, UseGuards, Request, ParseIntPipe } from '@nestjs/common';
+import { Controller, Get, Post, Body, Query, UseGuards, Request, ParseIntPipe, Patch, Param, BadRequestException } from '@nestjs/common';
 import { PlanningService } from './planning.service';
 import { OptimizationService } from './optimization.service';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -50,7 +50,9 @@ export class PlanningController {
     ) {
         const startDate = new Date(start);
         const endDate = new Date(end);
-        const tenantId = req.user.tenantId;
+        const tenantId = (req.user.role === 'SUPER_ADMIN' && req.query.tenantId) 
+            ? req.query.tenantId 
+            : req.user.tenantId;
 
         // 1. Get all agents
         const agents = await this.agentRepository.find({
@@ -98,33 +100,35 @@ export class PlanningController {
     @UseGuards(JwtAuthGuard)
     @Get('leaves')
     @Permissions('planning:read')
-    async getLeaves(@Request() req: any) {
+    async getLeaves(@Request() req: any, @Query('tenantId') queryTenantId?: string) {
+        const tenantId = (req.user.role === 'SUPER_ADMIN' && queryTenantId) 
+            ? queryTenantId 
+            : req.user.tenantId;
         return this.leaveRepository.find({
-            where: { tenantId: req.user.tenantId },
+            where: { tenantId },
             relations: ['agent']
         });
     }
 
-    @UseGuards(JwtAuthGuard)
     @Get('shifts')
     @Permissions('planning:read')
     async getShifts(
         @Request() req: any,
         @Query('start') start: string,
-        @Query('end') end: string
+        @Query('end') end: string,
+        @Query('facilityId') facilityId?: string,
+        @Query('serviceId') serviceId?: string,
+        @Query('tenantId') queryTenantId?: string
     ) {
-        // Allow unauthenticated query for dev/seed verification if JwtGuard is strict?
-        // But SeedService logic used 'DEFAULT_TENANT'. 
-        // If accessed from frontend, we need tenantId preferably.
-        // For simple verification, we might relax tenant check or use a default if user is missing (e.g. if we disable guard for debug)
-        // But let's assume valid JWT for now from frontend. 
-        // Wait, for 'curl' verification I don't have JWT easily. 
-        // I'll make it public for now for this task, or handle missing user.
-        const tenantId = req.user.tenantId;
+        const tenantId = (req.user.role === 'SUPER_ADMIN' && queryTenantId) 
+            ? queryTenantId 
+            : req.user.tenantId;
         return this.planningService.getShifts(
             tenantId,
             new Date(start),
-            new Date(end)
+            new Date(end),
+            facilityId ? parseInt(facilityId, 10) : undefined,
+            serviceId ? parseInt(serviceId, 10) : undefined
         );
     }
 
@@ -186,7 +190,7 @@ export class PlanningController {
         );
     }
 
-    // TÂCHE 3 : Endpoint API avec besoins fictifs
+    // TÂCHE 3 : Endpoint API qui déclenche la génération Intelligente de l'IA (Basée sur l'Arbre H24)
     @UseGuards(JwtAuthGuard)
     @Post('generate')
     @Permissions('planning:manage')
@@ -197,74 +201,64 @@ export class PlanningController {
         const tenantId = req.user.tenantId;
         const startDate = new Date(body.start);
         const endDate = new Date(body.end);
-        const needs: ShiftNeed[] = [];
 
-        // Générer des besoins fictifs pour chaque jour (Modèle Hôpital Standard)
-        const current = new Date(startDate);
-        // Ensure we iterate correctly strictly over the range
-        while (current <= endDate) {
+        // Appel direct au moteur intelligent (Deduction via HospitalServices)
+        return this.autoSchedulerService.generateSmartSchedule(tenantId, startDate, endDate);
+    }
 
-            // 1. JOUR (07h00 - 19h00)
-            const dayStart = new Date(current);
-            dayStart.setHours(7, 0, 0, 0);
-            const dayEnd = new Date(current);
-            dayEnd.setHours(19, 0, 0, 0);
+    @Get('shift-applications')
+    @Permissions('planning:read')
+    async getShiftApplications(@Request() req: any) {
+        return this.planningService.getShiftApplications(req.user.tenantId);
+    }
 
-            // Besoin: 2 Infirmiers le jour
-            needs.push({
-                start: dayStart,
-                end: dayEnd,
-                postId: 'infirmier', // Lowercase to match fuzzy logic
-                count: 2
-            });
+    @UseGuards(JwtAuthGuard)
+    @Post('shift-applications/:id/approve')
+    @Permissions('planning:write')
+    async approveGhtApplication(@Request() req: any, @Param('id') id: string) {
+        return this.planningService.approveGhtApplication(req.user.tenantId, id, req.user.id);
+    }
 
-            // Besoin: 1 Médecin le jour
-            needs.push({
-                start: dayStart,
-                end: dayEnd,
-                postId: 'medecin',
-                count: 1
-            });
-
-            // 2. NUIT (19h00 - 07h00 le lendemain)
-            const nightStart = new Date(current);
-            nightStart.setHours(19, 0, 0, 0);
-            const nightEnd = new Date(current);
-            nightEnd.setDate(nightEnd.getDate() + 1); // Next day
-            nightEnd.setHours(7, 0, 0, 0);
-
-            // Besoin: 1 Infirmier de garde la nuit
-            needs.push({
-                start: nightStart,
-                end: nightEnd,
-                postId: 'infirmier',
-                count: 1
-            });
-
-            // Besoin: 1 Médecin de garde la nuit (optionnel, disons 1 pour l'exercice)
-            needs.push({
-                start: nightStart,
-                end: nightEnd,
-                postId: 'medecin',
-                count: 1
-            });
-
-            current.setDate(current.getDate() + 1);
-        }
-
-        return this.autoSchedulerService.generateSchedule(tenantId, startDate, endDate, needs);
+    @UseGuards(JwtAuthGuard)
+    @Post('shift-applications/:id/reject')
+    @Permissions('planning:write')
+    async rejectGhtApplication(@Request() req: any, @Param('id') id: string) {
+        return this.planningService.rejectGhtApplication(req.user.tenantId, id, req.user.id);
     }
 
     @UseGuards(JwtAuthGuard)
     @Post('assign-replacement')
-    @Permissions('planning:manage')
-    async assignReplacement(@Body() body: { agentId: number; start: string; end: string; postId: string }, @Request() req: any) {
+    @Permissions('planning:write')
+    async assignReplacement(
+        @Request() req: any,
+        @Body() data: { agentId: number; start: string; end: string; postId: string }
+    ) {
         return this.planningService.assignReplacement(
             req.user.tenantId,
-            body.agentId,
-            new Date(body.start),
-            new Date(body.end),
-            body.postId
+            data.agentId,
+            new Date(data.start),
+            new Date(data.end),
+            data.postId
         );
+    }
+
+    @Patch('shifts/:id')
+    @Permissions('planning:write')
+    async updateShift(
+        @Request() req: any,
+        @Param('id') id: string,
+        @Body() data: { start: string; end: string }
+    ) {
+        try {
+            return await this.planningService.updateShift(
+                req.user.tenantId,
+                id,
+                new Date(data.start),
+                new Date(data.end),
+                req.user.id
+            );
+        } catch (error) {
+            throw new BadRequestException(error.message);
+        }
     }
 }

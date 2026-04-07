@@ -150,4 +150,28 @@ export class AuthService {
             },
         };
     }
+
+    // SSO Ségur de la Santé (Pro Santé Connect) - Mock Implementation
+    async loginWithProSanteConnect(rpps: string, userinfo: any) {
+        // En vrai: Vérifier la signature du token OIDC Ségur
+        // Rechercher l'agent correspondant via son NIR/RPPS (ici stocké dans nir ou matricule)
+        const agent = await this.agentRepository.findOne({
+            where: [
+                { matricule: rpps },
+                { nir: rpps }
+            ],
+            relations: ['dbRole']
+        });
+
+        if (!agent) {
+             throw new UnauthorizedException(`Aucun compte rattaché au RPPS ${rpps}. Accès refusé selon la norme Ségur.`);
+        }
+
+        if (agent.status !== UserStatus.ACTIVE) {
+            throw new UnauthorizedException('Compte désactivé');
+        }
+
+        // Connexion réussie, création du JWT interne
+        return this.login(agent);
+    }
 }

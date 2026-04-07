@@ -9,6 +9,9 @@ import type { ILocaleRules } from '../core/config/locale-rules.interface';
 import { PlanningService } from './planning.service';
 import { AuditService } from '../audit/audit.service';
 import { AuditAction, AuditEntityType } from '../audit/entities/audit-log.entity';
+import { HospitalService } from '../agents/entities/hospital-service.entity';
+import { ShiftProposal, ProposalType, ProposalStatus } from './entities/shift-proposal.entity';
+import { SettingsService } from '../settings/settings.service';
 
 export interface ShiftNeed {
     start: Date;
@@ -16,6 +19,9 @@ export interface ShiftNeed {
     postId: string; // e.g., 'MEDECIN_GARDE'
     count: number; // Number of agents needed
     requiredSkills?: string[];
+    facilityId?: number; // Added reference
+    serviceId?: number; // Service hierarchy context
+    serviceName?: string;
 }
 
 @Injectable()
@@ -27,11 +33,80 @@ export class AutoSchedulerService {
         private shiftRepository: Repository<Shift>,
         @InjectRepository(Leave)
         private leaveRepository: Repository<Leave>,
+        @InjectRepository(HospitalService)
+        private serviceRepository: Repository<HospitalService>,
+        @InjectRepository(ShiftProposal)
+        private proposalRepository: Repository<ShiftProposal>,
         @Inject(LOCALE_RULES)
         private localeRules: ILocaleRules,
         private planningService: PlanningService, // To reuse getWeeklyHours
         private auditService: AuditService,
+        private settingsService: SettingsService,
     ) { }
+
+    async generateSmartSchedule(tenantId: string, startDate: Date, endDate: Date): Promise<Shift[]> {
+        const needs: ShiftNeed[] = [];
+        
+        // 1. Get dynamic ratios from Settings
+        const ratioDayStr = await this.settingsService.getSetting(tenantId, null, 'planning.beds_per_nurse_day') || '10';
+        const ratioNightStr = await this.settingsService.getSetting(tenantId, null, 'planning.beds_per_nurse_night') || '15';
+        const ratioDay = parseInt(ratioDayStr as string, 10) || 10;
+        const ratioNight = parseInt(ratioNightStr as string, 10) || 15;
+
+        // 2. Fetch all active services
+        const services = await this.serviceRepository.find({
+            where: { tenantId: tenantId || 'DEFAULT_TENANT', isActive: true },
+            relations: ['facility']
+        });
+
+        const current = new Date(startDate);
+        while (current <= endDate) {
+            // Define Day and Night slots
+            const dayStart = new Date(current);
+            dayStart.setHours(7, 0, 0, 0);
+            const dayEnd = new Date(current);
+            dayEnd.setHours(19, 0, 0, 0);
+
+            const nightStart = new Date(current);
+            nightStart.setHours(19, 0, 0, 0);
+            const nightEnd = new Date(current);
+            nightEnd.setDate(nightEnd.getDate() + 1); // Next day
+            nightEnd.setHours(7, 0, 0, 0);
+
+            for (const service of services) {
+                const capacity = service.bedCapacity || 0;
+                // Calcul jour
+                const countDay = Math.max(1, Math.ceil(capacity / ratioDay)); // At least 1 agent even if 0 beds
+                needs.push({
+                    start: dayStart,
+                    end: dayEnd,
+                    postId: `[${service.name}] Infirmier Jour`,
+                    count: countDay,
+                    facilityId: service.facility?.id,
+                    serviceId: service.id,
+                    serviceName: service.name
+                });
+
+                // Calcul Nuit (seulement si is24x7 = true)
+                if (service.is24x7) {
+                    const countNight = Math.max(1, Math.ceil(capacity / ratioNight));
+                    needs.push({
+                        start: nightStart,
+                        end: nightEnd,
+                        postId: `[${service.name}] Infirmier Nuit`,
+                        count: countNight,
+                        facilityId: service.facility?.id,
+                        serviceId: service.id,
+                        serviceName: service.name
+                    });
+                }
+            }
+
+            current.setDate(current.getDate() + 1);
+        }
+
+        return this.generateSchedule(tenantId, startDate, endDate, needs);
+    }
 
     async generateSchedule(tenantId: string, startDate: Date, endDate: Date, needs: ShiftNeed[]): Promise<Shift[]> {
         const generatedShifts: Shift[] = [];
@@ -85,15 +160,22 @@ export class AutoSchedulerService {
                 const shiftDuration = (need.end.getTime() - need.start.getTime()) / (1000 * 60 * 60);
                 const totalHours = currentWeeklyHours + pendingHours + shiftDuration;
 
-                if (totalHours > this.localeRules.getWeeklyWorkLimit()) {
+                const facilityId = null; // Assuming macro for now, or from need.facilityId
+                const weeklyLimit = await this.settingsService.getSetting(tenantId, facilityId, 'planning.weekly_hours_limit') || 48;
+
+                if (totalHours > weeklyLimit) {
                     continue;
                 }
 
-                eligibleAgents.push({ agent, totalHours });
+
+                // E. Scoring Engine (0-100)
+                const score = await this.calculateAgentScore(tenantId, agent, need, currentWeeklyHours + pendingHours);
+
+                eligibleAgents.push({ agent, totalHours, score });
             }
 
-            // 2b. Sort candidates by Equity (Least Hours)
-            eligibleAgents.sort((a, b) => a.totalHours - b.totalHours);
+            // 2b. Sort candidates by Score (Highest first)
+            eligibleAgents.sort((a, b) => b.score - a.score);
 
             // 2c. Pick Candidates
             for (const candidate of eligibleAgents) {
@@ -128,6 +210,111 @@ export class AutoSchedulerService {
         }
 
         return generatedShifts;
+    }
+
+    private async calculateAgentScore(tenantId: string, agent: Agent, need: ShiftNeed, currentHours: number): Promise<number> {
+        let score = 0;
+
+        // 1. Equity (40%) - Inverse of hours
+        const weeklyLimit = await this.settingsService.getSetting(tenantId, null, 'planning.weekly_hours_limit') || 48;
+        const hourFactor = Math.max(0, (weeklyLimit - currentHours) / weeklyLimit);
+        score += hourFactor * 40;
+
+        // 2. Proximity/Affinity (30%) - Massive boost for exact structural match
+        if (need.serviceId && agent.hospitalServiceId === need.serviceId) {
+            score += 40;
+        } else if (agent.hospitalServiceId && need.postId.includes(agent.hospitalService?.name || '')) {
+            score += 30;
+        }
+
+        // 3. Expertise (30%)
+        // Fuzzy match on title or grade
+        if (agent.jobTitle && need.postId.toLowerCase().includes(agent.jobTitle.toLowerCase())) {
+            score += 30;
+        }
+
+        return Math.min(100, score);
+    }
+
+    async scanForProblems(tenantId: string): Promise<any[]> {
+        const issues = [];
+        const now = new Date();
+        const nextWeek = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+
+        // 1. Detect Understaffing
+        const services = await this.serviceRepository.find({ where: { tenantId, isActive: true } });
+        for (const service of services) {
+            if (!service.minAgents) continue;
+
+            const shifts = await this.shiftRepository.createQueryBuilder('shift')
+                .leftJoin('shift.agent', 'agent')
+                .where('shift.tenantId = :tenantId', { tenantId })
+                .andWhere('agent.hospitalServiceId = :serviceId', { serviceId: service.id })
+                .andWhere('shift.start >= :now', { now })
+                .andWhere('shift.start <= :nextWeek', { nextWeek })
+                .getMany();
+
+            // Group by day or slot (Simplified: check if any period has < minAgents)
+            // For MVP: if total shifts in a day < minAgents * slots
+            // Better: find specific gaps. For now, let's just flag the service.
+            if (shifts.length < service.minAgents) {
+                issues.push({
+                    type: 'UNDERSTAFFING',
+                    serviceId: service.id,
+                    serviceName: service.name,
+                    severity: 'HIGH',
+                    message: `Le service ${service.name} est en sous-effectif critique (Min: ${service.minAgents}).`
+                });
+            }
+        }
+
+        // 2. Detect Conflicts
+        const conflicts = await this.shiftRepository.query(`
+            SELECT s1.id as id1, s2.id as id2, s1.agentId
+            FROM shift s1
+            JOIN shift s2 ON s1.agentId = s2.agentId AND s1.id < s2.id
+            WHERE s1.tenantId = ? AND s1.start < s2.end AND s1.end > s2.start
+        `, [tenantId]);
+
+        for (const conflict of conflicts) {
+            issues.push({
+                type: 'CONFLICT',
+                shiftId: conflict.id1,
+                agentId: conflict.agentId,
+                severity: 'CRITICAL',
+                message: `Double garde détectée pour l'agent #${conflict.agentId}.`
+            });
+            
+            // Generate resolution proposal if not already exists
+            await this.generateResolutionProposal(tenantId, conflict.id1);
+        }
+
+        return issues;
+    }
+
+    private async generateResolutionProposal(tenantId: string, shiftId: number) {
+        const shift = await this.shiftRepository.findOne({ where: { id: shiftId }, relations: ['agent'] });
+        if (!shift) return;
+
+        // Find alternatives
+        const candidates = await this.findReplacements(tenantId, shift.start, shift.end, shift.postId);
+        if (candidates.length > 0) {
+            // Pick the best (scored) candidate
+            const best = candidates[0]; // findReplacements already filters and scores roughly
+            
+            const existing = await this.proposalRepository.findOne({ where: { shiftId, suggestedAgentId: best.id, status: ProposalStatus.PENDING } });
+            if (!existing) {
+                await this.proposalRepository.save(this.proposalRepository.create({
+                    tenantId,
+                    shiftId: shift.id,
+                    originalAgentId: shift.agent?.id,
+                    suggestedAgentId: best.id,
+                    type: ProposalType.REPLACEMENT,
+                    reason: `Résolution automatique de conflit : Remplacer par ${best.nom} (Score Élevé)`,
+                    score: 85 // Mock score
+                }));
+            }
+        }
     }
 
     private async checkAvailability(tenantId: string, agentId: number, start: Date, end: Date): Promise<boolean> {
@@ -206,8 +393,9 @@ export class AutoSchedulerService {
 
             // 5. Weekly Hours Check
             const currentWeeklyHours = await this.planningService.getWeeklyHours(tenantId, agent.id, start);
-            // Rough check: if they have < 45h
-            if (currentWeeklyHours >= this.localeRules.getWeeklyWorkLimit()) continue;
+            const weeklyLimit = await this.settingsService.getSetting(tenantId, null, 'planning.weekly_hours_limit') || 48;
+            // Rough check: if they have < 45h (or weeklyLimit)
+            if (currentWeeklyHours >= weeklyLimit) continue;
 
             availableAgents.push(agent);
         }
@@ -229,6 +417,7 @@ export class AutoSchedulerService {
         if (!lastShift) return true; // No previous shift
 
         const restHours = (start.getTime() - lastShift.end.getTime()) / (1000 * 60 * 60);
-        return restHours >= this.localeRules.getDailyRestHours();
+        const minRestHours = await this.settingsService.getSetting(tenantId, null, 'planning.daily_rest_hours') || 11;
+        return restHours >= minRestHours;
     }
 }

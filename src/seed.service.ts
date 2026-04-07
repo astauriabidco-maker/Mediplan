@@ -1,8 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { Agent } from './agents/entities/agent.entity';
+import { Agent, UserRole } from './agents/entities/agent.entity';
 import { Shift } from './planning/entities/shift.entity';
+import { Competency } from './competencies/entities/competency.entity';
+import { AgentCompetency } from './competencies/entities/agent-competency.entity';
 import * as bcrypt from 'bcrypt';
 import { addDays, startOfWeek, setHours, setMinutes } from 'date-fns';
 
@@ -13,6 +15,10 @@ export class SeedService {
         private agentRepository: Repository<Agent>,
         @InjectRepository(Shift)
         private shiftRepository: Repository<Shift>,
+        @InjectRepository(Competency)
+        private competencyRepository: Repository<Competency>,
+        @InjectRepository(AgentCompetency)
+        private agentCompRepository: Repository<AgentCompetency>,
     ) { }
 
     async seed() {
@@ -28,6 +34,15 @@ export class SeedService {
         const hashedPassword = await bcrypt.hash('password123', 10);
 
         const agentsData = [
+            {
+                nom: 'Admin Mediplan',
+                email: 'admin@mediplan.com',
+                matricule: 'PLATFORM-001',
+                telephone: '+33600000000',
+                password: hashedPassword,
+                tenantId: 'PLATFORM',
+                role: UserRole.SUPER_ADMIN,
+            },
             {
                 nom: 'Jean Dupont',
                 email: 'jean.dupont@mediplan.com',
@@ -60,10 +75,30 @@ export class SeedService {
             savedAgents.push(await this.agentRepository.save(agent));
         }
 
-        const [jean, samuel, marie] = savedAgents;
+        const [admin, jean, samuel, marie] = savedAgents;
+
+        // --- 2.5 Create Competencies ---
+        const comp1 = await this.competencyRepository.save({ name: 'AFGSU Niveau 2', category: 'Urgences' });
+        const comp2 = await this.competencyRepository.save({ name: 'Manipulation Respirateur', category: 'Réanimation' });
+        const comp3 = await this.competencyRepository.save({ name: 'Gestion Incendie', category: 'Sécurité' });
+
+        // Assign some competencies to Jean mapping to real life bounds
+        const today = new Date();
+        const futureDate = new Date();
+        futureDate.setFullYear(today.getFullYear() + 2); // Valid
+        const pastDate = new Date();
+        pastDate.setMonth(today.getMonth() - 2); // Expired
+        const soonDate = new Date();
+        soonDate.setDate(today.getDate() + 15); // Expiring soon (<30 days)
+
+        await this.agentCompRepository.save([
+            { agent: jean, competency: comp1, level: 3, expirationDate: futureDate },
+            { agent: jean, competency: comp2, level: 5, expirationDate: pastDate },
+            { agent: samuel, competency: comp1, level: 2, expirationDate: soonDate },
+            { agent: marie, competency: comp3, level: 4, expirationDate: futureDate }
+        ]);
 
         // --- 3. Create Shifts ---
-        const today = new Date();
         const startOfCurrentWeek = startOfWeek(today, { weekStartsOn: 1 }); // Monday start
 
         const shift由于 = [];

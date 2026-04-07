@@ -52,7 +52,9 @@ let PlanningController = class PlanningController {
     async getReplacements(req, start, end, competency) {
         const startDate = new Date(start);
         const endDate = new Date(end);
-        const tenantId = req.user.tenantId;
+        const tenantId = (req.user.role === 'SUPER_ADMIN' && req.query.tenantId)
+            ? req.query.tenantId
+            : req.user.tenantId;
         const agents = await this.agentRepository.find({
             where: { tenantId },
             relations: ['agentCompetencies', 'agentCompetencies.competency']
@@ -72,15 +74,20 @@ let PlanningController = class PlanningController {
         }
         return this.autoSchedulerService.findReplacements(tenantId, startDate, endDate, competency);
     }
-    async getLeaves(req) {
+    async getLeaves(req, queryTenantId) {
+        const tenantId = (req.user.role === 'SUPER_ADMIN' && queryTenantId)
+            ? queryTenantId
+            : req.user.tenantId;
         return this.leaveRepository.find({
-            where: { tenantId: req.user.tenantId },
+            where: { tenantId },
             relations: ['agent']
         });
     }
-    async getShifts(req, start, end) {
-        const tenantId = req.user.tenantId;
-        return this.planningService.getShifts(tenantId, new Date(start), new Date(end));
+    async getShifts(req, start, end, facilityId, serviceId, queryTenantId) {
+        const tenantId = (req.user.role === 'SUPER_ADMIN' && queryTenantId)
+            ? queryTenantId
+            : req.user.tenantId;
+        return this.planningService.getShifts(tenantId, new Date(start), new Date(end), facilityId ? parseInt(facilityId, 10) : undefined, serviceId ? parseInt(serviceId, 10) : undefined);
     }
     async validate(req, agentId, start, end) {
         const isValid = await this.planningService.validateShift(req.user.tenantId, agentId, new Date(start), new Date(end));
@@ -110,48 +117,27 @@ let PlanningController = class PlanningController {
         const tenantId = req.user.tenantId;
         const startDate = new Date(body.start);
         const endDate = new Date(body.end);
-        const needs = [];
-        const current = new Date(startDate);
-        while (current <= endDate) {
-            const dayStart = new Date(current);
-            dayStart.setHours(7, 0, 0, 0);
-            const dayEnd = new Date(current);
-            dayEnd.setHours(19, 0, 0, 0);
-            needs.push({
-                start: dayStart,
-                end: dayEnd,
-                postId: 'infirmier',
-                count: 2
-            });
-            needs.push({
-                start: dayStart,
-                end: dayEnd,
-                postId: 'medecin',
-                count: 1
-            });
-            const nightStart = new Date(current);
-            nightStart.setHours(19, 0, 0, 0);
-            const nightEnd = new Date(current);
-            nightEnd.setDate(nightEnd.getDate() + 1);
-            nightEnd.setHours(7, 0, 0, 0);
-            needs.push({
-                start: nightStart,
-                end: nightEnd,
-                postId: 'infirmier',
-                count: 1
-            });
-            needs.push({
-                start: nightStart,
-                end: nightEnd,
-                postId: 'medecin',
-                count: 1
-            });
-            current.setDate(current.getDate() + 1);
-        }
-        return this.autoSchedulerService.generateSchedule(tenantId, startDate, endDate, needs);
+        return this.autoSchedulerService.generateSmartSchedule(tenantId, startDate, endDate);
     }
-    async assignReplacement(body, req) {
-        return this.planningService.assignReplacement(req.user.tenantId, body.agentId, new Date(body.start), new Date(body.end), body.postId);
+    async getShiftApplications(req) {
+        return this.planningService.getShiftApplications(req.user.tenantId);
+    }
+    async approveGhtApplication(req, id) {
+        return this.planningService.approveGhtApplication(req.user.tenantId, id, req.user.id);
+    }
+    async rejectGhtApplication(req, id) {
+        return this.planningService.rejectGhtApplication(req.user.tenantId, id, req.user.id);
+    }
+    async assignReplacement(req, data) {
+        return this.planningService.assignReplacement(req.user.tenantId, data.agentId, new Date(data.start), new Date(data.end), data.postId);
+    }
+    async updateShift(req, id, data) {
+        try {
+            return await this.planningService.updateShift(req.user.tenantId, id, new Date(data.start), new Date(data.end), req.user.id);
+        }
+        catch (error) {
+            throw new common_1.BadRequestException(error.message);
+        }
     }
 };
 exports.PlanningController = PlanningController;
@@ -182,19 +168,22 @@ __decorate([
     (0, common_1.Get)('leaves'),
     (0, permissions_decorator_1.Permissions)('planning:read'),
     __param(0, (0, common_1.Request)()),
+    __param(1, (0, common_1.Query)('tenantId')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Object]),
+    __metadata("design:paramtypes", [Object, String]),
     __metadata("design:returntype", Promise)
 ], PlanningController.prototype, "getLeaves", null);
 __decorate([
-    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
     (0, common_1.Get)('shifts'),
     (0, permissions_decorator_1.Permissions)('planning:read'),
     __param(0, (0, common_1.Request)()),
     __param(1, (0, common_1.Query)('start')),
     __param(2, (0, common_1.Query)('end')),
+    __param(3, (0, common_1.Query)('facilityId')),
+    __param(4, (0, common_1.Query)('serviceId')),
+    __param(5, (0, common_1.Query)('tenantId')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Object, String, String]),
+    __metadata("design:paramtypes", [Object, String, String, String, String, String]),
     __metadata("design:returntype", Promise)
 ], PlanningController.prototype, "getShifts", null);
 __decorate([
@@ -240,15 +229,53 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], PlanningController.prototype, "generate", null);
 __decorate([
+    (0, common_1.Get)('shift-applications'),
+    (0, permissions_decorator_1.Permissions)('planning:read'),
+    __param(0, (0, common_1.Request)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", Promise)
+], PlanningController.prototype, "getShiftApplications", null);
+__decorate([
+    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
+    (0, common_1.Post)('shift-applications/:id/approve'),
+    (0, permissions_decorator_1.Permissions)('planning:write'),
+    __param(0, (0, common_1.Request)()),
+    __param(1, (0, common_1.Param)('id')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, String]),
+    __metadata("design:returntype", Promise)
+], PlanningController.prototype, "approveGhtApplication", null);
+__decorate([
+    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
+    (0, common_1.Post)('shift-applications/:id/reject'),
+    (0, permissions_decorator_1.Permissions)('planning:write'),
+    __param(0, (0, common_1.Request)()),
+    __param(1, (0, common_1.Param)('id')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, String]),
+    __metadata("design:returntype", Promise)
+], PlanningController.prototype, "rejectGhtApplication", null);
+__decorate([
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
     (0, common_1.Post)('assign-replacement'),
-    (0, permissions_decorator_1.Permissions)('planning:manage'),
-    __param(0, (0, common_1.Body)()),
-    __param(1, (0, common_1.Request)()),
+    (0, permissions_decorator_1.Permissions)('planning:write'),
+    __param(0, (0, common_1.Request)()),
+    __param(1, (0, common_1.Body)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [Object, Object]),
     __metadata("design:returntype", Promise)
 ], PlanningController.prototype, "assignReplacement", null);
+__decorate([
+    (0, common_1.Patch)('shifts/:id'),
+    (0, permissions_decorator_1.Permissions)('planning:write'),
+    __param(0, (0, common_1.Request)()),
+    __param(1, (0, common_1.Param)('id')),
+    __param(2, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, String, Object]),
+    __metadata("design:returntype", Promise)
+], PlanningController.prototype, "updateShift", null);
 exports.PlanningController = PlanningController = __decorate([
     (0, common_1.Controller)('planning'),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard, roles_guard_1.RolesGuard),

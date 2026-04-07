@@ -27,4 +27,14 @@ export declare class AuthService {
             permissions: any;
         };
     }>;
+    loginWithProSanteConnect(rpps: string, userinfo: any): Promise<{
+        access_token: string;
+        user: {
+            id: any;
+            email: any;
+            tenantId: any;
+            role: any;
+            permissions: any;
+        };
+    }>;
 }

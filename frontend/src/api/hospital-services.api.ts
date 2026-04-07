@@ -19,8 +19,14 @@ export interface HospitalService {
     nursingManager?: { id: number; nom: string };
     agents?: Array<{ id: number; nom: string }>;
     maxAgents?: number;
-    minAgents?: number;
+    minAgents?: number | null;
+    is24x7?: boolean;
+    bedCapacity?: number | null;
+    contactNumber?: string | null;
+    riskLevel?: 'NONE' | 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
     isActive: boolean;
+    facilityId?: number;
+    facility?: { id: number; name: string };
 }
 
 export const fetchHospitalServices = async (): Promise<HospitalService[]> => {

@@ -7,15 +7,18 @@ import { UsersManagement } from './UsersManagement'
 import { ProfileSettings } from './ProfileSettings'
 import { RolesManagement } from './RolesManagement'
 import { StructureRulesTab } from './StructureRulesTab'
+import { GhtManagement } from './GhtManagement'
 import { clsx, type ClassValue } from 'clsx'
 import { twMerge } from 'tailwind-merge'
+
+import { fetchDashboardKPIs } from '../api/dashboard.api'
+import { fetchAgents, Agent } from '../api/agents.api'
+import { fetchPayslips, generatePayslip } from '../api/payroll.api'
+import { useQuery } from '@tanstack/react-query'
 
 function cn(...inputs: ClassValue[]) {
     return twMerge(clsx(inputs))
 }
-
-import { useQuery } from '@tanstack/react-query'
-import { fetchDashboardKPIs } from '../api/dashboard.api'
 
 export const DashboardPage = () => {
     const { themeColor } = useAppConfig()
@@ -250,13 +253,14 @@ export const SettingsPage = () => {
         }
     }
 
-    const isAdminOrManager = user?.role === 'ADMIN' || user?.role === 'MANAGER'
+    const isAdminOrManager = user?.role === 'ADMIN' || user?.role === 'MANAGER' || user?.role === 'SUPER_ADMIN'
+    const isSuperAdmin = user?.role === 'SUPER_ADMIN'
     // Use search params for deep linking to tabs
     const [searchParams, setSearchParams] = useSearchParams()
-    const tabParam = searchParams.get('tab') as 'users' | 'profile' | 'system' | 'roles' | 'rules' | 'history'
-    const [activeTab, setActiveTabState] = React.useState<'users' | 'profile' | 'system' | 'roles' | 'rules' | 'history'>(tabParam || (isAdminOrManager ? 'users' : 'profile'))
+    const tabParam = searchParams.get('tab') as 'users' | 'profile' | 'system' | 'roles' | 'rules' | 'history' | 'ghts'
+    const [activeTab, setActiveTabState] = React.useState<'users' | 'profile' | 'system' | 'roles' | 'rules' | 'history' | 'ghts'>(tabParam || (isAdminOrManager ? 'users' : 'profile'))
 
-    const setActiveTab = (tab: 'users' | 'profile' | 'system' | 'roles' | 'rules' | 'history') => {
+    const setActiveTab = (tab: 'users' | 'profile' | 'system' | 'roles' | 'rules' | 'history' | 'ghts') => {
         setActiveTabState(tab)
         setSearchParams({ tab })
     }
@@ -264,9 +268,9 @@ export const SettingsPage = () => {
     // Set default tab based on role if no param
     React.useEffect(() => {
         if (!tabParam) {
-            setActiveTab(isAdminOrManager ? 'users' : 'profile')
+            setActiveTab(isSuperAdmin ? 'ghts' : (isAdminOrManager ? 'users' : 'profile'))
         }
-    }, [isAdminOrManager, tabParam])
+    }, [isAdminOrManager, isSuperAdmin, tabParam])
 
     return (
         <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -315,6 +319,16 @@ export const SettingsPage = () => {
                         Structure & Règles
                     </button>
                 )}
+                {isSuperAdmin && (
+                    <button
+                        onClick={() => setActiveTab('ghts')}
+                        className={cn("px-6 py-3 font-bold text-xs tracking-widest uppercase transition-all rounded-xl flex items-center gap-2",
+                            activeTab === 'ghts' ? `bg-${themeColor} text-white shadow-lg` : "text-slate-500 hover:text-slate-300 hover:bg-white/5")}
+                    >
+                        <Globe size={16} />
+                        Établissements (GHT)
+                    </button>
+                )}
                 {isAdminOrManager && (
                     <button
                         onClick={() => setActiveTab('history')}
@@ -325,7 +339,7 @@ export const SettingsPage = () => {
                         Historique
                     </button>
                 )}
-                {isAdminOrManager && (
+                {isSuperAdmin && (
                     <button
                         onClick={() => setActiveTab('system')}
                         className={cn("px-6 py-3 font-bold text-xs tracking-widest uppercase transition-all rounded-xl flex items-center gap-2",
@@ -338,6 +352,7 @@ export const SettingsPage = () => {
             </div>
 
             <div className="animate-in fade-in slide-in-from-top-4 duration-500">
+                {activeTab === 'ghts' && <GhtManagement />}
                 {activeTab === 'users' && <UsersManagement />}
                 {activeTab === 'profile' && <ProfileSettings />}
                 {activeTab === 'roles' && <RolesManagement />}
@@ -446,28 +461,151 @@ export const SettingsPage = () => {
 
 }
 
-export const PaymentPage = () => (
-    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-        <div className="flex flex-col gap-2">
-            <h1 className="text-4xl font-extrabold tracking-tight text-white">Paiements & Primes</h1>
-            <p className="text-slate-400">Gestion des primes de garde et intégration Mobile Money.</p>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-            <div className="bg-slate-900 border border-slate-800 rounded-3xl p-8">
-                <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
-                    <Smartphone className="text-emerald-500" />
-                    Mobile Money
-                </h3>
-                <p className="text-slate-400 mb-6">
-                    Déclenchez les paiements instantanés pour les gardes validées via Orange Money ou MTN Mobile Money.
-                </p>
-                <button className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl transition-colors">
-                    Nouveau Virement
-                </button>
+export const PaymentPage = () => {
+    const [month, setMonth] = React.useState(new Date().getMonth() + 1);
+    const [year, setYear] = React.useState(new Date().getFullYear());
+    const [isGenerating, setIsGenerating] = React.useState<number | null>(null);
+
+    const { data: agents = [] } = useQuery({
+        queryKey: ['agents'],
+        queryFn: fetchAgents
+    });
+
+    const { data: payslips = [], refetch } = useQuery({
+        queryKey: ['payslips', month, year],
+        queryFn: () => fetchPayslips(month, year)
+    });
+
+    const handleGenerate = async (agentId: number) => {
+        setIsGenerating(agentId);
+        try {
+            await generatePayslip(agentId, month, year);
+            await refetch();
+        } catch (error) {
+            console.error('Error generating payslip:', error);
+            alert("Erreur lors de la génération de la paie.");
+        } finally {
+            setIsGenerating(null);
+        }
+    };
+
+    return (
+        <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <div className="flex flex-col gap-2">
+                <h1 className="text-4xl font-extrabold tracking-tight text-white flex items-center gap-4">
+                    <div className="p-2 bg-gradient-to-br from-emerald-500 to-teal-700 rounded-xl">
+                        <Save size={28} className="text-white" />
+                    </div>
+                    Centre des Paies
+                </h1>
+                <p className="text-slate-400">Génération automatique des fiches de paie basées sur le pointage réel, les gardes et les primes Ségur.</p>
+            </div>
+
+            <div className="flex items-center gap-4 bg-slate-900 border border-slate-800 p-4 rounded-2xl w-max">
+                <div className="flex flex-col">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Période</label>
+                    <div className="flex gap-2">
+                        <select 
+                            value={month} 
+                            onChange={(e) => setMonth(Number(e.target.value))}
+                            className="bg-slate-800 text-white rounded-lg border border-slate-700 px-4 py-2 outline-none font-medium"
+                        >
+                            {[1,2,3,4,5,6,7,8,9,10,11,12].map(m => (
+                                <option key={m} value={m}>{new Date(2000, m - 1).toLocaleString('fr-FR', { month: 'long' }).toUpperCase()}</option>
+                            ))}
+                        </select>
+                        <select 
+                            value={year} 
+                            onChange={(e) => setYear(Number(e.target.value))}
+                            className="bg-slate-800 text-white rounded-lg border border-slate-700 px-4 py-2 outline-none font-medium"
+                        >
+                            {[2024, 2025, 2026, 2027].map(y => (
+                                <option key={y} value={y}>{y}</option>
+                            ))}
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <div className="bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden">
+                <div className="overflow-x-auto">
+                    <table className="w-full text-left">
+                        <thead>
+                            <tr className="bg-slate-950/50 border-b border-slate-800 text-[10px] font-bold text-slate-500 uppercase tracking-widest">
+                                <th className="p-6">Agent</th>
+                                <th className="p-6">Statut</th>
+                                <th className="p-6 text-right">Salaire Base</th>
+                                <th className="p-6 text-right">Primes & Gardes</th>
+                                <th className="p-6 text-right">Total Net</th>
+                                <th className="p-6 text-center">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-800/50">
+                            {agents.map((agent: Agent) => {
+                                const slip = payslips.find((p: any) => p.agent.id === agent.id);
+                                const isGen = isGenerating === agent.id;
+
+                                return (
+                                    <tr key={agent.id} className="hover:bg-white/[0.02] transition-colors group">
+                                        <td className="p-6">
+                                            <div className="flex items-center gap-4">
+                                                <div className="w-10 h-10 rounded-full bg-slate-800 flex items-center justify-center font-bold text-xs text-blue-400">
+                                                    {agent.nom.charAt(0)}
+                                                </div>
+                                                <div>
+                                                    <p className="font-bold text-white leading-tight">{agent.nom}</p>
+                                                    <p className="text-xs text-slate-500">{agent.jobTitle || 'Professionnel de Santé'}</p>
+                                                </div>
+                                            </div>
+                                        </td>
+                                        <td className="p-6">
+                                            {slip ? (
+                                                <span className="px-3 py-1 bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 rounded-full text-[10px] font-bold uppercase tracking-widest">Éditée</span>
+                                            ) : (
+                                                <span className="px-3 py-1 bg-amber-500/10 text-amber-500 border border-amber-500/20 rounded-full text-[10px] font-bold uppercase tracking-widest">À Calculer</span>
+                                            )}
+                                        </td>
+                                        <td className="p-6 text-right font-mono text-sm text-slate-300">
+                                            {slip ? slip.baseSalary.toLocaleString('fr-FR') + ' €' : '-'}
+                                        </td>
+                                        <td className="p-6 text-right font-mono text-sm text-emerald-400">
+                                            {slip ? '+' + slip.guardPrimes.toLocaleString('fr-FR') + ' €' : '-'}
+                                        </td>
+                                        <td className="p-6 text-right font-mono font-bold text-white">
+                                            {slip ? slip.totalNet.toLocaleString('fr-FR') + ' €' : '-'}
+                                        </td>
+                                        <td className="p-6 text-center">
+                                            {slip ? (
+                                                <button className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold rounded-lg transition-colors border border-slate-700">
+                                                    Voir PDF
+                                                </button>
+                                            ) : (
+                                                <button 
+                                                    onClick={() => handleGenerate(agent.id)}
+                                                    disabled={isGen}
+                                                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-bold rounded-lg transition-colors flex items-center gap-2 mx-auto"
+                                                >
+                                                    {isGen ? 'Calcul...' : 'Lancer Calcul'}
+                                                </button>
+                                            )}
+                                        </td>
+                                    </tr>
+                                );
+                            })}
+                            {agents.length === 0 && (
+                                <tr>
+                                    <td colSpan={6} className="p-10 text-center text-slate-500 italic">
+                                        Chargement du personnel...
+                                    </td>
+                                </tr>
+                            )}
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </div>
-    </div>
-)
+    );
+};
 
 export const QvtPage = () => (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -535,18 +673,4 @@ export const HospitalServicesPage = () => (
     </div>
 )
 
-export const HierarchyPage = () => (
-    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-        <div className="flex flex-col gap-2">
-            <h1 className="text-4xl font-extrabold tracking-tight text-white">Organigramme & Hiérarchie</h1>
-            <p className="text-slate-400">Visualisez les relations N+1 / N+2 et flux de validation.</p>
-        </div>
-        <div className="bg-slate-900 border border-slate-800 rounded-3xl p-8 text-center py-20">
-            <div className="w-16 h-16 bg-white/5 rounded-2xl flex items-center justify-center mx-auto mb-6">
-                <Users className="text-blue-500" size={32} />
-            </div>
-            <p className="text-slate-400 text-lg font-medium mb-2">Visualisation de la hiérarchie</p>
-            <p className="text-slate-500 max-w-sm mx-auto">Gérez les structures de rapport direct (N+1, N+2) pour automatiser les validations de congés et de planning.</p>
-        </div>
-    </div>
-)
+

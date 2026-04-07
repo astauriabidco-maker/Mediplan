@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Put, Delete, Body, UseGuards, Request, Param, ParseIntPipe } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, UseGuards, Request, Param, ParseIntPipe, Query } from '@nestjs/common';
 import { HospitalServicesService } from './hospital-services.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { HospitalService } from './entities/hospital-service.entity';
@@ -12,20 +12,29 @@ export class HospitalServicesController {
 
     @Get()
     @Permissions('services:read')
-    findAll(@Request() req: any) {
-        return this.servicesService.findAll(req.user.tenantId);
+    findAll(@Request() req: any, @Query('tenantId') queryTenantId?: string) {
+        const tenantId = (req.user.role === 'SUPER_ADMIN' && queryTenantId) 
+            ? queryTenantId 
+            : req.user.tenantId;
+        return this.servicesService.findAll(tenantId);
     }
 
     @Get('stats')
     @Permissions('services:read')
-    getStats(@Request() req: any) {
-        return this.servicesService.getStats(req.user.tenantId);
+    getStats(@Request() req: any, @Query('tenantId') queryTenantId?: string) {
+        const tenantId = (req.user.role === 'SUPER_ADMIN' && queryTenantId) 
+            ? queryTenantId 
+            : req.user.tenantId;
+        return this.servicesService.getStats(tenantId);
     }
 
     @Get('tree')
     @Permissions('services:read')
-    getTree(@Request() req: any) {
-        return this.servicesService.getServiceTree(req.user.tenantId);
+    getTree(@Request() req: any, @Query('tenantId') queryTenantId?: string) {
+        const tenantId = (req.user.role === 'SUPER_ADMIN' && queryTenantId) 
+            ? queryTenantId 
+            : req.user.tenantId;
+        return this.servicesService.getServiceTree(tenantId);
     }
 
     @Get(':id')

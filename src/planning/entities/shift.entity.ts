@@ -1,5 +1,6 @@
-import { Entity, PrimaryGeneratedColumn, Column, ManyToOne } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, JoinColumn } from 'typeorm';
 import { Agent } from '../../agents/entities/agent.entity';
+import { Facility } from '../../agents/entities/facility.entity';
 
 export enum ShiftType {
     WORK = 'WORK',
@@ -33,6 +34,13 @@ export class Shift {
 
     @Column({ default: 'DEFAULT_TENANT' })
     tenantId: string;
+
+    @Column({ nullable: true })
+    facilityId: number;
+
+    @ManyToOne(() => Facility, { nullable: true })
+    @JoinColumn({ name: 'facilityId' })
+    facility: Facility;
 
     @ManyToOne(() => Agent, (agent) => agent.shifts)
     agent: Agent;

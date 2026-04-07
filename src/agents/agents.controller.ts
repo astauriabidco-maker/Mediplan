@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Request } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Request, Query } from '@nestjs/common';
 import { AgentsService } from './agents.service';
 import { CreateAgentDto } from './dto/create-agent.dto';
 import { UpdateAgentDto } from './dto/update-agent.dto';
@@ -16,13 +16,16 @@ export class AgentsController {
     create(@Request() req: any, @Body() createAgentDto: CreateAgentDto) {
         // Force tenantId from authenticated user
         const tenantId = req.user.tenantId;
-        return this.agentsService.create({ ...createAgentDto, tenantId });
+        const actorId = req.user.userId;
+        return this.agentsService.create({ ...createAgentDto, tenantId }, actorId);
     }
 
     @Get()
     @Permissions('agents:read')
-    findAll(@Request() req: any) {
-        const tenantId = req.user.tenantId;
+    findAll(@Request() req: any, @Query('tenantId') queryTenantId?: string) {
+        const tenantId = (req.user.role === 'SUPER_ADMIN' && queryTenantId) 
+            ? queryTenantId 
+            : req.user.tenantId;
         return this.agentsService.findAll(tenantId);
     }
 
@@ -36,22 +39,29 @@ export class AgentsController {
 
     @Get(':id')
     @Permissions('agents:read')
-    findOne(@Request() req: any, @Param('id') id: string) {
-        const tenantId = req.user.tenantId;
-        return this.agentsService.findOne(+id, tenantId);
+    findOne(@Request() req: any, @Param('id') id: string, @Query('tenantId') queryTenantId?: string) {
+        const tenantId = (req.user.role === 'SUPER_ADMIN' && queryTenantId) 
+            ? queryTenantId 
+            : req.user.tenantId;
+        const actorId = req.user.userId;
+        return this.agentsService.findOne(+id, tenantId, actorId);
     }
 
     @Patch(':id')
     @Permissions('agents:write', 'services:manage_staff') // Allow both as updateAgent is used for service assignment
-    update(@Request() req: any, @Param('id') id: string, @Body() updateAgentDto: UpdateAgentDto) {
-        const tenantId = req.user.tenantId;
-        return this.agentsService.update(+id, updateAgentDto, tenantId);
+    update(@Request() req: any, @Param('id') id: string, @Body() updateAgentDto: UpdateAgentDto, @Query('tenantId') queryTenantId?: string) {
+        const tenantId = (req.user.role === 'SUPER_ADMIN' && queryTenantId) 
+            ? queryTenantId 
+            : req.user.tenantId;
+        const actorId = req.user.userId;
+        return this.agentsService.update(+id, updateAgentDto, tenantId, actorId);
     }
 
     @Delete(':id')
     @Permissions('agents:write')
     remove(@Request() req: any, @Param('id') id: string) {
         const tenantId = req.user.tenantId;
-        return this.agentsService.remove(+id, tenantId);
+        const actorId = req.user.userId;
+        return this.agentsService.remove(+id, tenantId, actorId);
     }
 }

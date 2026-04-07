@@ -10,6 +10,7 @@ export declare class LeavesController {
         reason: string;
         agentId?: number;
     }): Promise<import("./entities/leave.entity").Leave>;
+    getMyBalances(req: any, year?: string): Promise<import("./entities/leave-balance.entity").LeaveBalance[]>;
     getMyLeaves(req: any): Promise<import("./entities/leave.entity").Leave[]>;
     getTeamRequests(req: any): Promise<import("./entities/leave.entity").Leave[]>;
     validateLeave(req: any, id: string, body: {

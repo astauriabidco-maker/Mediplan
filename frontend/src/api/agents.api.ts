@@ -52,6 +52,15 @@ export interface Agent {
     mainDiploma?: string;
     diplomaYear?: string;
     status?: 'INVITED' | 'ACTIVE' | 'DISABLED';
+    // Localisation Africa
+    niu?: string;
+    cnpsNumber?: string;
+    idType?: 'CNI' | 'PASSPORT' | 'ATTESTATION' | 'RESIDENCE_PERMIT';
+    idNumber?: string;
+    idExpiryDate?: string;
+    mobileMoneyProvider?: 'ORANGE_MONEY' | 'MTN_MOMO' | 'WAVE' | 'MOOV_MONEY' | 'AIRTEL_MONEY' | 'TELMA_MONEY';
+    mobileMoneyNumber?: string;
+    isWhatsAppCompatible?: boolean;
 }
 
 export const fetchAgents = async (): Promise<Agent[]> => {
@@ -81,7 +90,7 @@ export const updateAgent = async (id: number, data: Partial<Agent>): Promise<Age
     return response.data;
 };
 
-export const inviteUser = async (data: { email: string, roleId: number }): Promise<Agent> => {
+export const inviteUser = async (data: { email: string, roleId: number, tenantId?: string }): Promise<Agent> => {
     const response = await api.post('/auth/invite', data);
     return response.data;
 };

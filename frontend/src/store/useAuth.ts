@@ -12,7 +12,9 @@ interface User {
 interface AuthState {
     token: string | null;
     user: User | null;
+    impersonatedTenantId: string | null;
     setAuth: (token: string, user: User) => void;
+    setImpersonatedTenantId: (tenantId: string | null) => void;
     logout: () => void;
 }
 
@@ -21,8 +23,10 @@ export const useAuth = create<AuthState>()(
         (set) => ({
             token: null,
             user: null,
+            impersonatedTenantId: null,
             setAuth: (token, user) => set({ token, user }),
-            logout: () => set({ token: null, user: null }),
+            setImpersonatedTenantId: (tenantId) => set({ impersonatedTenantId: tenantId }),
+            logout: () => set({ token: null, user: null, impersonatedTenantId: null }),
         }),
         {
             name: 'auth-storage',

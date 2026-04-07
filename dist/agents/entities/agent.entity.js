@@ -9,7 +9,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.Agent = exports.UserStatus = exports.UserRole = void 0;
+exports.Agent = exports.MobileMoneyProvider = exports.IdType = exports.UserStatus = exports.UserRole = void 0;
 const typeorm_1 = require("typeorm");
 const contract_entity_1 = require("./contract.entity");
 const agent_competency_entity_1 = require("../../competencies/entities/agent-competency.entity");
@@ -18,8 +18,11 @@ const leave_entity_1 = require("../../planning/entities/leave.entity");
 const hospital_service_entity_1 = require("./hospital-service.entity");
 const role_entity_1 = require("../../auth/entities/role.entity");
 const grade_entity_1 = require("./grade.entity");
+const facility_entity_1 = require("./facility.entity");
+const beneficiary_entity_1 = require("./beneficiary.entity");
 var UserRole;
 (function (UserRole) {
+    UserRole["SUPER_ADMIN"] = "SUPER_ADMIN";
     UserRole["ADMIN"] = "ADMIN";
     UserRole["MANAGER"] = "MANAGER";
     UserRole["AGENT"] = "AGENT";
@@ -30,6 +33,22 @@ var UserStatus;
     UserStatus["ACTIVE"] = "ACTIVE";
     UserStatus["DISABLED"] = "DISABLED";
 })(UserStatus || (exports.UserStatus = UserStatus = {}));
+var IdType;
+(function (IdType) {
+    IdType["CNI"] = "CNI";
+    IdType["PASSPORT"] = "PASSPORT";
+    IdType["ATTESTATION"] = "ATTESTATION";
+    IdType["RESIDENCE_PERMIT"] = "RESIDENCE_PERMIT";
+})(IdType || (exports.IdType = IdType = {}));
+var MobileMoneyProvider;
+(function (MobileMoneyProvider) {
+    MobileMoneyProvider["ORANGE_MONEY"] = "ORANGE_MONEY";
+    MobileMoneyProvider["MTN_MOMO"] = "MTN_MOMO";
+    MobileMoneyProvider["WAVE"] = "WAVE";
+    MobileMoneyProvider["MOOV_MONEY"] = "MOOV_MONEY";
+    MobileMoneyProvider["AIRTEL_MONEY"] = "AIRTEL_MONEY";
+    MobileMoneyProvider["TELMA_MONEY"] = "TELMA_MONEY";
+})(MobileMoneyProvider || (exports.MobileMoneyProvider = MobileMoneyProvider = {}));
 let Agent = class Agent {
     id;
     role;
@@ -68,6 +87,14 @@ let Agent = class Agent {
     contractEndDate;
     iban;
     bic;
+    niu;
+    cnpsNumber;
+    idType;
+    idNumber;
+    idExpiryDate;
+    mobileMoneyProvider;
+    mobileMoneyNumber;
+    isWhatsAppCompatible;
     mainDiploma;
     diplomaYear;
     emergencyContactName;
@@ -77,6 +104,8 @@ let Agent = class Agent {
     telephone;
     password;
     tenantId;
+    facilityId;
+    facility;
     managerId;
     manager;
     subordinates;
@@ -84,6 +113,7 @@ let Agent = class Agent {
     agentCompetencies;
     shifts;
     leaves;
+    beneficiaries;
 };
 exports.Agent = Agent;
 __decorate([
@@ -249,6 +279,46 @@ __decorate([
 __decorate([
     (0, typeorm_1.Column)({ nullable: true }),
     __metadata("design:type", String)
+], Agent.prototype, "niu", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ nullable: true }),
+    __metadata("design:type", String)
+], Agent.prototype, "cnpsNumber", void 0);
+__decorate([
+    (0, typeorm_1.Column)({
+        type: 'enum',
+        enum: IdType,
+        nullable: true
+    }),
+    __metadata("design:type", String)
+], Agent.prototype, "idType", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ nullable: true }),
+    __metadata("design:type", String)
+], Agent.prototype, "idNumber", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ nullable: true }),
+    __metadata("design:type", String)
+], Agent.prototype, "idExpiryDate", void 0);
+__decorate([
+    (0, typeorm_1.Column)({
+        type: 'enum',
+        enum: MobileMoneyProvider,
+        nullable: true
+    }),
+    __metadata("design:type", String)
+], Agent.prototype, "mobileMoneyProvider", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ nullable: true }),
+    __metadata("design:type", String)
+], Agent.prototype, "mobileMoneyNumber", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ default: true }),
+    __metadata("design:type", Boolean)
+], Agent.prototype, "isWhatsAppCompatible", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ nullable: true }),
+    __metadata("design:type", String)
 ], Agent.prototype, "mainDiploma", void 0);
 __decorate([
     (0, typeorm_1.Column)({ nullable: true }),
@@ -285,6 +355,15 @@ __decorate([
 __decorate([
     (0, typeorm_1.Column)({ nullable: true }),
     __metadata("design:type", Number)
+], Agent.prototype, "facilityId", void 0);
+__decorate([
+    (0, typeorm_1.ManyToOne)(() => facility_entity_1.Facility, { nullable: true }),
+    (0, typeorm_1.JoinColumn)({ name: 'facilityId' }),
+    __metadata("design:type", facility_entity_1.Facility)
+], Agent.prototype, "facility", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ nullable: true }),
+    __metadata("design:type", Number)
 ], Agent.prototype, "managerId", void 0);
 __decorate([
     (0, typeorm_1.ManyToOne)(() => Agent, (agent) => agent.subordinates, { nullable: true }),
@@ -311,6 +390,10 @@ __decorate([
     (0, typeorm_1.OneToMany)(() => leave_entity_1.Leave, (leave) => leave.agent),
     __metadata("design:type", Array)
 ], Agent.prototype, "leaves", void 0);
+__decorate([
+    (0, typeorm_1.OneToMany)(() => beneficiary_entity_1.AgentBeneficiary, (beneficiary) => beneficiary.agent),
+    __metadata("design:type", Array)
+], Agent.prototype, "beneficiaries", void 0);
 exports.Agent = Agent = __decorate([
     (0, typeorm_1.Entity)()
 ], Agent);

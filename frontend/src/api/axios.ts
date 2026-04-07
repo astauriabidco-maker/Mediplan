@@ -6,9 +6,12 @@ const api = axios.create();
 
 api.interceptors.request.use(
     (config) => {
-        const token = useAuth.getState().token;
+        const { token, impersonatedTenantId } = useAuth.getState();
         if (token) {
             config.headers.Authorization = `Bearer ${token}`;
+        }
+        if (impersonatedTenantId) {
+            config.params = { ...config.params, tenantId: impersonatedTenantId };
         }
         return config;
     },

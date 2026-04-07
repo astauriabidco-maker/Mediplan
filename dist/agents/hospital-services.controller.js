@@ -23,14 +23,23 @@ let HospitalServicesController = class HospitalServicesController {
     constructor(servicesService) {
         this.servicesService = servicesService;
     }
-    findAll(req) {
-        return this.servicesService.findAll(req.user.tenantId);
+    findAll(req, queryTenantId) {
+        const tenantId = (req.user.role === 'SUPER_ADMIN' && queryTenantId)
+            ? queryTenantId
+            : req.user.tenantId;
+        return this.servicesService.findAll(tenantId);
     }
-    getStats(req) {
-        return this.servicesService.getStats(req.user.tenantId);
+    getStats(req, queryTenantId) {
+        const tenantId = (req.user.role === 'SUPER_ADMIN' && queryTenantId)
+            ? queryTenantId
+            : req.user.tenantId;
+        return this.servicesService.getStats(tenantId);
     }
-    getTree(req) {
-        return this.servicesService.getServiceTree(req.user.tenantId);
+    getTree(req, queryTenantId) {
+        const tenantId = (req.user.role === 'SUPER_ADMIN' && queryTenantId)
+            ? queryTenantId
+            : req.user.tenantId;
+        return this.servicesService.getServiceTree(tenantId);
     }
     findOne(req, id) {
         return this.servicesService.findOne(req.user.tenantId, id);
@@ -60,24 +69,27 @@ __decorate([
     (0, common_1.Get)(),
     (0, permissions_decorator_1.Permissions)('services:read'),
     __param(0, (0, common_1.Request)()),
+    __param(1, (0, common_1.Query)('tenantId')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Object]),
+    __metadata("design:paramtypes", [Object, String]),
     __metadata("design:returntype", void 0)
 ], HospitalServicesController.prototype, "findAll", null);
 __decorate([
     (0, common_1.Get)('stats'),
     (0, permissions_decorator_1.Permissions)('services:read'),
     __param(0, (0, common_1.Request)()),
+    __param(1, (0, common_1.Query)('tenantId')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Object]),
+    __metadata("design:paramtypes", [Object, String]),
     __metadata("design:returntype", void 0)
 ], HospitalServicesController.prototype, "getStats", null);
 __decorate([
     (0, common_1.Get)('tree'),
     (0, permissions_decorator_1.Permissions)('services:read'),
     __param(0, (0, common_1.Request)()),
+    __param(1, (0, common_1.Query)('tenantId')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Object]),
+    __metadata("design:paramtypes", [Object, String]),
     __metadata("design:returntype", void 0)
 ], HospitalServicesController.prototype, "getTree", null);
 __decorate([

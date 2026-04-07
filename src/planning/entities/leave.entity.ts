@@ -54,4 +54,14 @@ export class Leave {
 
     @Column({ nullable: true })
     rejectionReason: string;
+
+    // --- AI & Legal Audit ---
+    @Column({ nullable: true, type: 'text' })
+    aiRecommendation: string;
+
+    @Column({ nullable: true, type: 'int' })
+    aiScore: number;
+
+    @Column({ default: false })
+    isAutoRejected: boolean;
 }

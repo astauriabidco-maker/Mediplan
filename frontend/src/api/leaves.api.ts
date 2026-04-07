@@ -22,6 +22,9 @@ export interface Leave {
     status: LeaveStatus;
     reason: string;
     rejectionReason?: string;
+    aiRecommendation?: string;
+    aiScore?: number;
+    isAutoRejected?: boolean;
     agent: {
         id: number;
         firstName: string;
@@ -36,6 +39,15 @@ export interface Leave {
         firstName: string;
         lastName: string;
     }
+}
+
+export interface LeaveBalance {
+    id: number;
+    type: LeaveType;
+    year: number;
+    allowance: number;
+    consumed: number;
+    tenantId: string;
 }
 
 export const leavesApi = {
@@ -61,6 +73,12 @@ export const leavesApi = {
 
     validateLeave: async (id: number, status: LeaveStatus.APPROVED | LeaveStatus.REJECTED, rejectionReason?: string) => {
         const response = await api.post<Leave>(`/api/leaves/${id}/validate`, { status, rejectionReason });
+        return response.data;
+    },
+
+    getMyBalances: async (year?: number) => {
+        const url = year ? `/api/leaves/balances?year=${year}` : '/api/leaves/balances';
+        const response = await api.get<LeaveBalance[]>(url);
         return response.data;
     }
 };

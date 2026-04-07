@@ -65,7 +65,17 @@ const mail_module_1 = require("./mail/mail.module");
 const notifications_module_1 = require("./notifications/notifications.module");
 const audit_module_1 = require("./audit/audit.module");
 const audit_log_entity_1 = require("./audit/entities/audit-log.entity");
+const competency_entity_1 = require("./competencies/entities/competency.entity");
+const agent_competency_entity_1 = require("./competencies/entities/agent-competency.entity");
 const whatsapp_module_1 = require("./whatsapp/whatsapp.module");
+const fhir_module_1 = require("./fhir/fhir.module");
+const payroll_module_1 = require("./payroll/payroll.module");
+const schedule_1 = require("@nestjs/schedule");
+const documents_module_1 = require("./documents/documents.module");
+const events_module_1 = require("./events/events.module");
+const ght_module_1 = require("./ght/ght.module");
+const facility_module_1 = require("./facility/facility.module");
+const settings_module_1 = require("./settings/settings.module");
 let AppModule = class AppModule {
 };
 exports.AppModule = AppModule;
@@ -75,6 +85,7 @@ exports.AppModule = AppModule = __decorate([
             serve_static_1.ServeStaticModule.forRoot({
                 rootPath: (0, path_1.join)(process.cwd(), 'public'),
             }),
+            schedule_1.ScheduleModule.forRoot(),
             locale_module_1.LocaleConfigModule,
             config_1.ConfigModule.forRoot({
                 isGlobal: true,
@@ -101,7 +112,7 @@ exports.AppModule = AppModule = __decorate([
                     synchronize: true,
                 }),
             }),
-            typeorm_1.TypeOrmModule.forFeature([agent_entity_1.Agent, shift_entity_1.Shift, audit_log_entity_1.AuditLog]),
+            typeorm_1.TypeOrmModule.forFeature([agent_entity_1.Agent, shift_entity_1.Shift, audit_log_entity_1.AuditLog, competency_entity_1.Competency, agent_competency_entity_1.AgentCompetency]),
             agents_module_1.AgentsModule,
             competencies_module_1.CompetenciesModule,
             ui_module_1.UiModule,
@@ -115,6 +126,13 @@ exports.AppModule = AppModule = __decorate([
             notifications_module_1.NotificationsModule,
             audit_module_1.AuditModule,
             whatsapp_module_1.WhatsappModule,
+            fhir_module_1.FhirModule,
+            payroll_module_1.PayrollModule,
+            documents_module_1.DocumentsModule,
+            events_module_1.EventsModule,
+            ght_module_1.GhtModule,
+            facility_module_1.FacilityModule,
+            settings_module_1.SettingsModule,
         ],
         controllers: [app_controller_1.AppController],
         providers: [app_service_1.AppService, seed_service_1.SeedService],

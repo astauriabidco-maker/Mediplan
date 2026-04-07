@@ -5,7 +5,10 @@ import { Leave } from '../../planning/entities/leave.entity';
 import { HospitalService } from './hospital-service.entity';
 import { Role } from '../../auth/entities/role.entity';
 import { Grade } from './grade.entity';
+import { Facility } from './facility.entity';
+import { AgentBeneficiary } from './beneficiary.entity';
 export declare enum UserRole {
+    SUPER_ADMIN = "SUPER_ADMIN",
     ADMIN = "ADMIN",
     MANAGER = "MANAGER",
     AGENT = "AGENT"
@@ -14,6 +17,20 @@ export declare enum UserStatus {
     INVITED = "INVITED",
     ACTIVE = "ACTIVE",
     DISABLED = "DISABLED"
+}
+export declare enum IdType {
+    CNI = "CNI",
+    PASSPORT = "PASSPORT",
+    ATTESTATION = "ATTESTATION",
+    RESIDENCE_PERMIT = "RESIDENCE_PERMIT"
+}
+export declare enum MobileMoneyProvider {
+    ORANGE_MONEY = "ORANGE_MONEY",
+    MTN_MOMO = "MTN_MOMO",
+    WAVE = "WAVE",
+    MOOV_MONEY = "MOOV_MONEY",
+    AIRTEL_MONEY = "AIRTEL_MONEY",
+    TELMA_MONEY = "TELMA_MONEY"
 }
 export declare class Agent {
     id: number;
@@ -53,6 +70,14 @@ export declare class Agent {
     contractEndDate: string;
     iban: string;
     bic: string;
+    niu: string;
+    cnpsNumber: string;
+    idType: IdType;
+    idNumber: string;
+    idExpiryDate: string;
+    mobileMoneyProvider: MobileMoneyProvider;
+    mobileMoneyNumber: string;
+    isWhatsAppCompatible: boolean;
     mainDiploma: string;
     diplomaYear: string;
     emergencyContactName: string;
@@ -62,6 +87,8 @@ export declare class Agent {
     telephone: string;
     password?: string;
     tenantId: string;
+    facilityId: number;
+    facility: Facility;
     managerId: number;
     manager: Agent;
     subordinates: Agent[];
@@ -69,4 +96,5 @@ export declare class Agent {
     agentCompetencies: AgentCompetency[];
     shifts: Shift[];
     leaves: Leave[];
+    beneficiaries: AgentBeneficiary[];
 }

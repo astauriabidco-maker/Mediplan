@@ -1,5 +1,5 @@
-import { IsEmail, IsNotEmpty, IsString, IsPhoneNumber, IsOptional, IsNumber, IsEnum } from 'class-validator';
-import { UserRole, UserStatus } from '../entities/agent.entity';
+import { IsEmail, IsNotEmpty, IsString, IsPhoneNumber, IsOptional, IsNumber, IsEnum, IsBoolean } from 'class-validator';
+import { UserRole, UserStatus, IdType, MobileMoneyProvider } from '../entities/agent.entity';
 
 export class CreateAgentDto {
     @IsString()
@@ -140,6 +140,38 @@ export class CreateAgentDto {
 
     @IsPhoneNumber()
     telephone: string;
+
+    @IsBoolean()
+    @IsOptional()
+    isWhatsAppCompatible?: boolean;
+
+    @IsString()
+    @IsOptional()
+    niu?: string;
+
+    @IsString()
+    @IsOptional()
+    cnpsNumber?: string;
+
+    @IsEnum(IdType)
+    @IsOptional()
+    idType?: IdType;
+
+    @IsString()
+    @IsOptional()
+    idNumber?: string;
+
+    @IsString()
+    @IsOptional()
+    idExpiryDate?: string;
+
+    @IsEnum(MobileMoneyProvider)
+    @IsOptional()
+    mobileMoneyProvider?: MobileMoneyProvider;
+
+    @IsString()
+    @IsOptional()
+    mobileMoneyNumber?: string;
 
     password?: string;
 

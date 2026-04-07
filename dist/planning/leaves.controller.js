@@ -29,6 +29,10 @@ let LeavesController = class LeavesController {
         const targetAgentId = body.agentId || currentUserId;
         return this.leavesService.requestLeave(tenantId, targetAgentId, new Date(body.start), new Date(body.end), body.type, body.reason, targetAgentId !== currentUserId ? currentUserId : undefined);
     }
+    async getMyBalances(req, year) {
+        const targetYear = year ? parseInt(year, 10) : new Date().getFullYear();
+        return this.leavesService.getMyBalances(req.user.tenant, req.user.sub, targetYear);
+    }
     async getMyLeaves(req) {
         return this.leavesService.getMyLeaves(req.user.tenant, req.user.sub);
     }
@@ -49,6 +53,15 @@ __decorate([
     __metadata("design:paramtypes", [Object, Object]),
     __metadata("design:returntype", Promise)
 ], LeavesController.prototype, "requestLeave", null);
+__decorate([
+    (0, common_1.Get)('balances'),
+    (0, permissions_decorator_1.Permissions)('leaves:read'),
+    __param(0, (0, common_1.Request)()),
+    __param(1, (0, common_1.Query)('year')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, String]),
+    __metadata("design:returntype", Promise)
+], LeavesController.prototype, "getMyBalances", null);
 __decorate([
     (0, common_1.Get)('my-leaves'),
     (0, permissions_decorator_1.Permissions)('leaves:read'),

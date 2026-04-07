@@ -1,10 +1,20 @@
 import { Agent } from './agent.entity';
+import { Facility } from './facility.entity';
+export declare enum RiskLevel {
+    NONE = "NONE",
+    LOW = "LOW",
+    MEDIUM = "MEDIUM",
+    HIGH = "HIGH",
+    CRITICAL = "CRITICAL"
+}
 export declare class HospitalService {
     id: number;
     name: string;
     code: string;
     description: string;
     tenantId: string;
+    facilityId: number;
+    facility: Facility;
     parentService: HospitalService;
     parentServiceId: number | null;
     subServices: HospitalService[];
@@ -21,6 +31,10 @@ export declare class HospitalService {
     minAgents: number | null;
     agents: Agent[];
     isActive: boolean;
+    is24x7: boolean;
+    bedCapacity: number;
+    contactNumber: string;
+    riskLevel: RiskLevel;
     createdAt: Date;
     updatedAt: Date;
 }

@@ -2,6 +2,7 @@ import { Injectable, NotFoundException, BadRequestException } from '@nestjs/comm
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Leave, LeaveStatus, LeaveType } from './entities/leave.entity';
+import { LeaveBalance } from './entities/leave-balance.entity';
 import { Agent } from '../agents/entities/agent.entity';
 import { NotificationsService } from '../notifications/notifications.service';
 import { AuditService } from '../audit/audit.service';
@@ -12,6 +13,8 @@ export class LeavesService {
     constructor(
         @InjectRepository(Leave)
         private leavesRepository: Repository<Leave>,
+        @InjectRepository(LeaveBalance)
+        private leaveBalanceRepository: Repository<LeaveBalance>,
         @InjectRepository(Agent)
         private agentRepository: Repository<Agent>,
         private readonly notificationsService: NotificationsService,
@@ -153,6 +156,31 @@ export class LeavesService {
 
         const savedLeave = await this.leavesRepository.save(leave);
 
+        // Debit LeaveBalance if approved
+        if (status === LeaveStatus.APPROVED) {
+            const year = leave.start.getFullYear();
+            const daysToDebit = Math.ceil((leave.end.getTime() - leave.start.getTime()) / (1000 * 3600 * 24)); // Simplistic calculation
+
+            let balance = await this.leaveBalanceRepository.findOne({
+                where: { agent: { id: leave.agent.id }, type: leave.type, year, tenantId }
+            });
+
+            // If balance doesn't exist, we create a default one for the sake of continuity, or we could reject.
+            if (!balance) {
+                balance = this.leaveBalanceRepository.create({
+                    agent: leave.agent,
+                    type: leave.type,
+                    year,
+                    tenantId,
+                    allowance: 30, // Default allowance if none setup
+                    consumed: 0
+                });
+            }
+
+            balance.consumed += daysToDebit;
+            await this.leaveBalanceRepository.save(balance);
+        }
+
         await this.auditService.log(
             tenantId,
             managerId,
@@ -182,5 +210,31 @@ export class LeavesService {
             .getCount();
 
         return count === 0;
+    }
+
+    async getMyBalances(tenantId: string, agentId: number, year: number): Promise<LeaveBalance[]> {
+        const agent = await this.agentRepository.findOneBy({ id: agentId, tenantId });
+        if (!agent) throw new NotFoundException('Agent non trouvé');
+
+        let balances = await this.leaveBalanceRepository.find({
+            where: { tenantId, agent: { id: agentId }, year },
+            order: { type: 'ASC' }
+        });
+
+        // Initialize default "CONGE_ANNUEL" if it doesn't exist
+        if (!balances.find(b => b.type === LeaveType.CONGE_ANNUEL)) {
+            const defaultBalance = this.leaveBalanceRepository.create({
+                agent,
+                type: LeaveType.CONGE_ANNUEL,
+                year,
+                tenantId,
+                allowance: 30, // Default allocation
+                consumed: 0
+            });
+            await this.leaveBalanceRepository.save(defaultBalance);
+            balances.push(defaultBalance);
+        }
+
+        return balances;
     }
 }

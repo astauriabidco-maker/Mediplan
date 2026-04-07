@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { gradesApi, Grade } from '../api/grades.api';
 import { workPoliciesApi, WorkPolicy } from '../api/work-policies.api';
 import { hospitalServicesApi } from '../api/hospital-services.api';
+import { facilityApi, Facility } from '../api/facility.api';
 import { useAppConfig } from '../store/useAppConfig';
 
 // Helper for classes 
@@ -17,7 +18,11 @@ function cn(...inputs: ClassValue[]) {
 export const StructureRulesTab = () => {
     const { themeColor } = useAppConfig();
     const queryClient = useQueryClient();
-    const [activeSection, setActiveSection] = useState<'grades' | 'rules'>('grades');
+    const [activeSection, setActiveSection] = useState<'sites' | 'grades' | 'rules'>('sites');
+
+    // --- State for Sites ---
+    const [isAddingSite, setIsAddingSite] = useState(false);
+    const [editingSite, setEditingSite] = useState<Facility | null>(null);
 
     // --- State for Grades ---
     const [isAddingGrade, setIsAddingGrade] = useState(false);
@@ -28,9 +33,32 @@ export const StructureRulesTab = () => {
     const [editingRule, setEditingRule] = useState<WorkPolicy | null>(null);
 
     // --- Query Data ---
+    const { data: facilities = [] } = useQuery({ queryKey: ['facilities'], queryFn: facilityApi.getAll });
     const { data: grades = [] } = useQuery({ queryKey: ['grades'], queryFn: gradesApi.getAll });
     const { data: policies = [] } = useQuery({ queryKey: ['work-policies'], queryFn: workPoliciesApi.getAll });
     const { data: services = [] } = useQuery({ queryKey: ['hospital-services'], queryFn: hospitalServicesApi.getAll });
+
+    // --- Mutations Sites ---
+    const createSite = useMutation({
+        mutationFn: facilityApi.create,
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['facilities'] });
+            setIsAddingSite(false);
+        }
+    });
+
+    const updateSite = useMutation({
+        mutationFn: ({ id, data }: { id: number, data: Partial<Facility> }) => facilityApi.update(id, data),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['facilities'] });
+            setEditingSite(null);
+        }
+    });
+
+    const deleteSite = useMutation({
+        mutationFn: facilityApi.remove,
+        onSuccess: () => queryClient.invalidateQueries({ queryKey: ['facilities'] })
+    });
 
     // --- Mutations Grades ---
     const createGrade = useMutation({
@@ -90,6 +118,15 @@ export const StructureRulesTab = () => {
             {/* Sub-Tabs */}
             <div className="flex gap-2 p-1 bg-slate-900 border border-slate-800 rounded-xl w-fit">
                 <button
+                    onClick={() => setActiveSection('sites')}
+                    className={cn(
+                        "px-4 py-2 font-medium text-sm rounded-lg transition-all",
+                        activeSection === 'sites' ? "bg-slate-800 text-white" : "text-slate-500 hover:text-slate-300"
+                    )}
+                >
+                    Sites & Établissements
+                </button>
+                <button
                     onClick={() => setActiveSection('grades')}
                     className={cn(
                         "px-4 py-2 font-medium text-sm rounded-lg transition-all",
@@ -108,6 +145,86 @@ export const StructureRulesTab = () => {
                     Matrice de Règles
                 </button>
             </div>
+
+            {/* SITES SECTION */}
+            {activeSection === 'sites' && (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                    <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6">
+                        <div className="flex items-center justify-between mb-6">
+                            <h3 className="text-lg font-bold text-white uppercase tracking-widest">Sites du GHT</h3>
+                            <button
+                                onClick={() => setIsAddingSite(true)}
+                                className={cn("px-3 py-1.5 rounded-lg text-xs font-bold text-white flex items-center gap-2", `bg-${themeColor}`)}
+                            >
+                                <Plus size={14} /> Ajouter un site
+                            </button>
+                        </div>
+
+                        {isAddingSite && (
+                            <div className="mb-4 p-4 bg-slate-800/50 rounded-xl border border-slate-700 animate-in fade-in slide-in-from-top-2">
+                                <form onSubmit={(e) => {
+                                    e.preventDefault();
+                                    const formData = new FormData(e.currentTarget);
+                                    createSite.mutate({
+                                        name: formData.get('name') as string,
+                                        code: formData.get('code') as string,
+                                        city: formData.get('city') as string,
+                                    });
+                                }} className="space-y-4">
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div className="space-y-1">
+                                            <label className="text-[10px] uppercase font-bold text-slate-500">Nom du site</label>
+                                            <input name="name" placeholder="ex: Hôpital Nord" required className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white" />
+                                        </div>
+                                        <div className="space-y-1">
+                                            <label className="text-[10px] uppercase font-bold text-slate-500">Code (Trigramme)</label>
+                                            <input name="code" placeholder="NOR" required className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white" />
+                                        </div>
+                                        <div className="col-span-2 space-y-1">
+                                            <label className="text-[10px] uppercase font-bold text-slate-500">Ville / Localisation</label>
+                                            <input name="city" placeholder="Nantes" className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white" />
+                                        </div>
+                                    </div>
+                                    <div className="flex justify-end gap-2">
+                                        <button type="button" onClick={() => setIsAddingSite(false)} className="px-4 py-2 bg-slate-700 rounded-lg text-slate-300 font-bold text-xs">Annuler</button>
+                                        <button type="submit" className="px-4 py-2 bg-emerald-600 rounded-lg text-white font-bold text-xs">Créer</button>
+                                    </div>
+                                </form>
+                            </div>
+                        )}
+
+                        <div className="space-y-2">
+                            {Array.isArray(facilities) && facilities.map(site => (
+                                <div key={site.id} className="flex items-center justify-between p-3 bg-slate-800/20 rounded-xl border border-white/5 group hover:border-white/10 transition-colors">
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-10 h-10 rounded-lg bg-blue-500/10 flex items-center justify-center text-blue-500">
+                                            <Building2 size={20} />
+                                        </div>
+                                        <div>
+                                            <p className="font-bold text-white text-sm">{site.name}</p>
+                                            <p className="text-[10px] text-slate-500">{site.city || 'Localisation non définie'} • {site.code}</p>
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                        <button onClick={() => deleteSite.mutate(site.id)} className="p-2 text-slate-500 hover:text-rose-500 hover:bg-rose-500/10 rounded-lg">
+                                            <Trash2 size={16} />
+                                        </button>
+                                    </div>
+                                </div>
+                            ))}
+                            {Array.isArray(facilities) && facilities.length === 0 && <p className="text-center text-slate-500 text-sm py-8">Aucun site défini pour ce GHT</p>}
+                        </div>
+                    </div>
+
+                    <div className="p-6 bg-slate-900/50 border border-dashed border-slate-800 rounded-3xl flex flex-col items-center justify-center text-center">
+                        <Building2 size={48} className="text-slate-700 mb-4" />
+                        <h4 className="text-white font-bold mb-2">Multi-Sites (Facilities)</h4>
+                        <p className="text-slate-500 text-sm max-w-sm">
+                            Configurez les différents établissements physiques rattachés à votre GHT. Les services seront ensuite liés à ces sites pour une gestion précise.
+                        </p>
+                    </div>
+                </div>
+            )}
 
             {/* GRADES SECTION */}
             {activeSection === 'grades' && (

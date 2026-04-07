@@ -3,8 +3,8 @@ import { HospitalService } from './entities/hospital-service.entity';
 export declare class HospitalServicesController {
     private readonly servicesService;
     constructor(servicesService: HospitalServicesService);
-    findAll(req: any): Promise<HospitalService[]>;
-    getStats(req: any): Promise<{
+    findAll(req: any, queryTenantId?: string): Promise<HospitalService[]>;
+    getStats(req: any, queryTenantId?: string): Promise<{
         totalServices: number;
         services: {
             id: number;
@@ -16,7 +16,7 @@ export declare class HospitalServicesController {
         }[];
         totalAgents: number;
     }>;
-    getTree(req: any): Promise<HospitalService[]>;
+    getTree(req: any, queryTenantId?: string): Promise<HospitalService[]>;
     findOne(req: any, id: number): Promise<HospitalService | null>;
     getHierarchy(req: any, id: number): Promise<HospitalService | null>;
     create(req: any, data: Partial<HospitalService>): Promise<HospitalService>;

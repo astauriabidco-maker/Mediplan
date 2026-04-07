@@ -1,4 +1,4 @@
-import { UserRole, UserStatus } from '../entities/agent.entity';
+import { UserRole, UserStatus, IdType, MobileMoneyProvider } from '../entities/agent.entity';
 export declare class CreateAgentDto {
     nom: string;
     firstName?: string;
@@ -34,6 +34,14 @@ export declare class CreateAgentDto {
     email: string;
     matricule: string;
     telephone: string;
+    isWhatsAppCompatible?: boolean;
+    niu?: string;
+    cnpsNumber?: string;
+    idType?: IdType;
+    idNumber?: string;
+    idExpiryDate?: string;
+    mobileMoneyProvider?: MobileMoneyProvider;
+    mobileMoneyNumber?: string;
     password?: string;
     hospitalServiceId?: number;
     managerId?: number;
