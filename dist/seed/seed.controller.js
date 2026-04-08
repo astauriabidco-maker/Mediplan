@@ -413,10 +413,10 @@ let SeedController = class SeedController {
             }
         }
         const fakeDocuments = [
-            { title: 'Contrat de travail à durée indéterminée', type: document_entity_1.DocumentType.CONTRACT, fileUrl: 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf' },
-            { title: 'Attestation de formation AFGSU', type: document_entity_1.DocumentType.CERTIFICATE, fileUrl: 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf' },
-            { title: 'Avenant au contrat - Nuit', type: document_entity_1.DocumentType.AVENANT, fileUrl: 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf' },
-            { title: 'Fiche de paie Mai', type: document_entity_1.DocumentType.PAYSLIP, fileUrl: 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf' },
+            { title: 'Contrat de travail à durée indéterminée', type: 'Contrat de Travail', fileUrl: 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf' },
+            { title: 'Attestation de formation AFGSU', type: 'Attestation de Formation', fileUrl: 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf' },
+            { title: 'Avenant au contrat - Nuit', type: 'Avenant de Garde', fileUrl: 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf' },
+            { title: 'Fiche de paie Mai', type: 'Fiche de Paie', fileUrl: 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf' },
         ];
         for (const agent of allAgents) {
             const nbDoc = Math.floor(Math.random() * 2) + 1;

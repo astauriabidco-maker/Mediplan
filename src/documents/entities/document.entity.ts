@@ -1,13 +1,8 @@
 import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, ManyToOne, JoinColumn } from 'typeorm';
 import { Agent } from '../../agents/entities/agent.entity';
 
-export enum DocumentType {
-    CONTRACT = 'CONTRACT',
-    AVENANT = 'AVENANT',
-    PAYSLIP = 'PAYSLIP',
-    CERTIFICATE = 'CERTIFICATE',
-    OTHER = 'OTHER'
-}
+// Document Types are now dynamically provided via configuration settings.
+// They used to be a strict Enum.
 
 export enum DocumentStatus {
     DRAFT = 'DRAFT',
@@ -29,10 +24,9 @@ export class Document {
 
     @Column({
         type: 'varchar',
-        enum: DocumentType,
-        default: DocumentType.OTHER
+        default: 'Autre'
     })
-    type: DocumentType;
+    type: string;
 
     @Column({
         type: 'varchar',

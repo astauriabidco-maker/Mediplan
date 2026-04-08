@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { Document, DocumentStatus, DocumentType } from './entities/document.entity';
+import { Document, DocumentStatus } from './entities/document.entity';
 import { SignatureLog } from './entities/signature-log.entity';
 import { AuditService } from '../audit/audit.service';
 import { WhatsappService } from '../whatsapp/whatsapp.service';
@@ -146,7 +146,7 @@ export class DocumentsService {
             tenantId,
             agentId: agent.id,
             title: `Avenant Garde du ${new Date(shift.start).toLocaleDateString('fr-FR')}`,
-            type: DocumentType.AVENANT,
+            type: 'Avenant de Garde',
             fileUrl: `/uploads/documents/${filename}`,
             status: DocumentStatus.DRAFT,
             agent: agent

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { FileText, Upload, ShieldCheck, Clock, FileBadge, CheckCircle, FileSignature } from 'lucide-react';
 import { fetchDocuments, requestSignature, signDocument, uploadDocument } from '../api/documents.api';
+import { fetchSettings } from '../api/settings.api';
 import { useAuth } from '../store/useAuth';
 
 export const GedPage = () => {
@@ -9,7 +10,7 @@ export const GedPage = () => {
     const [uploading, setUploading] = useState(false);
     const [selectedFile, setSelectedFile] = useState<File | null>(null);
     const [title, setTitle] = useState('');
-    const [docType, setDocType] = useState('CONTRACT');
+    const [docType, setDocType] = useState('Contrat de Travail');
     const [signingDoc, setSigningDoc] = useState<any>(null);
     const [otp, setOtp] = useState('');
     const [filterStatus, setFilterStatus] = useState<string>('ALL');
@@ -18,6 +19,24 @@ export const GedPage = () => {
         queryKey: ['documents'],
         queryFn: () => fetchDocuments()
     });
+
+    const { data: categories = ['Contrat de Travail', 'Avenant de Garde', 'Fiche de Paie', 'Attestation de Formation', 'Autre'] } = useQuery({
+        queryKey: ['documentCategories'],
+        queryFn: async () => {
+            const settings = await fetchSettings();
+            const catSetting = settings.find(s => s.key === 'documents.categories');
+            if (catSetting && catSetting.value) {
+                return catSetting.value.split(',').map(s => s.trim());
+            }
+            return ['Contrat de Travail', 'Avenant de Garde', 'Fiche de Paie', 'Attestation de Formation', 'Autre'];
+        }
+    });
+
+    React.useEffect(() => {
+        if (categories.length > 0 && !categories.includes(docType)) {
+            setDocType(categories[0]);
+        }
+    }, [categories]);
 
     const handleUpload = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -92,9 +111,9 @@ export const GedPage = () => {
                                 value={docType} onChange={(e) => setDocType(e.target.value)}
                                 className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-2 mt-1 text-sm text-white"
                             >
-                                <option value="CONTRACT">Contrat de Travail</option>
-                                <option value="AVENANT">Avenant</option>
-                                <option value="CERTIFICATE">Attestation</option>
+                                {categories.map((cat: string) => (
+                                    <option key={cat} value={cat}>{cat}</option>
+                                ))}
                             </select>
                         </div>
                         <div>

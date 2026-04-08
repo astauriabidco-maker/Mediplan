@@ -16,7 +16,8 @@ export const DEFAULTS: DefaultSetting[] = [
     { key: 'planning.max_guard_duration', value: '24', type: SettingType.NUMBER, description: 'Durée maximale d\'une garde' },
     { key: 'planning.beds_per_nurse_day', value: '10', type: SettingType.NUMBER, description: 'Ratio Lit/Agent de Jour' },
     { key: 'planning.beds_per_nurse_night', value: '15', type: SettingType.NUMBER, description: 'Ratio Lit/Agent de Nuit' },
-    { key: 'whatsapp.enabled', value: 'true', type: SettingType.BOOLEAN, description: 'Activer les notifications WhatsApp' }
+    { key: 'whatsapp.enabled', value: 'true', type: SettingType.BOOLEAN, description: 'Activer les notifications WhatsApp' },
+    { key: 'documents.categories', value: 'Contrat de Travail,Avenant de Garde,Fiche de Paie,Attestation de Formation,Arrêt Maladie,RIB,Autre', type: SettingType.STRING, description: 'Catégories valides pour le coffre-fort (Séparées par virgules)' }
 ];
 
 @Injectable()

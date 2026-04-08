@@ -3,7 +3,6 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { DocumentsService } from './documents.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { Permissions } from '../auth/permissions.decorator';
-import { DocumentType } from './entities/document.entity';
 import { diskStorage } from 'multer';
 import * as path from 'path';
 
@@ -22,7 +21,14 @@ export class DocumentsController {
         const tenantId = (req.user.role === 'SUPER_ADMIN' && queryTenantId) 
             ? queryTenantId 
             : req.user.tenantId;
-        return this.documentsService.getDocuments(tenantId, agentId ? +agentId : undefined);
+
+        // SECURITY: If the user is a standard agent, force them to only see their own documents.
+        let targetAgentId = agentId ? +agentId : undefined;
+        if (req.user.role !== 'SUPER_ADMIN' && req.user.role !== 'ADMIN') {
+            targetAgentId = req.user.id;
+        }
+
+        return this.documentsService.getDocuments(tenantId, targetAgentId);
     }
 
     @Post('upload')
@@ -48,11 +54,17 @@ export class DocumentsController {
             ? body.tenantId 
             : req.user.tenantId;
 
+        // SECURITY: Agents can only upload to their own vault. Admins can upload to anyone.
+        let targetAgentId = body.agentId ? +body.agentId : req.user.id;
+        if (req.user.role !== 'SUPER_ADMIN' && req.user.role !== 'ADMIN') {
+            targetAgentId = req.user.id;
+        }
+
         return this.documentsService.createDocument({
             tenantId: tenantId,
             title: body.title,
-            agentId: +body.agentId,
-            type: (body.type as DocumentType) || DocumentType.OTHER,
+            agentId: targetAgentId,
+            type: body.type || 'Autre',
             fileUrl: fileUrl,
         });
     }

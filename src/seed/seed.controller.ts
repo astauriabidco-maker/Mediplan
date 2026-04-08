@@ -6,7 +6,7 @@ import { HospitalService } from '../agents/entities/hospital-service.entity';
 import { Leave, LeaveStatus, LeaveType } from '../planning/entities/leave.entity';
 import { Competency } from '../competencies/entities/competency.entity';
 import { AgentCompetency } from '../competencies/entities/agent-competency.entity';
-import { Document, DocumentType, DocumentStatus } from '../documents/entities/document.entity';
+import { Document, DocumentStatus } from '../documents/entities/document.entity';
 import * as bcrypt from 'bcrypt';
 import { addDays, subDays } from 'date-fns';
 
@@ -416,10 +416,10 @@ export class SeedController {
 
         // --- SEED GED DOCUMENTS ---
         const fakeDocuments = [
-            { title: 'Contrat de travail à durée indéterminée', type: DocumentType.CONTRACT, fileUrl: 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf' },
-            { title: 'Attestation de formation AFGSU', type: DocumentType.CERTIFICATE, fileUrl: 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf' },
-            { title: 'Avenant au contrat - Nuit', type: DocumentType.AVENANT, fileUrl: 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf' },
-            { title: 'Fiche de paie Mai', type: DocumentType.PAYSLIP, fileUrl: 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf' },
+            { title: 'Contrat de travail à durée indéterminée', type: 'Contrat de Travail', fileUrl: 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf' },
+            { title: 'Attestation de formation AFGSU', type: 'Attestation de Formation', fileUrl: 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf' },
+            { title: 'Avenant au contrat - Nuit', type: 'Avenant de Garde', fileUrl: 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf' },
+            { title: 'Fiche de paie Mai', type: 'Fiche de Paie', fileUrl: 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf' },
         ];
 
         for (const agent of allAgents) {

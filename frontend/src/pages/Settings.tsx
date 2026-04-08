@@ -8,7 +8,7 @@ export default function SettingsPage() {
     const [settings, setSettings] = useState<Setting[]>([]);
     const [facilities, setFacilities] = useState<FacilityEntity[]>([]);
     const [selectedFacility, setSelectedFacility] = useState<string>('GLOBAL');
-    const [activeTab, setActiveTab] = useState<'PLANNING' | 'COMMS' | 'GHT'>('PLANNING');
+    const [activeTab, setActiveTab] = useState<'PLANNING' | 'COMMS' | 'GHT' | 'GED'>('PLANNING');
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
     const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -62,6 +62,7 @@ export default function SettingsPage() {
     const TABS = [
         { id: 'PLANNING', label: 'Règles Planning & IA', icon: Zap },
         { id: 'COMMS', label: 'Notifications WhatsApp', icon: MessagesSquare },
+        { id: 'GED', label: 'Coffre-Fort GED', icon: Zap },
         { id: 'GHT', label: 'Infrastructures GHT', icon: Network },
     ] as const;
 
@@ -227,6 +228,35 @@ export default function SettingsPage() {
                                         {/* Render communication settings here */}
                                         <div className="space-y-4">
                                             {settings.filter(s => s.key.startsWith('whatsapp.')).map(setting => (
+                                                <div key={setting.key} className="flex items-center justify-between p-6 bg-slate-950/50 rounded-2xl border border-slate-800/50 hover:border-slate-700 transition-colors">
+                                                    <div>
+                                                        <h3 className="font-bold text-white text-lg">{setting.description || setting.key}</h3>
+                                                        <p className="text-xs text-slate-500 font-mono mt-1">{setting.key}</p>
+                                                    </div>
+                                                    <div className="flex items-center gap-4">
+                                                        {renderSettingInput(setting)}
+                                                        <button
+                                                            onClick={() => saveSetting(setting)}
+                                                            disabled={isSaving}
+                                                            className="p-3 bg-white/5 hover:bg-purple-500 text-slate-400 hover:text-white rounded-xl transition-all"
+                                                        >
+                                                            <Save size={20} />
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {activeTab === 'GED' && (
+                                    <div className="space-y-6">
+                                        <div className="pb-6 border-b border-slate-800">
+                                            <h2 className="text-xl font-bold text-white">Coffre-Fort Électronique (GED)</h2>
+                                            <p className="text-sm text-slate-500 mt-1">Configurez les types de documents acceptés sur la plateforme.</p>
+                                        </div>
+                                        <div className="space-y-4">
+                                            {settings.filter(s => s.key.startsWith('documents.')).map(setting => (
                                                 <div key={setting.key} className="flex items-center justify-between p-6 bg-slate-950/50 rounded-2xl border border-slate-800/50 hover:border-slate-700 transition-colors">
                                                     <div>
                                                         <h3 className="font-bold text-white text-lg">{setting.description || setting.key}</h3>
