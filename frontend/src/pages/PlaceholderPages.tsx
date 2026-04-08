@@ -607,32 +607,6 @@ export const PaymentPage = () => {
     );
 };
 
-export const QvtPage = () => (
-    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-        <div className="flex flex-col gap-2">
-            <h1 className="text-4xl font-extrabold tracking-tight text-white">Santé & QVT</h1>
-            <p className="text-slate-400">Qualité de Vie au Travail et suivi de la fatigue.</p>
-        </div>
-        <div className="bg-slate-900 border border-slate-800 rounded-3xl p-8">
-            <div className="flex items-center gap-4 mb-6">
-                <div className="p-3 bg-rose-500/10 rounded-xl text-rose-500">
-                    <HeartPulse size={32} />
-                </div>
-                <div>
-                    <h3 className="text-xl font-bold text-white">Indice de Fatigue Global</h3>
-                    <p className="text-slate-400">Analyse en temps réel basée sur les cycles de garde.</p>
-                </div>
-            </div>
-            <div className="h-4 bg-slate-800 rounded-full overflow-hidden">
-                <div className="h-full bg-gradient-to-r from-emerald-500 to-rose-500 w-[35%]" />
-            </div>
-            <div className="flex justify-between mt-2 text-xs text-slate-500">
-                <span>Optimal</span>
-                <span>Critique</span>
-            </div>
-        </div>
-    </div>
-)
 
 export const SyncPage = () => (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">

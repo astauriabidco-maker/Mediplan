@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 
 export interface ShiftInput {
-    id: string;
+    id: string | number;
     start: Date | string;
     end: Date | string;
 }
@@ -16,9 +16,83 @@ export interface QvtAnalysis {
     alert: boolean;
 }
 
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository, Between } from 'typeorm';
+import { Shift } from '../planning/entities/shift.entity';
+import { Agent } from '../agents/entities/agent.entity';
+
 @Injectable()
 export class QvtService {
     private readonly logger = new Logger(QvtService.name);
+
+    constructor(
+        @InjectRepository(Shift) private shiftRepository: Repository<Shift>,
+        @InjectRepository(Agent) private agentRepository: Repository<Agent>
+    ) {}
+
+    async getDashboard(tenantId: string, facilityId?: number, agentId?: number) {
+        // Fetch agents
+        const agentQuery = this.agentRepository.createQueryBuilder('agent')
+            .where('agent.tenantId = :tenantId', { tenantId });
+            
+        if (facilityId) {
+            agentQuery.andWhere('agent.facilityId = :facilityId', { facilityId });
+        }
+        if (agentId) {
+            agentQuery.andWhere('agent.id = :agentId', { agentId });
+        }
+
+        const agents = await agentQuery.getMany();
+        if (agents.length === 0) return { globalScore: 0, agents: [], metrics: { totalNights: 0, totalLongShifts: 0 } };
+
+        // Fetch shifts for the last 30 days
+        const thirtyDaysAgo = new Date();
+        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+        const shiftQuery = this.shiftRepository.createQueryBuilder('shift')
+            .innerJoinAndSelect('shift.agent', 'agent')
+            .where('shift.tenantId = :tenantId', { tenantId })
+            .andWhere('shift.start >= :date', { date: thirtyDaysAgo })
+            .andWhere('shift.agentId IN (:...agentIds)', { agentIds: agents.map(a => a.id) });
+
+        const recentShifts = await shiftQuery.getMany();
+
+        // Calculate score per agent
+        let totalScore = 0;
+        let totalNights = 0;
+        let totalLongShifts = 0;
+        let validScoresCount = 0;
+
+        const agentsStats = agents.map(agent => {
+            const agentShifts = recentShifts.filter(s => s.agent.id === agent.id);
+            if (agentShifts.length === 0) {
+                return { agent, score: 0, metrics: { nbNights: 0, nbLongShifts: 0, hoursRest: 0 }, alert: false };
+            }
+
+            const analysis = this.calculateFatigueScore(agentShifts);
+            totalScore += analysis.score;
+            totalNights += analysis.metrics.nbNights;
+            totalLongShifts += analysis.metrics.nbLongShifts;
+            validScoresCount++;
+
+            return {
+                agent,
+                ...analysis
+            };
+        });
+
+        // Global metrics
+        const globalScore = validScoresCount > 0 ? (totalScore / validScoresCount) : 0;
+        
+        return {
+            globalScore: Number(globalScore.toFixed(2)),
+            metrics: {
+                totalNights,
+                totalLongShifts
+            },
+            agents: agentsStats.sort((a, b) => b.score - a.score) // Sort by highest risk first
+        };
+    }
 
     calculateFatigueScore(shifts: ShiftInput[]): QvtAnalysis {
         // 1. Sort shifts chronologically
