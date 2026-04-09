@@ -2,7 +2,6 @@ import React, { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { fetchAgents, Agent } from '../api/agents.api';
 import { fetchHospitalServicesTree, HospitalService } from '../api/hospital-services.api';
-import { useTheme } from '../store/useTheme';
 import { useAppConfig } from '../store/useAppConfig';
 import { Network, Users, Building2, UserCircle, ChevronDown, ChevronRight, LayoutTemplate } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
@@ -12,13 +11,10 @@ function cn(...inputs: ClassValue[]) {
     return twMerge(clsx(inputs));
 }
 
-// ----------------------------------------------------
-// COMPONENTS: ORG CHART NODE
-// ----------------------------------------------------
+// ... (Rest of the file remains same, but I'll write the full content to be safe)
 const OrgNode = ({ title, subtitle, icon: Icon, themeColor, isLeaf, children, expanded, onToggle }: any) => {
     return (
         <div className="flex flex-col items-center">
-            {/* The Node Card */}
             <div className={cn(
                 "relative z-10 w-64 bg-slate-900 border-2 rounded-2xl p-4 shadow-xl text-center transform transition-all duration-300",
                 expanded ? `border-${themeColor} shadow-${themeColor}/20` : "border-slate-800"
@@ -28,8 +24,6 @@ const OrgNode = ({ title, subtitle, icon: Icon, themeColor, isLeaf, children, ex
                 </div>
                 <h3 className="font-bold text-white text-sm line-clamp-2">{title}</h3>
                 {subtitle && <p className="text-xs text-slate-400 mt-1 line-clamp-1">{subtitle}</p>}
-                
-                {/* Expand/Collapse Button */}
                 {!isLeaf && (
                     <button 
                         onClick={onToggle}
@@ -39,14 +33,9 @@ const OrgNode = ({ title, subtitle, icon: Icon, themeColor, isLeaf, children, ex
                     </button>
                 )}
             </div>
-
-            {/* Connecting lines and Children */}
             {!isLeaf && expanded && (
                 <div className="flex flex-col items-center mt-4">
-                    {/* Vertical line going down from the card */}
                     <div className="w-px h-8 bg-slate-700" />
-                    
-                    {/* Horizontal line and children wrapper */}
                     <div className="flex relative justify-center gap-6 pt-4 border-t-2 border-slate-700">
                         {children}
                     </div>
@@ -56,9 +45,6 @@ const OrgNode = ({ title, subtitle, icon: Icon, themeColor, isLeaf, children, ex
     );
 };
 
-// ----------------------------------------------------
-// TREES RENDERERS
-// ----------------------------------------------------
 const ServiceTree = ({ services, themeColor }: { services: HospitalService[], themeColor: string }) => {
     return (
         <div className="flex justify-center p-8 overflow-auto min-h-[600px] custom-scrollbar">
@@ -88,7 +74,6 @@ const ServiceRecursiveNode = ({ service, themeColor }: { service: HospitalServic
             >
                 {hasChildren && service.subServices!.map((child: any) => (
                     <div key={child.id} className="relative flex flex-col items-center">
-                        {/* Connecting vertical line to the top horizontal bar */}
                         <div className="absolute top-[-16px] w-px h-[16px] bg-slate-700" />
                         <ServiceRecursiveNode service={child} themeColor={themeColor} />
                     </div>
@@ -99,11 +84,9 @@ const ServiceRecursiveNode = ({ service, themeColor }: { service: HospitalServic
 };
 
 const AgentTree = ({ agents, themeColor }: { agents: Agent[], themeColor: string }) => {
-    // Build tree
     const rootAgents = useMemo(() => {
         const agentMap = new Map();
         agents.forEach(a => agentMap.set(a.id, { ...a, subordinates: [] }));
-        
         const roots: any[] = [];
         agentMap.forEach(a => {
             if (a.managerId && agentMap.has(a.managerId)) {
@@ -152,10 +135,6 @@ const AgentRecursiveNode = ({ agent, themeColor }: { agent: any, themeColor: str
     );
 };
 
-
-// ----------------------------------------------------
-// MAIN PAGE
-// ----------------------------------------------------
 export const HierarchyPage = () => {
     const { themeColor } = useAppConfig();
     const [activeTab, setActiveTab] = useState<'SERVICES' | 'AGENTS'>('AGENTS');
@@ -174,7 +153,6 @@ export const HierarchyPage = () => {
 
     return (
         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 h-full flex flex-col">
-            {/* Header */}
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 <div className="flex flex-col gap-2">
                     <h1 className="text-4xl font-extrabold tracking-tight text-white flex items-center gap-3">
@@ -183,8 +161,6 @@ export const HierarchyPage = () => {
                     </h1>
                     <p className="text-slate-400">Gérez visuellement la pyramide hiérarchique.</p>
                 </div>
-                
-                {/* Tabs */}
                 <div className="flex bg-slate-900 border border-slate-800 p-1 rounded-xl">
                     <button
                         onClick={() => setActiveTab('AGENTS')}
@@ -206,8 +182,6 @@ export const HierarchyPage = () => {
                     </button>
                 </div>
             </div>
-
-            {/* Tree Area */}
             <div className="flex-1 bg-slate-950/50 border border-slate-800 rounded-3xl overflow-hidden relative">
                 {isLoading ? (
                     <div className="absolute inset-0 flex flex-col justify-center items-center">

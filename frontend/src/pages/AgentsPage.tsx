@@ -77,7 +77,7 @@ export const AgentsPage = () => {
     });
 
     const generateContractMutation = useMutation({
-        mutationFn: generateEmploymentContract,
+        mutationFn: (variables: { agentId: number, templateId?: number }) => generateEmploymentContract(variables.agentId, variables.templateId || 1),
         onSuccess: () => {
             alert('✅ Contrat RH généré avec succès dans la GED (Brouillon) !');
         },
@@ -475,7 +475,7 @@ export const AgentsPage = () => {
                                                     disabled={generateContractMutation.isPending}
                                                     onClick={() => {
                                                         if(window.confirm('Voulez-vous générer le Contrat de Travail pour cet agent dans la GED ?')) {
-                                                            generateContractMutation.mutate(agent.id);
+                                                            generateContractMutation.mutate({ agentId: agent.id });
                                                         }
                                                     }}
                                                     className="p-2 hover:bg-emerald-500/10 rounded-lg text-slate-400 hover:text-emerald-500 transition-colors disabled:opacity-50"
@@ -897,7 +897,7 @@ const AgentForm = ({ agent, onSubmit, isLoading, themeColor, services, agents }:
                                         </div>
                                         <div className="flex justify-between items-center text-sm border-b border-slate-800/50 pb-2">
                                             <span className="text-slate-500">Matricule / Grade</span>
-                                            <span className="text-slate-300 font-mono italic">{agent?.matricule || 'N/A'} • {agent?.grade?.name || agent?.gradeLegacy || 'Non défini'}</span>
+                                            <span className="text-slate-300 font-mono italic">{agent?.matricule || 'N/A'} • {(agent?.grade as any)?.name || agent?.grade || agent?.gradeLegacy || 'Non défini'}</span>
                                         </div>
                                         <div className="flex justify-between items-center text-sm border-b border-slate-800/50 pb-2">
                                             <span className="text-slate-500">Rémunération (Base)</span>

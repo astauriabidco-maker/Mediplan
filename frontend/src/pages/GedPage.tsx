@@ -404,7 +404,7 @@ export const GedPage = () => {
 
                         <div className="bg-slate-950 border border-slate-800 rounded-xl p-4 mb-6 flex-1 overflow-auto">
                             <iframe 
-                                src={signingDoc.fileUrl.startsWith('data:') ? signingDoc.fileUrl : (signingDoc.fileUrl.startsWith('http') ? signingDoc.fileUrl : `${import.meta.env.VITE_API_URL || 'http://localhost:3000'}${signingDoc.fileUrl}`)} 
+                                src={signingDoc.fileUrl.startsWith('data:') ? signingDoc.fileUrl : (signingDoc.fileUrl.startsWith('http') ? signingDoc.fileUrl : `${(import.meta as any).env.VITE_API_URL || 'http://localhost:3000'}${signingDoc.fileUrl}`)} 
                                 className="w-full h-full min-h-[400px] bg-white rounded-lg"
                                 title="Aperçu Document"
                             />

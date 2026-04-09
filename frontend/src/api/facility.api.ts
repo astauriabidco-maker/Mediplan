@@ -1,6 +1,4 @@
-import axios from 'axios';
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
+import api from './axios';
 
 export interface Facility {
     id: number;
@@ -15,33 +13,21 @@ export interface Facility {
 
 export const facilityApi = {
     getAll: async () => {
-        const token = localStorage.getItem('token');
-        const response = await axios.get<Facility[]>(`${API_URL}/facilities`, {
-            headers: { Authorization: `Bearer ${token}` }
-        });
+        const response = await api.get<Facility[]>('/api/facilities');
         return response.data;
     },
 
     create: async (data: Partial<Facility>) => {
-        const token = localStorage.getItem('token');
-        const response = await axios.post<Facility>(`${API_URL}/facilities`, data, {
-            headers: { Authorization: `Bearer ${token}` }
-        });
+        const response = await api.post<Facility>('/api/facilities', data);
         return response.data;
     },
 
     update: async (id: number, data: Partial<Facility>) => {
-        const token = localStorage.getItem('token');
-        const response = await axios.patch<Facility>(`${API_URL}/facilities/${id}`, data, {
-            headers: { Authorization: `Bearer ${token}` }
-        });
+        const response = await api.patch<Facility>(`/api/facilities/${id}`, data);
         return response.data;
     },
 
     remove: async (id: number) => {
-        const token = localStorage.getItem('token');
-        await axios.delete(`${API_URL}/facilities/${id}`, {
-            headers: { Authorization: `Bearer ${token}` }
-        });
+        await api.delete(`/api/facilities/${id}`);
     }
 };

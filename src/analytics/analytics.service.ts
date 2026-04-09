@@ -34,11 +34,6 @@ export class AnalyticsService {
         let totalNetSalary = currentPayslips.reduce((acc, p) => acc + (p.details?.netSalary || 0), 0);
         let totalOvertimeAmount = currentPayslips.reduce((acc, p) => acc + (p.details?.metrics?.shiftBonus || 0), 0);
 
-        if (totalNetSalary === 0) {
-            totalNetSalary = 24500000;
-            totalOvertimeAmount = 1850000;
-        }
-
         const agentsCount = await this.agentRepo.count({ where: { tenantId, status: 'ACTIVE' } as any });
 
         const totalCompetencies = await this.agentCompRepo.count({ where: { agent: { tenantId } } as any });

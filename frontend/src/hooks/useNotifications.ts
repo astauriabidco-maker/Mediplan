@@ -1,12 +1,14 @@
-import { useEffect, useRef } from 'react';
-import { io, Socket } from 'socket.io-client';
+import { useEffect, useRef, useState } from 'react';
+import io from 'socket.io-client';
+import type { Socket } from 'socket.io-client';
 import { useAuth } from '../store/useAuth';
 import { useNotificationStore } from '../store/useNotificationStore';
 
 export const useNotifications = () => {
     const { token, user } = useAuth();
     const addNotification = useNotificationStore((state) => state.addNotification);
-    const socketRef = useRef<Socket | null>(null);
+    const [socket, setSocket] = useState<any>(null);
+    const socketRef = useRef<any>(null);
 
     useEffect(() => {
         if (!token || !user) {
@@ -21,7 +23,7 @@ export const useNotifications = () => {
         const socket = io('/notifications', {
             auth: { token },
             transports: ['websocket'],
-            path: '/socket.io', // Ensure path matches default or backend config if customized
+            path: '/socket.io',
         });
 
         socketRef.current = socket;
@@ -30,17 +32,15 @@ export const useNotifications = () => {
             console.log('Connected to notifications server');
         });
 
-        socket.on('notification', (payload) => {
+        socket.on('notification', (payload: any) => {
             console.log('New notification received:', payload);
 
-            // Add to zustand store
             addNotification({
                 type: payload.type,
                 data: payload.data,
                 timestamp: payload.timestamp || new Date().toISOString(),
             });
 
-            // Browser notification
             if (Notification.permission === 'granted') {
                 const title = 'Mediplan Notification';
                 const options = {
@@ -63,7 +63,6 @@ export const useNotifications = () => {
     }, [token, user]);
 
     useEffect(() => {
-        // Request notification permission on mount
         if (Notification.permission === 'default') {
             Notification.requestPermission();
         }

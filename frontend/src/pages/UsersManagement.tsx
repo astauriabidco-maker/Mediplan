@@ -5,6 +5,7 @@ import { fetchRoles, Role } from '../api/roles.api';
 import { fetchGhts, Ght } from '../api/ght.api';
 import { Plus, Search, Shield, UserPlus, Mail, Loader2, MoreVertical, Ban, ShieldCheck, X } from 'lucide-react';
 import { useAppConfig } from '../store/useAppConfig';
+import { useAuth } from '../store/useAuth';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
@@ -562,7 +563,7 @@ const EditUserModal = ({ user, services, onClose, onSubmit, isLoading }: { user:
                             </div>
                             <div className="space-y-2">
                                 <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Grade / Catégorie</label>
-                                <input value={formData.grade} onChange={(e) => setFormData({ ...formData, grade: e.target.value })} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white outline-none focus:border-blue-500 transition-colors" />
+                                <input value={typeof formData.grade === 'object' ? formData.grade?.name : (formData.grade || '')} onChange={(e) => setFormData({ ...formData, grade: e.target.value })} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white outline-none focus:border-blue-500 transition-colors" />
                             </div>
                             <div className="grid grid-cols-2 gap-4">
                                 <div className="space-y-2">

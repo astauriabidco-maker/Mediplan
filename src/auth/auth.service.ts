@@ -90,8 +90,6 @@ export class AuthService {
     }
 
     async validateUser(email: string, pass: string): Promise<any> {
-        console.log(`[AuthDebug] Attempting login for: ${email}`);
-
         // Explicitly select password as it is hidden by default
         const user = await this.agentRepository.createQueryBuilder('agent')
             .addSelect('agent.password')
@@ -99,18 +97,11 @@ export class AuthService {
             .where('agent.email = :email', { email })
             .getOne();
 
-        if (!user) {
-            console.log(`[AuthDebug] User not found: ${email}`);
-            return null;
-        }
-
-        if (!user.password) {
-            console.log(`[AuthDebug] User has no password set: ${email}`);
+        if (!user || !user.password) {
             return null;
         }
 
         const isMatch = await bcrypt.compare(pass, user.password);
-        console.log(`[AuthDebug] Password match for ${email}: ${isMatch}`);
 
         if (isMatch) {
             const { password, ...result } = user;

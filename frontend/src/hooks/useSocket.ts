@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
-import { io, Socket } from 'socket.io-client';
+import io from 'socket.io-client';
+import type { Socket } from 'socket.io-client';
 
-const SOCKET_SERVER_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+const SOCKET_SERVER_URL = (import.meta as any).env.VITE_API_URL || 'http://localhost:3000';
 
 export const useSocket = () => {
-    const [socket, setSocket] = useState<Socket | null>(null);
+    const [socket, setSocket] = useState<any>(null);
     const [isConnected, setIsConnected] = useState(false);
 
     useEffect(() => {

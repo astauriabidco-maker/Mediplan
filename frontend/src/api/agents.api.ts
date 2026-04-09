@@ -41,11 +41,13 @@ export interface Agent {
     personalEmail?: string;
     // Détails Contractuels
     workTimePercentage?: number;
-    grade?: string;
+    grade?: any; // Reverted to any to avoid complex type guards in UI for now
+    gradeLegacy?: string;
     step?: string;
     index?: string;
+    contracts?: any[];
     contractEndDate?: string;
-    // Informations Bancaires (select: false in backend, but can be part of interface)
+    // Informations Bancaires
     iban?: string;
     bic?: string;
     // Formation
@@ -77,9 +79,6 @@ export const deleteAgent = async (id: number): Promise<void> => {
     await api.delete(`/api/agents/${id}`);
 };
 
-/**
- * Fetches the current agent + their direct reports (for manager leave requests)
- */
 export const fetchMyTeam = async (): Promise<Agent[]> => {
     const response = await api.get('/api/agents/my-team');
     return response.data;
