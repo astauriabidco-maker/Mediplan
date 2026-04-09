@@ -46,6 +46,7 @@ const typeorm_1 = require("@nestjs/typeorm");
 const serve_static_1 = require("@nestjs/serve-static");
 const path_1 = require("path");
 const Joi = __importStar(require("joi"));
+const throttler_1 = require("@nestjs/throttler");
 const locale_module_1 = require("./core/config/locale.module");
 const app_controller_1 = require("./app.controller");
 const app_service_1 = require("./app.service");
@@ -87,6 +88,10 @@ exports.AppModule = AppModule = __decorate([
                 rootPath: (0, path_1.join)(process.cwd(), 'public'),
             }),
             schedule_1.ScheduleModule.forRoot(),
+            throttler_1.ThrottlerModule.forRoot([{
+                    ttl: 60000,
+                    limit: 100,
+                }]),
             locale_module_1.LocaleConfigModule,
             config_1.ConfigModule.forRoot({
                 isGlobal: true,

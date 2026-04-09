@@ -4,6 +4,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { ServeStaticModule } from '@nestjs/serve-static';
 import { join } from 'path';
 import * as Joi from 'joi';
+import { ThrottlerModule } from '@nestjs/throttler';
 import { LocaleConfigModule } from './core/config/locale.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
@@ -42,6 +43,10 @@ import { AnalyticsModule } from './analytics/analytics.module';
       rootPath: join(process.cwd(), 'public'),
     }),
     ScheduleModule.forRoot(),
+    ThrottlerModule.forRoot([{
+      ttl: 60000,
+      limit: 100,
+    }]),
     LocaleConfigModule,
     ConfigModule.forRoot({
       isGlobal: true,
