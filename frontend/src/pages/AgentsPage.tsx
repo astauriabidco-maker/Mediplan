@@ -7,8 +7,9 @@ import { useAuth } from '../store/useAuth';
 import {
     Users, Plus, Search, Trash2, Edit2, X, Loader2, Award, Network,
     Filter, TrendingUp, AlertCircle, CheckCircle, XCircle, FileText,
-    Globe, Smartphone, ShieldCheck, Heart, Baby, Activity, Clock, Stethoscope
+    Globe, Smartphone, ShieldCheck, Heart, Baby, Activity, Clock, Stethoscope, Wand2, FileSignature, Sparkles
 } from 'lucide-react';
+import api from '../api/axios';
 import { fetchBeneficiaries, createBeneficiary, deleteBeneficiary, updateBeneficiary, Beneficiary } from '../api/beneficiaries.api';
 import { getHealthRecords, addHealthRecord, deleteHealthRecord, HealthRecord } from '../api/agents.api';
 import { useAppConfig } from '../store/useAppConfig';
@@ -577,19 +578,42 @@ const AgentForm = ({ agent, onSubmit, isLoading, themeColor, services, agents }:
         { id: 'family', label: 'Ayants-droit / Famille', icon: Heart },
         { id: 'contact', label: 'Contacts & Urgences', icon: Network },
         { id: 'health', label: 'Santé & Médecine', icon: Stethoscope },
+        { id: 'rh', label: 'Contrats & RH', icon: FileSignature },
     ];
+
+    const [selectedTemplate, setSelectedTemplate] = useState('');
+    const [generating, setGenerating] = useState(false);
+    const { data: templates = [] } = useQuery({
+        queryKey: ['contract-templates'],
+        queryFn: async () => (await api.get('/api/documents/templates')).data,
+        enabled: activeTab === 'rh'
+    });
+
+    const handleGenerate = async () => {
+        if (!agent || !selectedTemplate) return;
+        setGenerating(true);
+        try {
+            await generateEmploymentContract(agent.id, parseInt(selectedTemplate));
+            alert("Contrat généré avec succès ! Retrouvez-le dans l'onglet GED.");
+        } catch (error) {
+            console.error(error);
+            alert("Erreur lors de la génération.");
+        } finally {
+            setGenerating(false);
+        }
+    };
 
     return (
         <form onSubmit={handleSubmit} className="space-y-8">
             {/* Tabs Navigation */}
-            <div className="flex gap-2 border-b border-slate-800">
+            <div className="flex gap-2 border-b border-slate-800 overflow-x-auto no-scrollbar">
                 {tabs.map(tab => (
                     <button
                         key={tab.id}
                         type="button"
                         onClick={() => setActiveTab(tab.id)}
                         className={cn(
-                            "px-6 py-3 font-medium text-sm transition-all relative",
+                            "px-6 py-3 font-medium text-sm transition-all relative whitespace-nowrap",
                             activeTab === tab.id
                                 ? `text-${themeColor}`
                                 : "text-slate-500 hover:text-slate-300"
@@ -816,8 +840,86 @@ const AgentForm = ({ agent, onSubmit, isLoading, themeColor, services, agents }:
                 </div>
             )}
 
+            {/* Tab: RH Contrats - NEW */}
+            {activeTab === 'rh' && (
+                <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300 pb-8">
+                    <div className="bg-blue-600/5 border border-blue-600/10 p-8 rounded-3xl relative overflow-hidden group">
+                        <div className="absolute top-0 right-0 p-6 opacity-10 group-hover:opacity-20 transition-all duration-500">
+                            <Sparkles size={120} className="text-blue-500" />
+                        </div>
+                        
+                        <div className="relative z-10">
+                            <h3 className="text-2xl font-black text-white mb-4 flex items-center gap-3 tracking-tight">
+                                <Wand2 size={28} className="text-blue-500 animate-pulse" /> 
+                                Assistant de Génération Dynamique
+                            </h3>
+                            <p className="text-slate-400 text-sm mb-8 max-w-2xl leading-relaxed">
+                                MediPlan fusionne instantanément les données d'identité (Nom, Matricule, Adresse), 
+                                les variables métier (Salaire de base, Service, Grade) et les dates pour générer un contrat conforme OHADA.
+                            </p>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                                <div className="space-y-6">
+                                    <div className="space-y-2">
+                                        <label className="text-xs font-bold text-slate-500 uppercase tracking-widest pl-1">Sélectionner un Gabarit</label>
+                                        <select 
+                                            value={selectedTemplate}
+                                            onChange={(e) => setSelectedTemplate(e.target.value)}
+                                            className="w-full bg-slate-950 border border-slate-800 rounded-2xl px-5 py-4 text-white focus:border-blue-500 outline-none transition-all shadow-inner"
+                                        >
+                                            <option value="">-- Choisir un modèle --</option>
+                                            {templates.map((t: any) => (
+                                                <option key={t.id} value={t.id}>{t.title} ({t.type})</option>
+                                            ))}
+                                        </select>
+                                    </div>
+
+                                    <button
+                                        type="button"
+                                        onClick={handleGenerate}
+                                        disabled={!selectedTemplate || generating || !agent}
+                                        className="w-full bg-gradient-to-r from-blue-700 to-indigo-700 hover:from-blue-600 hover:to-indigo-600 disabled:opacity-50 text-white font-black py-5 rounded-2xl transition-all shadow-xl shadow-blue-500/20 flex items-center justify-center gap-3 text-lg"
+                                    >
+                                        {generating ? <Loader2 className="animate-spin" /> : <FileSignature size={24} />}
+                                        Générer le Contrat Maintenant
+                                    </button>
+                                </div>
+
+                                <div className="bg-slate-950/5 border border-slate-800 rounded-2xl p-6 backdrop-blur-sm">
+                                    <h4 className="text-xs font-bold text-slate-500 uppercase mb-4 tracking-tighter flex items-center gap-2">
+                                        <div className="w-1.5 h-1.5 rounded-full bg-blue-500"></div>
+                                        Récapitulatif des Données d'Injection
+                                    </h4>
+                                    <div className="space-y-3">
+                                        <div className="flex justify-between items-center text-sm border-b border-slate-800/50 pb-2">
+                                            <span className="text-slate-500">Identité</span>
+                                            <span className="text-white font-bold">{agent?.nom} {agent?.firstName}</span>
+                                        </div>
+                                        <div className="flex justify-between items-center text-sm border-b border-slate-800/50 pb-2">
+                                            <span className="text-slate-500">Matricule / Grade</span>
+                                            <span className="text-slate-300 font-mono italic">{agent?.matricule || 'N/A'} • {agent?.grade?.name || agent?.gradeLegacy || 'Non défini'}</span>
+                                        </div>
+                                        <div className="flex justify-between items-center text-sm border-b border-slate-800/50 pb-2">
+                                            <span className="text-slate-500">Rémunération (Base)</span>
+                                            <span className="text-blue-400 font-black">{agent?.contracts?.[0]?.baseSalary || 0} FCFA</span>
+                                        </div>
+                                        <div className="flex justify-between items-center text-sm">
+                                            <span className="text-slate-500">Service d'Affectation</span>
+                                            <span className="text-indigo-400 font-bold">{agent?.hospitalService?.name || 'A affecter'}</span>
+                                        </div>
+                                    </div>
+                                    <p className="mt-6 text-[10px] text-slate-500 italic leading-tight">
+                                        Le document sera stocké en format "Brouillon" dans la GED pour validation par le DRH avant signature WhatsApp.
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Footer Actions */}
-            <div className="pt-6 border-t border-slate-800 flex justify-end gap-3">
+            <div className="pt-6 border-t border-slate-800 flex justify-end gap-3 bg-slate-900 sticky bottom-0 z-20 pb-2">
                 <button
                     type="submit"
                     disabled={isLoading}

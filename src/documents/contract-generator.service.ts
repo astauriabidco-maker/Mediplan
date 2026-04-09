@@ -28,7 +28,7 @@ export class ContractGeneratorService {
     async generateContract(agentId: number, templateId: number, tenantId: string): Promise<Document> {
         const agent = await this.agentRepo.findOne({
             where: { id: agentId, tenantId },
-            relations: ['hospitalService', 'contracts']
+            relations: ['hospitalService', 'contracts', 'grade']
         });
         if (!agent) throw new NotFoundException('Agent introuvable');
 
@@ -44,7 +44,9 @@ export class ContractGeneratorService {
             'nom': agent.nom,
             'prenom': agent.firstName || '',
             'matricule': agent.matricule,
+            'adresse': agent.address || agent.street || 'A définir',
             'service': agent.hospitalService?.name || 'N/A',
+            'grade': agent.grade?.name || agent.gradeLegacy || 'N/A',
             'poste': agent.jobTitle || 'N/A',
             'salaire_base': currentContract?.baseSalary?.toString() || 'A définir',
             'date_embauche': agent.hiringDate || new Date().toISOString().split('T')[0],
