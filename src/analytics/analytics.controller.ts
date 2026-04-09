@@ -21,4 +21,9 @@ export class AnalyticsController {
     async getServicesDistribution(@Query('tenantId') tenantId: string) {
         return this.analyticsService.getServicesDistribution(tenantId || 'HGD-DOUALA');
     }
+
+    @Get('insight')
+    async getInsight(@Query('query') query: string, @Query('tenantId') tenantId: string) {
+        return this.analyticsService.searchInsight(query || '', tenantId || 'HGD-DOUALA');
+    }
 }
