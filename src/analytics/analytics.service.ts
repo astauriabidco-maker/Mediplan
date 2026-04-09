@@ -1,4 +1,5 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
+import { Mistral } from '@mistralai/mistralai';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, LessThan } from 'typeorm';
 import { Payslip } from '../payroll/entities/payslip.entity';
@@ -20,7 +21,14 @@ export class AnalyticsService {
         @InjectRepository(HealthRecord) private healthRepo: Repository<HealthRecord>,
         @InjectRepository(Competency) private compRepo: Repository<Competency>,
         @InjectRepository(AgentCompetency) private agentCompRepo: Repository<AgentCompetency>,
-    ) {}
+    ) {
+        if (process.env.MISTRAL_API_KEY) {
+            this.mistralClient = new Mistral({ apiKey: process.env.MISTRAL_API_KEY });
+        }
+    }
+
+    private mistralClient: Mistral;
+    private readonly logger = new Logger(AnalyticsService.name);
 
     async getOverviewKpis(tenantId: string) {
         const now = new Date();
@@ -148,7 +156,67 @@ export class AnalyticsService {
         const q = query.toLowerCase();
         const results = [];
 
-        // INSIGHT ENGINE V2: Analytics Heuristics
+        // --- MISTRAL AI INTEGRATION ---
+        if (this.mistralClient) {
+            try {
+                this.logger.log(`Calling Mistral AI for Insight Engine. Query: "${query}"`);
+                const prompt = `Tu es l'IA "Insight Engine" pour un hôpital (MediPlan).
+Ton but est de transformer une requête utilisateur en JSON strict pour configurer un tableau de bord.
+Tu as accès aux ENDPOINTS de données suivants (utilise uniquement l'un de ces endpoints exacts) :
+- "GPEC_PYRAMID" : Répartition des âges (=> idéal pour PIE chart)
+- "GPEC_SENIORITY" : Distribution de l'ancienneté (=> idéal pour BAR chart)
+- "ABSENTEEISM_TREND" : Evolution mensuelle de l'absentéisme (=> idéal pour LINE chart)
+- "SERVICES_BUDGET" : Cout et masse salariale par service (=> idéal pour BAR chart)
+- "AGENT_SEARCH" : Recherche nominative (=> type AGENT)
+
+Analyse la requête: "${query}"
+
+Réponds uniquement en JSON valide avec la structure suivante :
+{
+  "endpoint": "NOM_DU_ENDPOINT_CHOISI",
+  "chartType": "PIE" | "BAR" | "LINE",
+  "type": "CHART" | "AGENT",
+  "title": "Titre généré court",
+  "subtitle": "Sous-titre descriptif généré automatiquement",
+  "icon": "pie-chart" | "bar-chart" | "trending-up" | "dollar-sign" | "user"
+}`;
+
+                const chatResponse = await this.mistralClient.chat.complete({
+                    model: 'mistral-small-latest',
+                    responseFormat: { type: 'json_object' },
+                    messages: [{ role: 'user', content: prompt }]
+                });
+
+                if (chatResponse.choices && chatResponse.choices[0] && chatResponse.choices[0].message && chatResponse.choices[0].message.content) {
+                    const aiDecision = JSON.parse(chatResponse.choices[0].message.content as string);
+                    
+                    if (aiDecision.endpoint === 'GPEC_PYRAMID') {
+                        const gpec = await this.getGpecData(tenantId);
+                        results.push({ ...aiDecision, data: gpec.pyramid });
+                        return results;
+                    }
+                    if (aiDecision.endpoint === 'GPEC_SENIORITY') {
+                        const gpec = await this.getGpecData(tenantId);
+                        results.push({ ...aiDecision, data: gpec.seniority });
+                        return results;
+                    }
+                    if (aiDecision.endpoint === 'ABSENTEEISM_TREND') {
+                        const trends = await this.getMonthlyTrends(tenantId);
+                        results.push({ ...aiDecision, data: trends.map(t => ({ name: t.name, value: t.absentéisme })) });
+                        return results;
+                    }
+                    if (aiDecision.endpoint === 'SERVICES_BUDGET') {
+                        const services = await this.getServicesDistribution(tenantId);
+                        results.push({ ...aiDecision, data: services.map(s => ({ name: s.name, value: s.coutsGénérés })) });
+                        return results;
+                    }
+                }
+            } catch (error: any) {
+                this.logger.error(`Mistral AI Failed, falling back to heuristics: ${error.message}`);
+            }
+        }
+
+        // INSIGHT ENGINE V2 (Fallback): Analytics Heuristics
         if (q.includes('pyramide') || q.includes('âge')) {
             const gpec = await this.getGpecData(tenantId);
             results.push({

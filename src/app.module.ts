@@ -58,6 +58,7 @@ import { AnalyticsModule } from './analytics/analytics.module';
         POSTGRES_PASSWORD: Joi.string().required(),
         POSTGRES_DB: Joi.string().required(),
         JWT_SECRET: Joi.string().required(),
+        MISTRAL_API_KEY: Joi.string().optional(),
       }),
     }),
     TypeOrmModule.forRootAsync({

@@ -103,6 +103,7 @@ exports.AppModule = AppModule = __decorate([
                     POSTGRES_PASSWORD: Joi.string().required(),
                     POSTGRES_DB: Joi.string().required(),
                     JWT_SECRET: Joi.string().required(),
+                    MISTRAL_API_KEY: Joi.string().optional(),
                 }),
             }),
             typeorm_1.TypeOrmModule.forRootAsync({
