@@ -2,7 +2,7 @@ import { Controller, Get, Post, Body, Param, Req } from '@nestjs/common';
 import { DocumentsService } from './documents.service';
 import * as express from 'express';
 
-@Controller('api/documents/public')
+@Controller('documents/public')
 export class DocumentsPublicController {
     constructor(private readonly documentsService: DocumentsService) {}
 
