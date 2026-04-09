@@ -97,6 +97,7 @@ exports.AppModule = AppModule = __decorate([
                     POSTGRES_USER: Joi.string().required(),
                     POSTGRES_PASSWORD: Joi.string().required(),
                     POSTGRES_DB: Joi.string().required(),
+                    JWT_SECRET: Joi.string().required(),
                 }),
             }),
             typeorm_1.TypeOrmModule.forRootAsync({
@@ -110,7 +111,7 @@ exports.AppModule = AppModule = __decorate([
                     password: configService.get('POSTGRES_PASSWORD'),
                     database: configService.get('POSTGRES_DB'),
                     autoLoadEntities: true,
-                    synchronize: true,
+                    synchronize: process.env.NODE_ENV !== 'production',
                 }),
             }),
             typeorm_1.TypeOrmModule.forFeature([agent_entity_1.Agent, shift_entity_1.Shift, audit_log_entity_1.AuditLog, competency_entity_1.Competency, agent_competency_entity_1.AgentCompetency]),

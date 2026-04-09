@@ -52,6 +52,7 @@ import { AnalyticsModule } from './analytics/analytics.module';
         POSTGRES_USER: Joi.string().required(),
         POSTGRES_PASSWORD: Joi.string().required(),
         POSTGRES_DB: Joi.string().required(),
+        JWT_SECRET: Joi.string().required(),
       }),
     }),
     TypeOrmModule.forRootAsync({
@@ -65,7 +66,7 @@ import { AnalyticsModule } from './analytics/analytics.module';
         password: configService.get<string>('POSTGRES_PASSWORD'),
         database: configService.get<string>('POSTGRES_DB'),
         autoLoadEntities: true,
-        synchronize: true, // Auto-create tables (dev only)
+        synchronize: process.env.NODE_ENV !== 'production', // Auto-create tables (dev only)
       }),
     }),
     TypeOrmModule.forFeature([Agent, Shift, AuditLog, Competency, AgentCompetency]),

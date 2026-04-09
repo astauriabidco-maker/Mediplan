@@ -85,6 +85,9 @@ let SeedController = class SeedController {
         this.payrollRuleRepo = payrollRuleRepo;
     }
     async seedHGD() {
+        if (process.env.NODE_ENV === 'production') {
+            throw new common_1.ForbiddenException('Seeding is not allowed in production');
+        }
         const tenantId = 'HGD-DOUALA';
         const passwordHash = await bcrypt.hash('password123', 10);
         await this.serviceRepo.update({ tenantId }, { parentServiceId: null });

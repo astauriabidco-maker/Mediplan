@@ -1,4 +1,4 @@
-import { Controller, Post } from '@nestjs/common';
+import { Controller, Post, ForbiddenException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Agent, UserRole } from '../agents/entities/agent.entity';
@@ -41,6 +41,10 @@ export class SeedController {
 
     @Post('hgd')
     async seedHGD() {
+        if (process.env.NODE_ENV === 'production') {
+            throw new ForbiddenException('Seeding is not allowed in production');
+        }
+        
         const tenantId = 'HGD-DOUALA';
         const passwordHash = await bcrypt.hash('password123', 10);
 

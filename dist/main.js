@@ -6,6 +6,10 @@ const app_module_1 = require("./app.module");
 async function bootstrap() {
     const app = await core_1.NestFactory.create(app_module_1.AppModule);
     app.setGlobalPrefix('api');
+    app.enableCors({
+        origin: process.env.FRONTEND_URL || '*',
+        credentials: true,
+    });
     const config = new swagger_1.DocumentBuilder()
         .setTitle('Mediplan API')
         .setDescription('Gestion des agents, contrats et compétences')
