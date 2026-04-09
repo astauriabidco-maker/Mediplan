@@ -26,6 +26,7 @@ let Shift = class Shift {
     postId;
     type;
     status;
+    isSwapRequested;
     tenantId;
     facilityId;
     facility;
@@ -60,6 +61,10 @@ __decorate([
     (0, typeorm_1.Column)({ default: 'PLANNED' }),
     __metadata("design:type", String)
 ], Shift.prototype, "status", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ default: false }),
+    __metadata("design:type", Boolean)
+], Shift.prototype, "isSwapRequested", void 0);
 __decorate([
     (0, typeorm_1.Column)({ default: 'DEFAULT_TENANT' }),
     __metadata("design:type", String)

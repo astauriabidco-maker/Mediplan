@@ -51,6 +51,12 @@ export declare class PlanningController {
     }>;
     getShiftApplications(req: any): Promise<import("./entities/shift-application.entity").ShiftApplication[]>;
     approveGhtApplication(req: any, id: string): Promise<import("./entities/shift-application.entity").ShiftApplication>;
+    getAvailableSwaps(req: any): Promise<Shift[]>;
+    requestSwap(req: any, id: number): Promise<Shift>;
+    applyForSwap(req: any, id: number): Promise<{
+        success: boolean;
+        message: string;
+    }>;
     rejectGhtApplication(req: any, id: string): Promise<import("./entities/shift-application.entity").ShiftApplication>;
     assignReplacement(req: any, data: {
         agentId: number;

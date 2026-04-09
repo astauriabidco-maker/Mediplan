@@ -145,6 +145,15 @@ let PlanningController = class PlanningController {
     async approveGhtApplication(req, id) {
         return this.planningService.approveGhtApplication(req.user.tenantId, id, req.user.id);
     }
+    async getAvailableSwaps(req) {
+        return this.planningService.getAvailableSwaps(req.user.tenantId, req.user.id);
+    }
+    async requestSwap(req, id) {
+        return this.planningService.requestSwap(req.user.tenantId, id, req.user.id);
+    }
+    async applyForSwap(req, id) {
+        return this.planningService.applyForSwap(req.user.tenantId, id, req.user.id);
+    }
     async rejectGhtApplication(req, id) {
         return this.planningService.rejectGhtApplication(req.user.tenantId, id, req.user.id);
     }
@@ -289,6 +298,32 @@ __decorate([
     __metadata("design:paramtypes", [Object, String]),
     __metadata("design:returntype", Promise)
 ], PlanningController.prototype, "approveGhtApplication", null);
+__decorate([
+    (0, common_1.Get)('swaps/available'),
+    (0, permissions_decorator_1.Permissions)('planning:read'),
+    __param(0, (0, common_1.Request)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", Promise)
+], PlanningController.prototype, "getAvailableSwaps", null);
+__decorate([
+    (0, common_1.Post)('shifts/:id/request-swap'),
+    (0, permissions_decorator_1.Permissions)('planning:read'),
+    __param(0, (0, common_1.Request)()),
+    __param(1, (0, common_1.Param)('id')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Number]),
+    __metadata("design:returntype", Promise)
+], PlanningController.prototype, "requestSwap", null);
+__decorate([
+    (0, common_1.Post)('shifts/:id/apply-swap'),
+    (0, permissions_decorator_1.Permissions)('planning:read'),
+    __param(0, (0, common_1.Request)()),
+    __param(1, (0, common_1.Param)('id')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Number]),
+    __metadata("design:returntype", Promise)
+], PlanningController.prototype, "applyForSwap", null);
 __decorate([
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
     (0, common_1.Post)('shift-applications/:id/reject'),

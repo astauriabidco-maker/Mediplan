@@ -10,8 +10,10 @@ import { WhatsappService } from '../whatsapp/whatsapp.service';
 import { EventsGateway } from '../events/events.gateway';
 import { DocumentsService } from '../documents/documents.service';
 import { SettingsService } from '../settings/settings.service';
+import { HealthRecord } from '../agents/entities/health-record.entity';
 export declare class PlanningService {
     private shiftRepository;
+    private healthRecordRepository;
     private leaveRepository;
     private agentRepository;
     private workPolicyRepository;
@@ -22,7 +24,7 @@ export declare class PlanningService {
     private eventsGateway;
     private documentsService;
     private settingsService;
-    constructor(shiftRepository: Repository<Shift>, leaveRepository: Repository<Leave>, agentRepository: Repository<Agent>, workPolicyRepository: Repository<WorkPolicy>, shiftApplicationRepository: Repository<ShiftApplication>, localeRules: ILocaleRules, auditService: AuditService, whatsappService: WhatsappService, eventsGateway: EventsGateway, documentsService: DocumentsService, settingsService: SettingsService);
+    constructor(shiftRepository: Repository<Shift>, healthRecordRepository: Repository<HealthRecord>, leaveRepository: Repository<Leave>, agentRepository: Repository<Agent>, workPolicyRepository: Repository<WorkPolicy>, shiftApplicationRepository: Repository<ShiftApplication>, localeRules: ILocaleRules, auditService: AuditService, whatsappService: WhatsappService, eventsGateway: EventsGateway, documentsService: DocumentsService, settingsService: SettingsService);
     validateShift(tenantId: string, agentId: number, start: Date, end: Date): Promise<boolean>;
     private getConstraintsForAgent;
     checkAvailability(tenantId: string, agentId: number, date: Date): Promise<boolean>;
@@ -34,4 +36,10 @@ export declare class PlanningService {
     getShiftApplications(tenantId: string): Promise<ShiftApplication[]>;
     approveGhtApplication(tenantId: string, applicationId: string | number, actorId: number): Promise<ShiftApplication>;
     rejectGhtApplication(tenantId: string, applicationId: string | number, actorId: number): Promise<ShiftApplication>;
+    requestSwap(tenantId: string, shiftId: number, agentId: number): Promise<Shift>;
+    getAvailableSwaps(tenantId: string, agentId: number): Promise<Shift[]>;
+    applyForSwap(tenantId: string, shiftId: number, agentId: number): Promise<{
+        success: boolean;
+        message: string;
+    }>;
 }

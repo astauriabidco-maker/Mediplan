@@ -90,6 +90,36 @@ export const updateAgent = async (id: number, data: Partial<Agent>): Promise<Age
     return response.data;
 };
 
+// --- HEALTH RECORDS ---
+
+export interface HealthRecord {
+    id: number;
+    agentId: number;
+    type: string;
+    title: string;
+    datePerformed: string;
+    expirationDate?: string | null;
+    isMandatory: boolean;
+    status: 'VALID' | 'EXPIRING_SOON' | 'EXPIRED';
+    documentUrl?: string;
+    notes?: string;
+}
+
+export const getHealthRecords = async (agentId: number): Promise<HealthRecord[]> => {
+    const response = await api.get(`/api/agents/${agentId}/health-records`);
+    return response.data;
+};
+
+export const addHealthRecord = async (agentId: number, data: Partial<HealthRecord>): Promise<HealthRecord> => {
+    const response = await api.post(`/api/agents/${agentId}/health-records`, data);
+    return response.data;
+};
+
+export const deleteHealthRecord = async (recordId: number): Promise<any> => {
+    const response = await api.delete(`/api/agents/health-records/${recordId}`);
+    return response.data;
+};
+
 export const inviteUser = async (data: { email: string, roleId: number, tenantId?: string }): Promise<Agent> => {
     const response = await api.post('/auth/invite', data);
     return response.data;

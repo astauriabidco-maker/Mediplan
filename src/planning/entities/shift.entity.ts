@@ -32,6 +32,9 @@ export class Shift {
     @Column({ default: 'PLANNED' })
     status: string;
 
+    @Column({ default: false })
+    isSwapRequested: boolean;
+
     @Column({ default: 'DEFAULT_TENANT' })
     tenantId: string;
 

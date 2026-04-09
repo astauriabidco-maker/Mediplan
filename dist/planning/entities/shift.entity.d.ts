@@ -12,6 +12,7 @@ export declare class Shift {
     postId: string;
     type: ShiftType;
     status: string;
+    isSwapRequested: boolean;
     tenantId: string;
     facilityId: number;
     facility: Facility;

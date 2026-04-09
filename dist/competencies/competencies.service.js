@@ -68,7 +68,7 @@ let CompetenciesService = class CompetenciesService {
     async findAllMatrix(tenantId) {
         const agents = await this.agentRepository.find({
             where: { tenantId },
-            relations: ['agentCompetencies', 'agentCompetencies.competency'],
+            relations: ['agentCompetencies', 'agentCompetencies.competency', 'hospitalService'],
             order: { nom: 'ASC' },
         });
         const competencies = await this.competencyRepository.find({

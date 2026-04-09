@@ -10,6 +10,7 @@ export interface Shift {
     type: ShiftType;
     status: 'VALIDATED' | 'PENDING' | 'CONFLICT' | 'PLANNED';
     agent?: any;
+    isSwapRequested?: boolean;
 }
 
 export const fetchShifts = async (startDate: Date, endDate: Date, facilityId?: number, serviceId?: number): Promise<Shift[]> => {
@@ -32,7 +33,8 @@ export const fetchShifts = async (startDate: Date, endDate: Date, facilityId?: n
             end: new Date(s.end),
             type: s.type || 'WORK', // Use explicit type from backend
             status: s.status,
-            agent: s.agent
+            agent: s.agent,
+            isSwapRequested: s.isSwapRequested
         }));
 
     } catch (error) {
@@ -105,5 +107,22 @@ export const approveGhtApplication = async (id: string | number): Promise<any> =
 
 export const rejectGhtApplication = async (id: string | number): Promise<any> => {
     const response = await axios.post(`/api/planning/shift-applications/${id}/reject`);
+    return response.data;
+};
+
+// --- BOURSE D'ÉCHANGE DE GARDES ---
+
+export const getAvailableSwaps = async (): Promise<Shift[]> => {
+    const response = await axios.get('/api/planning/swaps/available');
+    return response.data;
+};
+
+export const requestSwap = async (shiftId: number): Promise<any> => {
+    const response = await axios.post(`/api/planning/shifts/${shiftId}/request-swap`);
+    return response.data;
+};
+
+export const applyForSwap = async (shiftId: number): Promise<any> => {
+    const response = await axios.post(`/api/planning/shifts/${shiftId}/apply-swap`);
     return response.data;
 };

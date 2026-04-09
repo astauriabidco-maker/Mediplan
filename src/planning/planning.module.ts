@@ -27,10 +27,11 @@ import { Attendance } from './entities/attendance.entity';
 import { DocumentsModule } from '../documents/documents.module';
 import { SettingsModule } from '../settings/settings.module';
 import { HospitalService } from '../agents/entities/hospital-service.entity';
+import { HealthRecord } from '../agents/entities/health-record.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Shift, Agent, Leave, LeaveBalance, WorkPolicy, ShiftApplication, ShiftProposal, Attendance, HospitalService]),
+    TypeOrmModule.forFeature([Shift, Agent, Leave, LeaveBalance, WorkPolicy, ShiftApplication, ShiftProposal, Attendance, HospitalService, HealthRecord]),
     AuditModule,
     WhatsappModule,
     DocumentsModule,

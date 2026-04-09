@@ -23,7 +23,7 @@ export class CompetenciesService {
     async findAllMatrix(tenantId: string) {
         const agents = await this.agentRepository.find({
             where: { tenantId },
-            relations: ['agentCompetencies', 'agentCompetencies.competency'],
+            relations: ['agentCompetencies', 'agentCompetencies.competency', 'hospitalService'],
             order: { nom: 'ASC' },
         });
 

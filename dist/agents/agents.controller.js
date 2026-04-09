@@ -60,6 +60,20 @@ let AgentsController = class AgentsController {
         const actorId = req.user.userId;
         return this.agentsService.remove(+id, tenantId, actorId);
     }
+    getHealthRecords(req, agentId) {
+        const tenantId = req.user.tenantId;
+        return this.agentsService.getHealthRecords(+agentId, tenantId);
+    }
+    addHealthRecord(req, agentId, data) {
+        const tenantId = req.user.tenantId;
+        const actorId = req.user.userId;
+        return this.agentsService.addHealthRecord(+agentId, tenantId, data, actorId);
+    }
+    deleteHealthRecord(req, recordId) {
+        const tenantId = req.user.tenantId;
+        const actorId = req.user.userId;
+        return this.agentsService.deleteHealthRecord(+recordId, tenantId, actorId);
+    }
 };
 exports.AgentsController = AgentsController;
 __decorate([
@@ -118,6 +132,34 @@ __decorate([
     __metadata("design:paramtypes", [Object, String]),
     __metadata("design:returntype", void 0)
 ], AgentsController.prototype, "remove", null);
+__decorate([
+    (0, common_1.Get)(':id/health-records'),
+    (0, permissions_decorator_1.Permissions)('agents:read'),
+    __param(0, (0, common_1.Request)()),
+    __param(1, (0, common_1.Param)('id')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, String]),
+    __metadata("design:returntype", void 0)
+], AgentsController.prototype, "getHealthRecords", null);
+__decorate([
+    (0, common_1.Post)(':id/health-records'),
+    (0, permissions_decorator_1.Permissions)('agents:write'),
+    __param(0, (0, common_1.Request)()),
+    __param(1, (0, common_1.Param)('id')),
+    __param(2, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, String, Object]),
+    __metadata("design:returntype", void 0)
+], AgentsController.prototype, "addHealthRecord", null);
+__decorate([
+    (0, common_1.Delete)('health-records/:recordId'),
+    (0, permissions_decorator_1.Permissions)('agents:write'),
+    __param(0, (0, common_1.Request)()),
+    __param(1, (0, common_1.Param)('recordId')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, String]),
+    __metadata("design:returntype", void 0)
+], AgentsController.prototype, "deleteHealthRecord", null);
 exports.AgentsController = AgentsController = __decorate([
     (0, common_1.Controller)('agents'),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard, roles_guard_1.RolesGuard),

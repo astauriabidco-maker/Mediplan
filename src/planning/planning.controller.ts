@@ -247,6 +247,26 @@ export class PlanningController {
         return this.planningService.approveGhtApplication(req.user.tenantId, id, req.user.id);
     }
 
+    // --- BOURSE D'ÉCHANGE ---
+
+    @Get('swaps/available')
+    @Permissions('planning:read')
+    async getAvailableSwaps(@Request() req: any) {
+        return this.planningService.getAvailableSwaps(req.user.tenantId, req.user.id);
+    }
+
+    @Post('shifts/:id/request-swap')
+    @Permissions('planning:read')
+    async requestSwap(@Request() req: any, @Param('id') id: number) {
+        return this.planningService.requestSwap(req.user.tenantId, id, req.user.id);
+    }
+
+    @Post('shifts/:id/apply-swap')
+    @Permissions('planning:read')
+    async applyForSwap(@Request() req: any, @Param('id') id: number) {
+        return this.planningService.applyForSwap(req.user.tenantId, id, req.user.id);
+    }
+
     @UseGuards(JwtAuthGuard)
     @Post('shift-applications/:id/reject')
     @Permissions('planning:write')

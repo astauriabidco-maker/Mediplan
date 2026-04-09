@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useQuery, useMutation } from '@tanstack/react-query';
 import { useAuth } from '../store/useAuth';
 import { Calendar, dateFnsLocalizer, Views } from 'react-big-calendar';
 import withDragAndDrop from 'react-big-calendar/lib/addons/dragAndDrop';
@@ -6,12 +7,12 @@ import 'react-big-calendar/lib/addons/dragAndDrop/styles.css';
 import { format, parse, startOfWeek, getDay } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { useAppConfig } from '../store/useAppConfig';
-import { fetchShifts, generatePlanning, publishPlanning, updateShift, Shift, fetchLeaves } from '../api/planning.api';
+import { fetchShifts, generatePlanning, publishPlanning, updateShift, Shift, fetchLeaves, getAvailableSwaps, requestSwap, applyForSwap } from '../api/planning.api';
 import { ShiftDetailsModal } from '../components/ShiftDetailsModal';
 import { LeaveCreationModal } from '../components/LeaveCreationModal';
 import { ReplacementModal } from '../components/ReplacementModal';
 import { GhtValidationModal } from '../components/GhtValidationModal';
-import { Filter, ChevronRight, ChevronLeft, Zap, Loader2, CheckCircle, AlertOctagon, UserPlus, ShieldAlert, Wifi, WifiOff, MapPin, Send } from 'lucide-react';
+import { Filter, ChevronRight, ChevronLeft, Zap, Loader2, CheckCircle, AlertOctagon, UserPlus, ShieldAlert, Wifi, WifiOff, MapPin, Send, Briefcase } from 'lucide-react';
 import { facilityApi, Facility as FacilityEntity } from '../api/facility.api';
 import { fetchHospitalServices, HospitalService } from '../api/hospital-services.api';
 import { fetchPlanningProblems, fetchShiftProposals, applyShiftProposal, rejectShiftProposal, PlanningIssue, ShiftProposal } from '../api/planning-ai.api';
@@ -47,6 +48,7 @@ export const PlanningPage = () => {
     const [isLeaveModalOpen, setIsLeaveModalOpen] = useState(false);
     const [isReplacementModalOpen, setIsReplacementModalOpen] = useState(false);
     const [isGhtModalOpen, setIsGhtModalOpen] = useState(false);
+    const [isBourseOpen, setIsBourseOpen] = useState(false);
     const [selectedFacility, setSelectedFacility] = useState<string>('ALL'); // GHT Mode vs Local Mode
     const [selectedService, setSelectedService] = useState<string>('ALL');
     const [facilities, setFacilities] = useState<FacilityEntity[]>([]);
@@ -63,6 +65,39 @@ export const PlanningPage = () => {
 
     const { user } = useAuth();
     const isAgent = user?.role === 'AGENT';
+
+    // Data Fetching: Shift Pool / Bourse d'échange
+    const { data: availableSwaps = [], refetch: refetchSwaps } = useQuery({
+        queryKey: ['availableSwaps'],
+        queryFn: getAvailableSwaps,
+        refetchInterval: 30000 // Poll every 30s
+    });
+
+    // Mutations for Swap
+    const requestSwapMutation = useMutation({
+        mutationFn: requestSwap,
+        onSuccess: () => {
+            alert("Votre garde a été placée sur la bourse d'échange.");
+            setIsModalOpen(false);
+            loadEvents();
+            refetchSwaps();
+        },
+        onError: (err: any) => {
+            alert(err.response?.data?.message || "Erreur lors de l'ajout à la Bourse.");
+        }
+    });
+
+    const applySwapMutation = useMutation({
+        mutationFn: applyForSwap,
+        onSuccess: (data) => {
+            alert(data.message || "Échange validé avec succès !");
+            loadEvents();
+            refetchSwaps();
+        },
+        onError: (err: any) => {
+            alert(err.response?.data?.message || err.message || "Erreur lors de la validation QVT pour cet échange.");
+        }
+    });
 
     const loadEvents = async () => {
         const start = new Date(date);
@@ -140,7 +175,7 @@ export const PlanningPage = () => {
             socket.off('vigie_update');
             socket.off('planning_update');
         };
-    }, [socket, date, selectedFacility, isGhtModalOpen]); // LoadEvents uses date/facility, so we re-bind when they change
+    }, [socket, date, selectedFacility, isGhtModalOpen]);
 
     const handleGenerate = async () => {
         setIsGenerating(true);
@@ -149,14 +184,12 @@ export const PlanningPage = () => {
             const end = new Date(start);
             end.setDate(start.getDate() + 6);
 
-            // Adjust to cover full days
             start.setHours(0, 0, 0, 0);
             end.setHours(23, 59, 59, 999);
 
             await generatePlanning(start, end);
 
-            // Success
-            await loadEvents(); // Refresh data
+            await loadEvents();
             setToastMessage("Brouillon généré selon la capacité litière et les impératifs H24 !");
             setShowToast(true);
             setTimeout(() => setShowToast(false), 3000);
@@ -203,7 +236,7 @@ export const PlanningPage = () => {
         if (event.type === 'LEAVE') {
             return {
                 style: {
-                    backgroundColor: '#F43F5E', // Rose-500
+                    backgroundColor: '#F43F5E',
                     borderRadius: '6px',
                     border: 'none',
                     color: 'white'
@@ -214,7 +247,6 @@ export const PlanningPage = () => {
         const status = event.resource.status;
         let className = 'border-none font-medium ';
 
-        // If Agent view, dim others
         if (isAgent && event.resource.agent?.id !== user?.id) {
             className += 'bg-slate-800 text-slate-500 opacity-50';
             return { className };
@@ -245,7 +277,7 @@ export const PlanningPage = () => {
                 end: event.end,
                 agentName: event.resource.agent?.nom
             });
-            setIsReplacementModalOpen(true); // Direct to replacement for leaves
+            setIsReplacementModalOpen(true);
         } else {
             setSelectedShift(event.resource);
             setIsModalOpen(true);
@@ -254,11 +286,10 @@ export const PlanningPage = () => {
 
     const onEventResize = useCallback(
         async (data: any) => {
-            if (isAgent) return; // Prevent agents from resizing
+            if (isAgent) return;
             const { event, start, end } = data;
-            if (event.type === 'LEAVE') return; // Cannot edit leaves this way
+            if (event.type === 'LEAVE') return;
 
-            // Optimistic rendering
             const prevEvents = [...events];
             setEvents((prev) => {
                 const existing = prev.find((ev) => ev.id === event.id);
@@ -273,7 +304,7 @@ export const PlanningPage = () => {
                 await updateShift(event.id, { start: start.toISOString(), end: end.toISOString() });
             } catch (err) {
                 alert("Erreur: L'agent ne peut pas travailler (règle RH violée).");
-                setEvents(prevEvents); // Rollback
+                setEvents(prevEvents);
             }
         },
         [events]
@@ -281,11 +312,10 @@ export const PlanningPage = () => {
 
     const onEventDrop = useCallback(
         async (data: any) => {
-            if (isAgent) return; // Prevent agents from dragging
+            if (isAgent) return;
             const { event, start, end } = data;
-            if (event.type === 'LEAVE') return; // Cannot drop leaves this way
+            if (event.type === 'LEAVE') return;
 
-            // Optimistic rendering
             const prevEvents = [...events];
             setEvents((prev) => {
                 const existing = prev.find((ev) => ev.id === event.id);
@@ -300,7 +330,7 @@ export const PlanningPage = () => {
                 await updateShift(event.id, { start: start.toISOString(), end: end.toISOString() });
             } catch (err) {
                 alert("Erreur: Mouvement invalide (Limites légales dépassées).");
-                setEvents(prevEvents); // Rollback
+                setEvents(prevEvents);
             }
         },
         [events]
@@ -308,7 +338,6 @@ export const PlanningPage = () => {
 
     return (
         <div className="flex flex-col h-full -m-8 relative">
-            {/* Toast Notification */}
             {showToast && (
                 <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 animate-in fade-in slide-in-from-top-4 duration-300">
                     <div className="bg-emerald-500 text-white px-6 py-3 rounded-full shadow-2xl flex items-center gap-2 font-medium">
@@ -319,7 +348,6 @@ export const PlanningPage = () => {
             )}
 
             <div className="flex flex-1 overflow-hidden">
-                {/* Calendar Side */}
                 <div className="flex-1 flex flex-col p-8 overflow-hidden bg-slate-950">
                     <div className="flex items-center justify-between mb-8">
                         <div className="flex items-center gap-4">
@@ -358,6 +386,42 @@ export const PlanningPage = () => {
                             </button>
                         </div>
                     </div>
+
+                    {isBourseOpen && availableSwaps.length > 0 && (
+                        <div className="mt-6 mb-6 p-6 bg-blue-500/10 border border-blue-500/20 rounded-3xl">
+                            <div className="flex items-center gap-3 mb-4">
+                                <Briefcase className="text-blue-500" size={24} />
+                                <h3 className="text-xl font-bold text-white">Bourse d'Échange Interne</h3>
+                                <div className="px-3 py-1 bg-blue-500/20 text-blue-400 rounded-full text-xs font-bold uppercase">
+                                    {availableSwaps.length} Garde(s) Vacante(s)
+                                </div>
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                {availableSwaps.map((swapShift: any) => (
+                                    <div key={swapShift.id} className="bg-slate-800 p-4 rounded-2xl border border-slate-700 flex flex-col justify-between">
+                                        <div>
+                                            <div className="flex items-center justify-between mb-2">
+                                                <span className="text-slate-400 text-xs font-bold uppercase">{swapShift.agent?.nom} cède sa garde</span>
+                                            </div>
+                                            <div className="text-white font-bold text-lg mb-1">{format(new Date(swapShift.start), 'EEEE d MMMM', { locale: fr })}</div>
+                                            <div className="text-slate-300 text-sm">{format(new Date(swapShift.start), 'HH:mm')} - {format(new Date(swapShift.end), 'HH:mm')}</div>
+                                            <div className="text-emerald-400 text-xs mt-2 border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 rounded inline-block">
+                                                {swapShift.type} • {swapShift.facility?.name || 'Local'}
+                                            </div>
+                                        </div>
+                                        <button 
+                                            disabled={applySwapMutation.isPending}
+                                            onClick={() => applySwapMutation.mutate(Number(swapShift.id))}
+                                            className="mt-4 w-full py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl flex justify-center items-center gap-2 transition-colors disabled:opacity-50"
+                                        >
+                                            {applySwapMutation.isPending ? <Loader2 className="animate-spin" size={16} /> : <CheckCircle size={16} />}
+                                            Postuler & Remplacer
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
 
                     <div className="flex-1 bg-slate-900/50 rounded-2xl border border-slate-800/50 p-6 backdrop-blur-sm shadow-2xl relative overflow-hidden">
                         <DnDCalendar
@@ -410,7 +474,6 @@ export const PlanningPage = () => {
                     </div>
                 </div>
 
-                {/* Filter Panel */}
                 <aside className="w-80 bg-slate-900 border-l border-slate-800 p-8 flex flex-col gap-8 shadow-2xl">
                     <div className="flex items-center gap-3 text-white border-b border-slate-800 pb-4">
                         <Filter size={20} />
@@ -691,6 +754,11 @@ export const PlanningPage = () => {
                 isOpen={isModalOpen}
                 onClose={() => setIsModalOpen(false)}
                 shift={selectedShift}
+                onRequestSwap={(shiftId) => {
+                    if (window.confirm("Voulez-vous proposer cette garde à l'échange ?")) {
+                        requestSwapMutation.mutate(Number(shiftId));
+                    }
+                }}
             />
 
             <ReplacementModal

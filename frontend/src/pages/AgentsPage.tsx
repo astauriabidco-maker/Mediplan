@@ -7,9 +7,10 @@ import { useAuth } from '../store/useAuth';
 import {
     Users, Plus, Search, Trash2, Edit2, X, Loader2, Award, Network,
     Filter, TrendingUp, AlertCircle, CheckCircle, XCircle, FileText,
-    Globe, Smartphone, ShieldCheck, Heart, Baby, Activity, Clock
+    Globe, Smartphone, ShieldCheck, Heart, Baby, Activity, Clock, Stethoscope
 } from 'lucide-react';
 import { fetchBeneficiaries, createBeneficiary, deleteBeneficiary, updateBeneficiary, Beneficiary } from '../api/beneficiaries.api';
+import { getHealthRecords, addHealthRecord, deleteHealthRecord, HealthRecord } from '../api/agents.api';
 import { useAppConfig } from '../store/useAppConfig';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -575,6 +576,7 @@ const AgentForm = ({ agent, onSubmit, isLoading, themeColor, services, agents }:
         { id: 'africa', label: 'Localisation / Afrique', icon: Globe },
         { id: 'family', label: 'Ayants-droit / Famille', icon: Heart },
         { id: 'contact', label: 'Contacts & Urgences', icon: Network },
+        { id: 'health', label: 'Santé & Médecine', icon: Stethoscope },
     ];
 
     return (
@@ -1064,3 +1066,180 @@ const BeneficiaryManager = ({ agentId, themeColor }: { agentId?: number, themeCo
         </div>
     );
 }
+
+// HealthRecordsTab component
+const HealthRecordsTab = ({ agentId, themeColor }: { agentId: number, themeColor: string }) => {
+    const [isAdding, setIsAdding] = useState(false);
+    
+    const { data: records = [], isLoading, refetch } = useQuery({
+        queryKey: ['healthRecords', agentId],
+        queryFn: () => getHealthRecords(agentId),
+    });
+
+    const addMutation = useMutation({
+        mutationFn: (data: Partial<HealthRecord>) => addHealthRecord(agentId, data),
+        onSuccess: () => {
+            setIsAdding(false);
+            refetch();
+        }
+    });
+
+    const deleteMutation = useMutation({
+        mutationFn: deleteHealthRecord,
+        onSuccess: () => refetch()
+    });
+
+    return (
+        <div className="space-y-6">
+            <div className="flex justify-between items-center bg-slate-950/30 p-6 rounded-2xl border border-slate-800">
+                <div>
+                    <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                        <Stethoscope className={cn(`text-${themeColor}`)} size={20} />
+                        Dossier de Santé au Travail
+                    </h3>
+                    <p className="text-sm text-slate-400 mt-1">
+                        Suivi des vaccinations, visites d'aptitude et habilitations médicales.
+                    </p>
+                </div>
+                <button
+                    type="button"
+                    onClick={() => setIsAdding(true)}
+                    className={cn("px-4 py-2 rounded-xl font-bold flex items-center gap-2 transition-all hover:scale-105 text-white shadow-lg", `bg-${themeColor}`)}
+                >
+                    <Plus size={16} /> Ajouter
+                </button>
+            </div>
+
+            {isLoading ? (
+                <div className="flex justify-center p-12"><Loader2 className="animate-spin text-slate-500" /></div>
+            ) : records.length === 0 ? (
+                <div className="text-center p-12 bg-slate-800/30 rounded-3xl border border-slate-800 border-dashed">
+                    <p className="text-slate-500">Aucun suivi médical enregistré pour le moment.</p>
+                </div>
+            ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {records.map(record => (
+                        <div key={record.id} className="bg-slate-800/50 p-5 rounded-2xl border border-slate-800 flex flex-col justify-between">
+                            <div>
+                                <div className="flex justify-between items-start mb-3">
+                                    <div className="flex gap-2 items-center">
+                                        <span className="text-xs font-black uppercase tracking-wider text-slate-400 border border-slate-700 bg-slate-900 px-2 py-1 rounded">
+                                            {record.type}
+                                        </span>
+                                        {record.isMandatory && (
+                                            <span className="text-xs font-black text-rose-500 border border-rose-500/20 bg-rose-500/10 px-2 py-1 rounded">
+                                                BLOQUANT
+                                            </span>
+                                        )}
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => { if (window.confirm("Supprimer ce document médical ?")) deleteMutation.mutate(record.id) }}
+                                        className="text-slate-500 hover:text-red-500 hover:bg-slate-800 p-1 rounded-md transition-colors"
+                                    >
+                                        <Trash2 size={16} />
+                                    </button>
+                                </div>
+                                <h4 className="text-lg font-bold text-white mb-2">{record.title}</h4>
+                                <div className="text-sm text-slate-400 flex flex-col gap-1">
+                                    <div className="flex items-center gap-2">
+                                        <CheckCircle size={14} className="text-emerald-500/70" />
+                                        Fait le : {new Date(record.datePerformed).toLocaleDateString()}
+                                    </div>
+                                    {record.expirationDate && (
+                                        <div className="flex items-center gap-2">
+                                            <AlertCircle size={14} className="text-amber-500/70" />
+                                            Expire le : {new Date(record.expirationDate).toLocaleDateString()}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                            
+                            <div className="mt-4 pt-4 border-t border-slate-700/50 flex justify-between items-center">
+                                <span className={cn(
+                                    "px-3 py-1 rounded-full text-xs font-black uppercase",
+                                    record.status === 'VALID' ? "bg-emerald-500/10 text-emerald-500 border border-emerald-500/20" :
+                                    record.status === 'EXPIRING_SOON' ? "bg-amber-500/10 text-amber-500 border border-amber-500/20" :
+                                    "bg-rose-500/10 text-rose-500 border border-rose-500/20 animate-pulse"
+                                )}>
+                                    {record.status === 'VALID' ? 'À JOUR' : record.status === 'EXPIRING_SOON' ? 'BIENTÔT EXPIRÉ' : 'EXPIRÉ !'}
+                                </span>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            )}
+
+            {isAdding && (
+                <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+                    <div className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-lg overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200">
+                        <div className="p-6 border-b border-slate-800 flex justify-between items-center">
+                            <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                                <Plus size={20} className={cn(`text-${themeColor}`)} />
+                                Nouveau Suivi Médical
+                            </h3>
+                            <button type="button" onClick={() => setIsAdding(false)} className="text-slate-500 hover:text-white"><X /></button>
+                        </div>
+                        <form onSubmit={(e) => {
+                            e.preventDefault();
+                            const formData = new FormData(e.currentTarget);
+                            const data = Object.fromEntries(formData.entries());
+                            addMutation.mutate({
+                                type: data.type as string,
+                                title: data.title as string,
+                                datePerformed: data.datePerformed as string,
+                                expirationDate: data.expirationDate ? data.expirationDate as string : null,
+                                isMandatory: data.isMandatory === 'on',
+                                notes: data.notes as string
+                            });
+                        }} className="p-6 space-y-4">
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="space-y-2">
+                                    <label className="text-xs font-bold text-slate-500 uppercase">Catégorie / Statut</label>
+                                    <input name="type" required className="input-field" placeholder="VACCIN, APTITUDE, AUTRE..." list="medical-types" />
+                                    <datalist id="medical-types">
+                                        <option value="VACCIN">Vaccin</option>
+                                        <option value="VISITE D'APTITUDE">Visite d'Aptitude</option>
+                                        <option value="EXAMEN RADIO">Examen Radio</option>
+                                    </datalist>
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="text-xs font-bold text-slate-500 uppercase">Description de l'acte</label>
+                                    <input name="title" required className="input-field" placeholder="ex: Hépatite B (Rappel)" />
+                                </div>
+                            </div>
+                            
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="space-y-2">
+                                    <label className="text-xs font-bold text-slate-500 uppercase">Date de réalisation</label>
+                                    <input name="datePerformed" type="date" required className="input-field" />
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="text-xs font-bold text-slate-500 uppercase">Date d'expiration</label>
+                                    <input name="expirationDate" type="date" className="input-field" />
+                                </div>
+                            </div>
+
+                            <div className="space-y-2 bg-slate-950/30 p-4 rounded-xl border border-slate-800">
+                                <label className="flex items-center gap-3 cursor-pointer">
+                                    <input type="checkbox" name="isMandatory" className={cn("w-5 h-5 rounded border-slate-700 bg-slate-800", `text-${themeColor}`)} />
+                                    <span className="text-sm font-semibold text-white">Bloquant pour le Planning</span>
+                                </label>
+                                <p className="text-xs text-slate-500 mt-1 pl-8">
+                                    Si coché, l'agent ne pourra pas être planifié si ce suivi est expiré.
+                                </p>
+                            </div>
+
+                            <div className="pt-4 flex justify-end gap-3">
+                                <button type="button" onClick={() => setIsAdding(false)} className="px-6 py-2 rounded-xl font-bold text-slate-400 hover:text-white transition-colors">Annuler</button>
+                                <button type="submit" disabled={addMutation.isPending} className={cn("px-8 py-2 rounded-xl font-bold text-white transition-all", `bg-${themeColor}`)}>
+                                    {addMutation.isPending ? 'Ajout...' : 'Ajouter le suivi'}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};

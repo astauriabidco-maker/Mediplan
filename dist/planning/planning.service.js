@@ -28,8 +28,10 @@ const whatsapp_service_1 = require("../whatsapp/whatsapp.service");
 const events_gateway_1 = require("../events/events.gateway");
 const documents_service_1 = require("../documents/documents.service");
 const settings_service_1 = require("../settings/settings.service");
+const health_record_entity_1 = require("../agents/entities/health-record.entity");
 let PlanningService = class PlanningService {
     shiftRepository;
+    healthRecordRepository;
     leaveRepository;
     agentRepository;
     workPolicyRepository;
@@ -40,8 +42,9 @@ let PlanningService = class PlanningService {
     eventsGateway;
     documentsService;
     settingsService;
-    constructor(shiftRepository, leaveRepository, agentRepository, workPolicyRepository, shiftApplicationRepository, localeRules, auditService, whatsappService, eventsGateway, documentsService, settingsService) {
+    constructor(shiftRepository, healthRecordRepository, leaveRepository, agentRepository, workPolicyRepository, shiftApplicationRepository, localeRules, auditService, whatsappService, eventsGateway, documentsService, settingsService) {
         this.shiftRepository = shiftRepository;
+        this.healthRecordRepository = healthRecordRepository;
         this.leaveRepository = leaveRepository;
         this.agentRepository = agentRepository;
         this.workPolicyRepository = workPolicyRepository;
@@ -55,6 +58,17 @@ let PlanningService = class PlanningService {
     }
     async validateShift(tenantId, agentId, start, end) {
         const constraints = await this.getConstraintsForAgent(tenantId, agentId);
+        const expiredMandatoryRecords = await this.healthRecordRepository.find({
+            where: {
+                agentId,
+                tenantId,
+                isMandatory: true,
+                status: health_record_entity_1.HealthRecordStatus.EXPIRED
+            }
+        });
+        if (expiredMandatoryRecords.length > 0) {
+            return false;
+        }
         const isAvailable = await this.checkLeaveAvailability(tenantId, agentId, start, end);
         if (!isAvailable) {
             return false;
@@ -278,17 +292,95 @@ let PlanningService = class PlanningService {
         this.eventsGateway.broadcastPlanningUpdate();
         return application;
     }
+    async requestSwap(tenantId, shiftId, agentId) {
+        const shift = await this.shiftRepository.findOne({
+            where: { id: shiftId, tenantId },
+            relations: ['agent']
+        });
+        if (!shift)
+            throw new Error('Garde introuvable.');
+        if (shift.agent.id !== agentId && shift.agent.id !== Number(agentId)) {
+            throw new Error('Vous ne pouvez mettre en échange que vos propres gardes.');
+        }
+        shift.isSwapRequested = true;
+        this.eventsGateway.broadcastPlanningUpdate();
+        return this.shiftRepository.save(shift);
+    }
+    async getAvailableSwaps(tenantId, agentId) {
+        const currentAgent = await this.agentRepository.findOne({
+            where: { id: agentId, tenantId },
+            relations: ['hospitalService', 'grade']
+        });
+        if (!currentAgent)
+            throw new Error('Agent introuvable');
+        const query = this.shiftRepository.createQueryBuilder('shift')
+            .leftJoinAndSelect('shift.agent', 'agent')
+            .leftJoinAndSelect('shift.facility', 'facility')
+            .where('shift.tenantId = :tenantId', { tenantId })
+            .andWhere('shift.isSwapRequested = :isSwapRequested', { isSwapRequested: true })
+            .andWhere('shift.start > :now', { now: new Date() })
+            .andWhere('shift.agent.id != :agentId', { agentId });
+        if (currentAgent.grade?.name?.toUpperCase() !== 'MDECIN' && currentAgent.grade?.name?.toUpperCase() !== 'MEDECIN') {
+            query.andWhere('agent.hospitalServiceId = :hospitalServiceId', { hospitalServiceId: currentAgent.hospitalServiceId });
+        }
+        return query.getMany();
+    }
+    async applyForSwap(tenantId, shiftId, agentId) {
+        const shift = await this.shiftRepository.findOne({
+            where: { id: shiftId, tenantId },
+            relations: ['agent']
+        });
+        if (!shift)
+            throw new Error('Garde introuvable.');
+        if (!shift.isSwapRequested)
+            throw new Error('Cette garde n\'est plus disponible à l\'échange.');
+        const applyingAgent = await this.agentRepository.findOne({
+            where: { id: agentId, tenantId }
+        });
+        if (!applyingAgent)
+            throw new Error('Agent introuvable');
+        let policy = await this.workPolicyRepository.findOne({
+            where: { tenantId, hospitalServiceId: applyingAgent.hospitalServiceId }
+        });
+        if (!policy) {
+            policy = await this.workPolicyRepository.findOne({
+                where: { tenantId, hospitalServiceId: (0, typeorm_2.IsNull)() }
+            });
+        }
+        const restHours = policy?.restHoursAfterGuard || 11;
+        const maxWeeklyHours = 48;
+        const QvtIsOk = await this.validateShift(tenantId, agentId, shift.start, shift.end);
+        if (!QvtIsOk) {
+            throw new Error(`Échange impossible : Cette garde violerait votre règle QVT de sécurité (Repos ${restHours}h ou chevauchement).`);
+        }
+        const weeklyHours = await this.getWeeklyHours(tenantId, agentId, shift.start);
+        const shiftDuration = (shift.end.getTime() - shift.start.getTime()) / (1000 * 60 * 60);
+        if (weeklyHours + shiftDuration > maxWeeklyHours) {
+            throw new Error(`Échange impossible : Heures hebdomadaires maximales (${maxWeeklyHours}h) dépassées.`);
+        }
+        const formerAgent = shift.agent;
+        shift.agent = applyingAgent;
+        shift.isSwapRequested = false;
+        await this.shiftRepository.save(shift);
+        if (formerAgent?.telephone) {
+            this.whatsappService.sendMessage(formerAgent.telephone, `✅ Bonne nouvelle ! Votre garde du ${shift.start.toLocaleDateString()} a été reprise par ${applyingAgent.nom} via la Bourse d'Échange.`).catch(() => { });
+        }
+        this.eventsGateway.broadcastPlanningUpdate();
+        return { success: true, message: 'Échange auto-validé ! La garde a été ajoutée à votre planning.' };
+    }
 };
 exports.PlanningService = PlanningService;
 exports.PlanningService = PlanningService = __decorate([
     (0, common_1.Injectable)(),
     __param(0, (0, typeorm_1.InjectRepository)(shift_entity_1.Shift)),
-    __param(1, (0, typeorm_1.InjectRepository)(leave_entity_1.Leave)),
-    __param(2, (0, typeorm_1.InjectRepository)(agent_entity_1.Agent)),
-    __param(3, (0, typeorm_1.InjectRepository)(work_policy_entity_1.WorkPolicy)),
-    __param(4, (0, typeorm_1.InjectRepository)(shift_application_entity_1.ShiftApplication)),
-    __param(5, (0, common_1.Inject)(locale_module_1.LOCALE_RULES)),
+    __param(1, (0, typeorm_1.InjectRepository)(health_record_entity_1.HealthRecord)),
+    __param(2, (0, typeorm_1.InjectRepository)(leave_entity_1.Leave)),
+    __param(3, (0, typeorm_1.InjectRepository)(agent_entity_1.Agent)),
+    __param(4, (0, typeorm_1.InjectRepository)(work_policy_entity_1.WorkPolicy)),
+    __param(5, (0, typeorm_1.InjectRepository)(shift_application_entity_1.ShiftApplication)),
+    __param(6, (0, common_1.Inject)(locale_module_1.LOCALE_RULES)),
     __metadata("design:paramtypes", [typeorm_2.Repository,
+        typeorm_2.Repository,
         typeorm_2.Repository,
         typeorm_2.Repository,
         typeorm_2.Repository,

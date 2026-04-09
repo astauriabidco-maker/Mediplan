@@ -7,6 +7,7 @@ import { Role } from '../../auth/entities/role.entity';
 import { Grade } from './grade.entity';
 import { Facility } from './facility.entity';
 import { AgentBeneficiary } from './beneficiary.entity';
+import { HealthRecord } from './health-record.entity';
 export declare enum UserRole {
     SUPER_ADMIN = "SUPER_ADMIN",
     ADMIN = "ADMIN",
@@ -98,4 +99,5 @@ export declare class Agent {
     shifts: Shift[];
     leaves: Leave[];
     beneficiaries: AgentBeneficiary[];
+    healthRecords: HealthRecord[];
 }

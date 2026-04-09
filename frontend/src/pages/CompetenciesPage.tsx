@@ -21,6 +21,9 @@ export const CompetenciesPage = () => {
     // Modal states
     const [selectedCell, setSelectedCell] = useState<{ agent: any, competency: any } | null>(null);
 
+    const [filterService, setFilterService] = useState('');
+    const [filterJob, setFilterJob] = useState('');
+
     const { data, isLoading } = useQuery({
         queryKey: ['competencies-matrix'],
         queryFn: fetchCompetenciesMatrix,
@@ -44,28 +47,50 @@ export const CompetenciesPage = () => {
     }
 
     const { agents = [], competencies = [] } = data || {};
-    const filteredAgents = agents.filter(a => a.nom.toLowerCase().includes(searchTerm.toLowerCase()));
+
+    // Build unique filter lists
+    const uniqueServices = Array.from(new Set(agents.map(a => a.hospitalService?.name).filter(Boolean)));
+    const uniqueJobs = Array.from(new Set(agents.map(a => a.jobTitle).filter(Boolean)));
+
+    // Filter agents
+    const filteredAgents = agents.filter(a => {
+        const matchSearch = a.nom.toLowerCase().includes(searchTerm.toLowerCase());
+        const matchService = filterService ? a.hospitalService?.name === filterService : true;
+        const matchJob = filterJob ? a.jobTitle === filterJob : true;
+        return matchSearch && matchService && matchJob;
+    });
+
+    // Compute KPIs specifically for filtered agents
+    let totalHabilitations = 0;
+    let expiredHabilitations = 0;
+    let expiringSoon = 0;
+
+    filteredAgents.forEach(agent => {
+        if (!agent.agentCompetencies) return;
+        agent.agentCompetencies.forEach((relation: any) => {
+            totalHabilitations++;
+            if (relation.expirationDate) {
+                const isExpired = new Date(relation.expirationDate) < new Date();
+                const diffTime = new Date(relation.expirationDate).getTime() - new Date().getTime();
+                const isExpiringSoon = !isExpired && diffTime < 30 * 24 * 60 * 60 * 1000;
+                
+                if (isExpired) expiredHabilitations++;
+                if (isExpiringSoon) expiringSoon++;
+            }
+        });
+    });
+
+    const complianceRate = totalHabilitations ? Math.round(((totalHabilitations - expiredHabilitations) / totalHabilitations) * 100) : 100;
 
     return (
         <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
             <div className="flex items-end justify-between">
                 <div className="flex flex-col gap-2">
-                    <h1 className="text-3xl font-bold text-white tracking-tight">Matrice de Compétences</h1>
-                    <p className="text-slate-400">Vue d'ensemble et gestion des certifications par agent.</p>
+                    <h1 className="text-3xl font-bold text-white tracking-tight">Tableau de Bord GPEC</h1>
+                    <p className="text-slate-400">Gestion Prévisionnelle des Emplois et des Compétences sectorisée.</p>
                 </div>
 
                 <div className="flex items-center gap-4">
-                    <div className="relative">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
-                        <input
-                            type="text"
-                            placeholder="Rechercher un agent..."
-                            value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
-                            className="bg-slate-900 border border-slate-800 rounded-xl pl-10 pr-4 py-2.5 text-white outline-none focus:border-blue-500 transition-all w-64"
-                        />
-                    </div>
-
                     {isCreating ? (
                         <div className="flex items-center gap-2 animate-in slide-in-from-right-2 duration-200">
                             <input
@@ -96,10 +121,66 @@ export const CompetenciesPage = () => {
                             className="flex items-center gap-2 px-6 py-2.5 bg-slate-900 hover:bg-slate-800 border border-slate-800 text-white rounded-xl transition-all font-medium shadow-xl"
                         >
                             <Plus size={18} className="text-emerald-500" />
-                            Ajouter une Compétence
+                            Ajouter / Créer une Compétence
                         </button>
                     )}
                 </div>
+            </div>
+
+            {/* KPI Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl flex flex-col gap-2">
+                    <div className="text-slate-400 text-sm font-semibold uppercase tracking-wider">Agents Filtrés</div>
+                    <div className="text-4xl font-black text-white">{filteredAgents.length}</div>
+                </div>
+                <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl flex flex-col gap-2">
+                    <div className="text-slate-400 text-sm font-semibold uppercase tracking-wider">Habilitations Totales</div>
+                    <div className="text-4xl font-black text-blue-500">{totalHabilitations}</div>
+                    <div className="text-xs font-bold text-blue-500/70 bg-blue-500/10 px-2 py-1 rounded w-max mt-1">Conformité: {complianceRate}%</div>
+                </div>
+                <div className={cn("bg-slate-900 border border-slate-800 p-6 rounded-2xl flex flex-col gap-2 transition-colors", expiringSoon > 0 && "border-amber-500/50 bg-amber-500/5")}>
+                    <div className="text-amber-500/70 text-sm font-semibold uppercase tracking-wider flex items-center gap-2">
+                        <Clock size={16} /> Expirations &lt; 30j
+                    </div>
+                    <div className="text-4xl font-black text-amber-500">{expiringSoon}</div>
+                </div>
+                <div className={cn("bg-slate-900 border border-slate-800 p-6 rounded-2xl flex flex-col gap-2 transition-colors", expiredHabilitations > 0 && "border-rose-500/50 bg-rose-500/10 animate-pulse")}>
+                    <div className="text-rose-500/70 text-sm font-semibold uppercase tracking-wider flex items-center gap-2">
+                        <AlertTriangle size={16} /> Expiré (En Défaut)
+                    </div>
+                    <div className="text-4xl font-black text-rose-500">{expiredHabilitations}</div>
+                </div>
+            </div>
+
+            {/* Filters Bar */}
+            <div className="flex gap-4 items-center bg-slate-900/50 p-4 border border-slate-800 rounded-2xl">
+                <div className="relative flex-1 max-w-sm">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
+                    <input
+                        type="text"
+                        placeholder="Rechercher un agent..."
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        className="bg-slate-950 border border-slate-800 rounded-xl pl-10 pr-4 py-2.5 text-white outline-none focus:border-blue-500 transition-all w-full"
+                    />
+                </div>
+                <div className="w-px h-8 bg-slate-800 mx-2" />
+                <select 
+                    value={filterService} 
+                    onChange={e => setFilterService(e.target.value)}
+                    className="bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-white outline-none focus:border-blue-500 transition-all min-w-[200px]"
+                >
+                    <option value="">Tous les Services</option>
+                    {uniqueServices.map(s => <option key={s as string} value={s as string}>{s as string}</option>)}
+                </select>
+                <select 
+                    value={filterJob} 
+                    onChange={e => setFilterJob(e.target.value)}
+                    className="bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-white outline-none focus:border-blue-500 transition-all min-w-[200px]"
+                >
+                    <option value="">Tous les Postes</option>
+                    {uniqueJobs.map(j => <option key={j as string} value={j as string}>{j as string}</option>)}
+                </select>
             </div>
 
             <div className="bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden shadow-2xl relative">
@@ -127,6 +208,9 @@ export const CompetenciesPage = () => {
                                         <div className="flex flex-col">
                                             <span className="font-bold text-slate-100">{agent.nom}</span>
                                             <span className="text-xs text-slate-500">{agent.jobTitle || 'Personnel'}</span>
+                                            {agent.hospitalService && (
+                                                <span className="text-[10px] font-bold text-blue-500/60 mt-0.5">{agent.hospitalService.name}</span>
+                                            )}
                                         </div>
                                     </td>
                                     {competencies.map(comp => {

@@ -64,4 +64,29 @@ export class AgentsController {
         const actorId = req.user.userId;
         return this.agentsService.remove(+id, tenantId, actorId);
     }
+
+    // --- HEALTH RECORDS --- //
+
+    @Get(':id/health-records')
+    @Permissions('agents:read')
+    getHealthRecords(@Request() req: any, @Param('id') agentId: string) {
+        const tenantId = req.user.tenantId;
+        return this.agentsService.getHealthRecords(+agentId, tenantId);
+    }
+
+    @Post(':id/health-records')
+    @Permissions('agents:write')
+    addHealthRecord(@Request() req: any, @Param('id') agentId: string, @Body() data: any) {
+        const tenantId = req.user.tenantId;
+        const actorId = req.user.userId;
+        return this.agentsService.addHealthRecord(+agentId, tenantId, data, actorId);
+    }
+
+    @Delete('health-records/:recordId')
+    @Permissions('agents:write')
+    deleteHealthRecord(@Request() req: any, @Param('recordId') recordId: string) {
+        const tenantId = req.user.tenantId;
+        const actorId = req.user.userId;
+        return this.agentsService.deleteHealthRecord(+recordId, tenantId, actorId);
+    }
 }

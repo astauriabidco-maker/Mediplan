@@ -10,4 +10,9 @@ export declare class AgentsController {
     findOne(req: any, id: string, queryTenantId?: string): Promise<import("./entities/agent.entity").Agent>;
     update(req: any, id: string, updateAgentDto: UpdateAgentDto, queryTenantId?: string): Promise<import("./entities/agent.entity").Agent>;
     remove(req: any, id: string): Promise<import("./entities/agent.entity").Agent>;
+    getHealthRecords(req: any, agentId: string): Promise<import("./entities/health-record.entity").HealthRecord[]>;
+    addHealthRecord(req: any, agentId: string, data: any): Promise<import("./entities/health-record.entity").HealthRecord>;
+    deleteHealthRecord(req: any, recordId: string): Promise<{
+        success: boolean;
+    }>;
 }

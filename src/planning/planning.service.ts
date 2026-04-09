@@ -14,12 +14,15 @@ import { WhatsappService } from '../whatsapp/whatsapp.service';
 import { EventsGateway } from '../events/events.gateway';
 import { DocumentsService } from '../documents/documents.service';
 import { SettingsService } from '../settings/settings.service';
+import { HealthRecord, HealthRecordStatus } from '../agents/entities/health-record.entity';
 
 @Injectable()
 export class PlanningService {
     constructor(
         @InjectRepository(Shift)
         private shiftRepository: Repository<Shift>,
+        @InjectRepository(HealthRecord)
+        private healthRecordRepository: Repository<HealthRecord>,
         @InjectRepository(Leave)
         private leaveRepository: Repository<Leave>,
         @InjectRepository(Agent)
@@ -40,6 +43,22 @@ export class PlanningService {
     async validateShift(tenantId: string, agentId: number, start: Date, end: Date): Promise<boolean> {
         // 0. Get Dynamic Constraints
         const constraints = await this.getConstraintsForAgent(tenantId, agentId);
+
+        // 0.5. Check Health Records (Medical Obligations)
+        const expiredMandatoryRecords = await this.healthRecordRepository.find({
+            where: {
+                agentId,
+                tenantId,
+                isMandatory: true,
+                status: HealthRecordStatus.EXPIRED
+            }
+        });
+
+        if (expiredMandatoryRecords.length > 0) {
+            // If any mandatory record is EXPIRED, block planning physically
+            // The frontend or AutoScheduler will receive `false` and treat it as invalid
+            return false;
+        }
 
         // 1. Check Leaves
         const isAvailable = await this.checkLeaveAvailability(tenantId, agentId, start, end);
@@ -362,5 +381,109 @@ export class PlanningService {
         this.eventsGateway.broadcastPlanningUpdate();
 
         return application;
+    }
+
+    // --- BOURSE D'ÉCHANGE DE GARDES (SHIFT SWAPPING) ---
+
+    async requestSwap(tenantId: string, shiftId: number, agentId: number): Promise<Shift> {
+        const shift = await this.shiftRepository.findOne({
+            where: { id: shiftId, tenantId },
+            relations: ['agent']
+        });
+
+        if (!shift) throw new Error('Garde introuvable.');
+        if (shift.agent.id !== agentId && shift.agent.id !== Number(agentId)) {
+            throw new Error('Vous ne pouvez mettre en échange que vos propres gardes.');
+        }
+
+        shift.isSwapRequested = true;
+        this.eventsGateway.broadcastPlanningUpdate();
+        return this.shiftRepository.save(shift);
+    }
+
+    async getAvailableSwaps(tenantId: string, agentId: number): Promise<Shift[]> {
+        const currentAgent = await this.agentRepository.findOne({
+            where: { id: agentId, tenantId },
+            relations: ['hospitalService', 'grade']
+        });
+
+        if (!currentAgent) throw new Error('Agent introuvable');
+
+        const query = this.shiftRepository.createQueryBuilder('shift')
+            .leftJoinAndSelect('shift.agent', 'agent')
+            .leftJoinAndSelect('shift.facility', 'facility')
+            .where('shift.tenantId = :tenantId', { tenantId })
+            .andWhere('shift.isSwapRequested = :isSwapRequested', { isSwapRequested: true })
+            .andWhere('shift.start > :now', { now: new Date() })
+            // Sauf s'il s'agit de la propre garde de l'agent
+            .andWhere('shift.agent.id != :agentId', { agentId });
+
+        // Règles QVT: Les médecins (ex: MDECIN) peuvent cross-service. Les autres non.
+        if (currentAgent.grade?.name?.toUpperCase() !== 'MDECIN' && currentAgent.grade?.name?.toUpperCase() !== 'MEDECIN') {
+             query.andWhere('agent.hospitalServiceId = :hospitalServiceId', { hospitalServiceId: currentAgent.hospitalServiceId });
+        }
+
+        return query.getMany();
+    }
+
+    async applyForSwap(tenantId: string, shiftId: number, agentId: number): Promise<{ success: boolean; message: string }> {
+        const shift = await this.shiftRepository.findOne({
+            where: { id: shiftId, tenantId },
+            relations: ['agent']
+        });
+
+        if (!shift) throw new Error('Garde introuvable.');
+        if (!shift.isSwapRequested) throw new Error('Cette garde n\'est plus disponible à l\'échange.');
+
+        const applyingAgent = await this.agentRepository.findOne({
+            where: { id: agentId, tenantId }
+        });
+
+        if (!applyingAgent) throw new Error('Agent introuvable');
+
+        // --- VALIDATION QVT AUTOMATIQUE ---
+        let policy = await this.workPolicyRepository.findOne({
+            where: { tenantId, hospitalServiceId: applyingAgent.hospitalServiceId }
+        });
+        if (!policy) {
+            policy = await this.workPolicyRepository.findOne({
+                where: { tenantId, hospitalServiceId: IsNull() }
+            });
+        }
+        
+        const restHours = policy?.restHoursAfterGuard || 11;
+        const maxWeeklyHours = 48; // Safe default as per hospital norms
+
+        // Verifier le repos legal
+        const QvtIsOk = await this.validateShift(tenantId, agentId, shift.start, shift.end);
+        
+        if (!QvtIsOk) {
+            throw new Error(`Échange impossible : Cette garde violerait votre règle QVT de sécurité (Repos ${restHours}h ou chevauchement).`);
+        }
+
+        // Vérifier les heures hebdo max
+        const weeklyHours = await this.getWeeklyHours(tenantId, agentId, shift.start);
+        const shiftDuration = (shift.end.getTime() - shift.start.getTime()) / (1000 * 60 * 60);
+        if (weeklyHours + shiftDuration > maxWeeklyHours) {
+             throw new Error(`Échange impossible : Heures hebdomadaires maximales (${maxWeeklyHours}h) dépassées.`);
+        }
+
+        // Si tout est OK, l'échange est AUTO-VALIDÉ
+        const formerAgent = shift.agent;
+
+        shift.agent = applyingAgent;
+        shift.isSwapRequested = false;
+        await this.shiftRepository.save(shift);
+
+        // Envoyer un WhatsApp au possesseur initial pour le rassurer
+        if (formerAgent?.telephone) {
+            this.whatsappService.sendMessage(
+                formerAgent.telephone,
+                `✅ Bonne nouvelle ! Votre garde du ${shift.start.toLocaleDateString()} a été reprise par ${applyingAgent.nom} via la Bourse d'Échange.`
+            ).catch(() => {});
+        }
+
+        this.eventsGateway.broadcastPlanningUpdate();
+        return { success: true, message: 'Échange auto-validé ! La garde a été ajoutée à votre planning.' };
     }
 }

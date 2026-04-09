@@ -8,6 +8,7 @@ import { Role } from '../../auth/entities/role.entity';
 import { Grade } from './grade.entity';
 import { Facility } from './facility.entity';
 import { AgentBeneficiary } from './beneficiary.entity';
+import { HealthRecord } from './health-record.entity';
 
 export enum UserRole {
     SUPER_ADMIN = 'SUPER_ADMIN',
@@ -265,5 +266,8 @@ export class Agent {
 
     @OneToMany(() => AgentBeneficiary, (beneficiary) => beneficiary.agent)
     beneficiaries: AgentBeneficiary[];
+
+    @OneToMany(() => HealthRecord, (record) => record.agent)
+    healthRecords: HealthRecord[];
 }
 

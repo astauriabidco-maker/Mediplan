@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Agent } from './entities/agent.entity';
+import { HealthRecord, HealthRecordStatus } from './entities/health-record.entity';
 import { CreateAgentDto } from './dto/create-agent.dto';
 import { UpdateAgentDto } from './dto/update-agent.dto';
 import * as bcrypt from 'bcrypt';
@@ -14,6 +15,8 @@ export class AgentsService {
     constructor(
         @InjectRepository(Agent)
         private readonly agentRepository: Repository<Agent>,
+        @InjectRepository(HealthRecord)
+        private readonly healthRecordRepository: Repository<HealthRecord>,
         private readonly auditService: AuditService,
     ) { }
 
@@ -129,5 +132,78 @@ export class AgentsService {
 
         // Return current agent first, then their team
         return [currentAgent, ...directReports];
+    }
+
+    // --- HEALTH RECORDS --- //
+
+    async getHealthRecords(agentId: number, tenantId: string) {
+        const records = await this.healthRecordRepository.find({
+            where: { agentId, tenantId },
+            order: { expirationDate: 'ASC' }
+        });
+
+        // Dynamic status check
+        const now = new Date();
+        now.setHours(0,0,0,0);
+        let hasUpdates = false;
+
+        for (const record of records) {
+            if (record.expirationDate) {
+                const expDate = new Date(record.expirationDate);
+                expDate.setHours(0,0,0,0);
+                const diffTime = expDate.getTime() - now.getTime();
+                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+                let newStatus = record.status;
+                if (diffDays < 0) {
+                    newStatus = HealthRecordStatus.EXPIRED;
+                } else if (diffDays <= 30) {
+                    newStatus = HealthRecordStatus.EXPIRING_SOON;
+                } else {
+                    newStatus = HealthRecordStatus.VALID;
+                }
+
+                if (newStatus !== record.status) {
+                    record.status = newStatus;
+                    hasUpdates = true;
+                }
+            }
+        }
+
+        if (hasUpdates) {
+            await this.healthRecordRepository.save(records);
+        }
+
+        return records;
+    }
+
+    async addHealthRecord(agentId: number, tenantId: string, data: Partial<HealthRecord>, actorId: number) {
+        const newRecord = this.healthRecordRepository.create({
+            ...data,
+            agentId,
+            tenantId,
+        });
+        const saved = await this.healthRecordRepository.save(newRecord);
+
+        await this.auditService.log(tenantId, actorId, AuditAction.CREATE, AuditEntityType.AGENT, agentId.toString(), {
+            action: 'ADD_HEALTH_RECORD',
+            recordTitle: saved.title
+        });
+
+        return saved;
+    }
+
+    async deleteHealthRecord(id: number, tenantId: string, actorId: number) {
+        const record = await this.healthRecordRepository.findOne({ where: { id, tenantId } });
+        if (!record) throw new NotFoundException('Health record not found');
+
+        await this.healthRecordRepository.remove(record);
+
+        await this.auditService.log(tenantId, actorId, AuditAction.DELETE, AuditEntityType.AGENT, record.agentId.toString(), {
+            action: 'DELETE_HEALTH_RECORD',
+            recordTitle: record.title
+        });
+
+        return { success: true };
     }
 }

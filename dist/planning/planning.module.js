@@ -33,13 +33,14 @@ const attendance_entity_1 = require("./entities/attendance.entity");
 const documents_module_1 = require("../documents/documents.module");
 const settings_module_1 = require("../settings/settings.module");
 const hospital_service_entity_1 = require("../agents/entities/hospital-service.entity");
+const health_record_entity_1 = require("../agents/entities/health-record.entity");
 let PlanningModule = class PlanningModule {
 };
 exports.PlanningModule = PlanningModule;
 exports.PlanningModule = PlanningModule = __decorate([
     (0, common_1.Module)({
         imports: [
-            typeorm_1.TypeOrmModule.forFeature([shift_entity_1.Shift, agent_entity_1.Agent, leave_entity_1.Leave, leave_balance_entity_1.LeaveBalance, work_policy_entity_1.WorkPolicy, shift_application_entity_1.ShiftApplication, shift_proposal_entity_1.ShiftProposal, attendance_entity_1.Attendance, hospital_service_entity_1.HospitalService]),
+            typeorm_1.TypeOrmModule.forFeature([shift_entity_1.Shift, agent_entity_1.Agent, leave_entity_1.Leave, leave_balance_entity_1.LeaveBalance, work_policy_entity_1.WorkPolicy, shift_application_entity_1.ShiftApplication, shift_proposal_entity_1.ShiftProposal, attendance_entity_1.Attendance, hospital_service_entity_1.HospitalService, health_record_entity_1.HealthRecord]),
             audit_module_1.AuditModule,
             whatsapp_module_1.WhatsappModule,
             documents_module_1.DocumentsModule,

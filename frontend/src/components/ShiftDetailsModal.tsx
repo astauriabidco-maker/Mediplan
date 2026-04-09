@@ -15,9 +15,10 @@ interface ShiftDetailsModalProps {
     isOpen: boolean
     onClose: () => void
     shift: Shift | null
+    onRequestSwap?: (shiftId: string) => void
 }
 
-export const ShiftDetailsModal = ({ isOpen, onClose, shift }: ShiftDetailsModalProps) => {
+export const ShiftDetailsModal = ({ isOpen, onClose, shift, onRequestSwap }: ShiftDetailsModalProps) => {
     const { mobileMoney, themeColor } = useAppConfig()
 
     if (!isOpen || !shift) return null
@@ -100,7 +101,7 @@ export const ShiftDetailsModal = ({ isOpen, onClose, shift }: ShiftDetailsModalP
 
                     {/* Footer / Action */}
                     <div className="pt-4">
-                        {mobileMoney && shift.status === 'VALIDATED' ? (
+                        {mobileMoney && shift.status === 'VALIDATED' && (
                             <button
                                 onClick={handlePayment}
                                 className="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold py-4 rounded-2xl flex items-center justify-center gap-3 shadow-[0_8px_20px_rgba(249,115,22,0.3)] transition-all hover:scale-[1.02] active:scale-[0.98]"
@@ -108,14 +109,21 @@ export const ShiftDetailsModal = ({ isOpen, onClose, shift }: ShiftDetailsModalP
                                 <CreditCard size={20} />
                                 💸 Payer la garde (Orange/MTN)
                             </button>
-                        ) : (
-                            <button
-                                className="w-full bg-slate-800 text-slate-400 font-bold py-4 rounded-2xl cursor-default flex items-center justify-center gap-3 border border-slate-700 opacity-50"
-                                disabled
+                        )}
+
+                        {shift?.status !== 'VALIDATED' && !shift?.isSwapRequested && onRequestSwap && (
+                             <button
+                                onClick={() => onRequestSwap(shift.id as string)}
+                                className="w-full mt-2 bg-blue-500/10 text-blue-500 hover:bg-blue-500 hover:text-white font-bold py-4 rounded-2xl flex items-center justify-center gap-3 border border-blue-500/50 transition-all"
                             >
-                                <X size={20} />
-                                Export Paie (Indisponible)
+                                <Briefcase size={20} />
+                                🚨 Ajouter à la bourse d'échange
                             </button>
+                        )}
+                        {shift?.isSwapRequested && (
+                            <p className="mt-4 text-center text-sm font-semibold text-blue-400">
+                                Cette garde est sur la bourse d'échange interne.
+                            </p>
                         )}
                     </div>
                 </div>

@@ -50,14 +50,17 @@ const common_1 = require("@nestjs/common");
 const typeorm_1 = require("@nestjs/typeorm");
 const typeorm_2 = require("typeorm");
 const agent_entity_1 = require("./entities/agent.entity");
+const health_record_entity_1 = require("./entities/health-record.entity");
 const bcrypt = __importStar(require("bcrypt"));
 const audit_service_1 = require("../audit/audit.service");
 const audit_log_entity_1 = require("../audit/entities/audit-log.entity");
 let AgentsService = class AgentsService {
     agentRepository;
+    healthRecordRepository;
     auditService;
-    constructor(agentRepository, auditService) {
+    constructor(agentRepository, healthRecordRepository, auditService) {
         this.agentRepository = agentRepository;
+        this.healthRecordRepository = healthRecordRepository;
         this.auditService = auditService;
     }
     async create(createAgentDto, actorId) {
@@ -119,12 +122,73 @@ let AgentsService = class AgentsService {
         });
         return [currentAgent, ...directReports];
     }
+    async getHealthRecords(agentId, tenantId) {
+        const records = await this.healthRecordRepository.find({
+            where: { agentId, tenantId },
+            order: { expirationDate: 'ASC' }
+        });
+        const now = new Date();
+        now.setHours(0, 0, 0, 0);
+        let hasUpdates = false;
+        for (const record of records) {
+            if (record.expirationDate) {
+                const expDate = new Date(record.expirationDate);
+                expDate.setHours(0, 0, 0, 0);
+                const diffTime = expDate.getTime() - now.getTime();
+                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                let newStatus = record.status;
+                if (diffDays < 0) {
+                    newStatus = health_record_entity_1.HealthRecordStatus.EXPIRED;
+                }
+                else if (diffDays <= 30) {
+                    newStatus = health_record_entity_1.HealthRecordStatus.EXPIRING_SOON;
+                }
+                else {
+                    newStatus = health_record_entity_1.HealthRecordStatus.VALID;
+                }
+                if (newStatus !== record.status) {
+                    record.status = newStatus;
+                    hasUpdates = true;
+                }
+            }
+        }
+        if (hasUpdates) {
+            await this.healthRecordRepository.save(records);
+        }
+        return records;
+    }
+    async addHealthRecord(agentId, tenantId, data, actorId) {
+        const newRecord = this.healthRecordRepository.create({
+            ...data,
+            agentId,
+            tenantId,
+        });
+        const saved = await this.healthRecordRepository.save(newRecord);
+        await this.auditService.log(tenantId, actorId, audit_log_entity_1.AuditAction.CREATE, audit_log_entity_1.AuditEntityType.AGENT, agentId.toString(), {
+            action: 'ADD_HEALTH_RECORD',
+            recordTitle: saved.title
+        });
+        return saved;
+    }
+    async deleteHealthRecord(id, tenantId, actorId) {
+        const record = await this.healthRecordRepository.findOne({ where: { id, tenantId } });
+        if (!record)
+            throw new common_1.NotFoundException('Health record not found');
+        await this.healthRecordRepository.remove(record);
+        await this.auditService.log(tenantId, actorId, audit_log_entity_1.AuditAction.DELETE, audit_log_entity_1.AuditEntityType.AGENT, record.agentId.toString(), {
+            action: 'DELETE_HEALTH_RECORD',
+            recordTitle: record.title
+        });
+        return { success: true };
+    }
 };
 exports.AgentsService = AgentsService;
 exports.AgentsService = AgentsService = __decorate([
     (0, common_1.Injectable)(),
     __param(0, (0, typeorm_1.InjectRepository)(agent_entity_1.Agent)),
+    __param(1, (0, typeorm_1.InjectRepository)(health_record_entity_1.HealthRecord)),
     __metadata("design:paramtypes", [typeorm_2.Repository,
+        typeorm_2.Repository,
         audit_service_1.AuditService])
 ], AgentsService);
 //# sourceMappingURL=agents.service.js.map

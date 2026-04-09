@@ -20,6 +20,7 @@ const role_entity_1 = require("../../auth/entities/role.entity");
 const grade_entity_1 = require("./grade.entity");
 const facility_entity_1 = require("./facility.entity");
 const beneficiary_entity_1 = require("./beneficiary.entity");
+const health_record_entity_1 = require("./health-record.entity");
 var UserRole;
 (function (UserRole) {
     UserRole["SUPER_ADMIN"] = "SUPER_ADMIN";
@@ -115,6 +116,7 @@ let Agent = class Agent {
     shifts;
     leaves;
     beneficiaries;
+    healthRecords;
 };
 exports.Agent = Agent;
 __decorate([
@@ -399,6 +401,10 @@ __decorate([
     (0, typeorm_1.OneToMany)(() => beneficiary_entity_1.AgentBeneficiary, (beneficiary) => beneficiary.agent),
     __metadata("design:type", Array)
 ], Agent.prototype, "beneficiaries", void 0);
+__decorate([
+    (0, typeorm_1.OneToMany)(() => health_record_entity_1.HealthRecord, (record) => record.agent),
+    __metadata("design:type", Array)
+], Agent.prototype, "healthRecords", void 0);
 exports.Agent = Agent = __decorate([
     (0, typeorm_1.Entity)()
 ], Agent);
