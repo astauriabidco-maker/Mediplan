@@ -84,8 +84,8 @@ export class DocumentsController {
     @Post(':id/request-signature')
     @Permissions('documents:write')
     async requestSignature(@Request() req: any, @Param('id') id: string, @Body() body: { agentId: number }) {
-        await this.documentsService.requestSignature(req.user.tenantId, +id, body.agentId);
-        return { success: true, message: 'OTP envoyé sur WhatsApp' };
+        const signUrl = await this.documentsService.requestSignature(req.user.tenantId, +id, body.agentId);
+        return { success: true, signUrl };
     }
 
     @Post(':id/sign')

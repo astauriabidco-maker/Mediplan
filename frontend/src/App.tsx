@@ -19,6 +19,7 @@ import { AcceptInvitePage } from './pages/AcceptInvitePage'
 import { GedPage } from './pages/GedPage'
 import { QvtPage } from './pages/QvtPage'
 import { ContractTemplatesPage } from './pages/ContractTemplatesPage'
+import { PublicSignPage } from './pages/PublicSignPage'
 import { useAppConfig } from './store/useAppConfig'
 import { useAuth } from './store/useAuth'
 
@@ -57,6 +58,7 @@ function App() {
                 <Routes>
                     <Route path="/login" element={<LoginPage />} />
                     <Route path="/auth/accept-invite" element={<AcceptInvitePage />} />
+                    <Route path="/sign/:token" element={<PublicSignPage />} />
 
                     <Route element={<ProtectedRoute />}>
                         <Route path="/" element={<Layout />}>

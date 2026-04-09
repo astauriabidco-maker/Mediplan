@@ -48,6 +48,9 @@ export class Document {
     @Column({ nullable: true })
     otpSecret: string; // Temporarily stores the expected OTP for signing
 
+    @Column({ nullable: true, unique: true })
+    publicToken: string; // UUID for external signing link
+
     @CreateDateColumn()
     createdAt: Date;
 
