@@ -1,19 +1,21 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, Sparkles, User, AlertTriangle, Hospital, DollarSign, ArrowRight, Loader2, X } from 'lucide-react';
+import { Search, Sparkles, User, AlertTriangle, Building2, DollarSign, ArrowRight, Loader2, X, PieChart, BarChart2, TrendingUp } from 'lucide-react';
 import api from '../api/axios';
 import { clsx } from 'clsx';
 import { useAppConfig } from '../store/useAppConfig';
 
 interface InsightResult {
-    type: 'AGENT' | 'HEALTH_ALERT' | 'SERVICE' | 'METRIC';
+    type: 'AGENT' | 'HEALTH_ALERT' | 'SERVICE' | 'METRIC' | 'CHART';
+    chartType?: 'PIE' | 'BAR' | 'LINE';
     title: string;
     subtitle: string;
     id: number | string;
     icon: string;
+    data?: any;
     severity?: 'HIGH' | 'MEDIUM' | 'LOW';
 }
 
-export const InsightEngine = ({ tenantId }: { tenantId: string }) => {
+export const InsightEngine = ({ tenantId, onSelectWidget }: { tenantId: string, onSelectWidget?: (widget: any) => void }) => {
     const { themeColor } = useAppConfig();
     const [query, setQuery] = useState('');
     const [results, setResults] = useState<InsightResult[]>([]);
@@ -57,9 +59,26 @@ export const InsightEngine = ({ tenantId }: { tenantId: string }) => {
         switch (iconName) {
             case 'user': return <User size={18} />;
             case 'alert-triangle': return <AlertTriangle size={18} />;
-            case 'hospital': return <Hospital size={18} />;
+            case 'hospital': case 'building': return <Building2 size={18} />;
             case 'dollar-sign': return <DollarSign size={18} />;
+            case 'pie-chart': return <PieChart size={18} />;
+            case 'bar-chart': return <BarChart2 size={18} />;
+            case 'trending-up': return <TrendingUp size={18} />;
             default: return <Sparkles size={18} />;
+        }
+    };
+
+    const handleResultClick = (result: InsightResult) => {
+        if (result.type === 'CHART' && onSelectWidget) {
+            onSelectWidget(result);
+            setQuery('');
+            setIsOpen(false);
+        } else if (result.type === 'AGENT') {
+            window.location.href = `/agents?id=${result.id}`;
+            setIsOpen(false);
+        } else if (result.type === 'HEALTH_ALERT') {
+            window.location.href = `/agents`;
+            setIsOpen(false);
         }
     };
 
@@ -77,11 +96,10 @@ export const InsightEngine = ({ tenantId }: { tenantId: string }) => {
                     value={query}
                     onChange={(e) => handleSearch(e.target.value)}
                     onFocus={() => query.length >= 2 && setIsOpen(true)}
-                    placeholder="Posez une question à l'Insight Engine (ex: 'Agents en défaut', 'Cardio'...)"
+                    placeholder="Posez une question (ex: 'Absentéisme', 'Pyramide des âges', 'Jean...')"
                     className={clsx(
-                        "w-full bg-slate-900/80 backdrop-blur-xl border border-slate-800 rounded-2xl pl-12 pr-12 py-4 text-white outline-none transition-all",
-                        "focus:ring-2 focus:ring-offset-0 focus:ring-blue-500/50 focus:border-blue-500/50",
-                        "placeholder:text-slate-500 font-medium shadow-2xl"
+                        "w-full bg-slate-900/80 backdrop-blur-xl border border-slate-800 rounded-2xl pl-12 pr-12 py-4 text-white outline-none transition-all focus:ring-2 focus:ring-blue-500/50 shadow-2xl",
+                        isOpen && "rounded-b-none border-b-transparent"
                     )}
                 />
                 <div className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-2">
@@ -100,37 +118,37 @@ export const InsightEngine = ({ tenantId }: { tenantId: string }) => {
             </div>
 
             {isOpen && (results.length > 0 || isLoading) && (
-                <div className="absolute top-full left-0 right-0 mt-2 bg-slate-900/90 backdrop-blur-2xl border border-slate-800 rounded-2xl shadow-2xl overflow-hidden z-50 animate-in fade-in slide-in-from-top-2 duration-200">
+                <div className="absolute top-full left-0 right-0 bg-slate-900/90 backdrop-blur-2xl border border-slate-800 rounded-b-2xl shadow-2xl overflow-hidden z-50 animate-in fade-in slide-in-from-top-1 duration-200">
                     <div className="p-2 max-h-[400px] overflow-y-auto">
                         {results.map((result, idx) => (
                             <button
                                 key={`${result.type}-${result.id}-${idx}`}
-                                onClick={() => {
-                                    if (typeof result.id === 'number') {
-                                        window.location.href = `/agents?id=${result.id}`;
-                                    }
-                                    setIsOpen(false);
-                                }}
-                                className="w-full flex items-center gap-4 p-3 hover:bg-white/5 rounded-xl transition-all group/item text-left"
+                                onClick={() => handleResultClick(result)}
+                                className="w-full flex items-center gap-4 p-3 hover:bg-white/5 rounded-xl transition-all group/item text-left border border-transparent hover:border-blue-500/20"
                             >
                                 <div className={clsx(
-                                    "p-2.5 rounded-xl transition-colors",
-                                    result.severity === 'HIGH' ? "bg-rose-500/20 text-rose-500" : "bg-slate-800 text-slate-400 group-hover/item:text-white"
+                                    "p-2.5 rounded-xl transition-colors shrink-0",
+                                    result.type === 'CHART' ? "bg-blue-500/20 text-blue-500" : (result.severity === 'HIGH' ? "bg-rose-500/20 text-rose-500" : "bg-slate-800 text-slate-400 group-hover/item:text-white")
                                 )}>
                                     {getIcon(result.icon)}
                                 </div>
-                                <div className="flex-1">
-                                    <div className="text-sm font-bold text-white group-hover/item:text-blue-400 transition-colors">{result.title}</div>
-                                    <div className="text-xs text-slate-500 mt-0.5">{result.subtitle}</div>
+                                <div className="flex-1 min-w-0">
+                                    <div className="text-sm font-bold text-white group-hover/item:text-blue-400 transition-colors truncate">
+                                        {result.title} 
+                                        {result.type === 'CHART' && <span className="ml-2 text-[10px] bg-blue-500 text-white px-1.5 py-0.5 rounded uppercase">Analyse IA</span>}
+                                    </div>
+                                    <div className="text-xs text-slate-500 mt-0.5 truncate">{result.subtitle}</div>
                                 </div>
-                                <ArrowRight size={14} className="text-slate-600 group-hover/item:translate-x-1 transition-all" />
+                                <div className="p-2 bg-slate-800/50 rounded-lg opacity-0 group-hover/item:opacity-100 transition-opacity">
+                                    <ArrowRight size={14} className="text-white" />
+                                </div>
                             </button>
                         ))}
                     </div>
-                    <div className="p-3 bg-slate-950/50 border-t border-slate-800 flex justify-between items-center">
-                        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Powered by MediPlan AI Insights</span>
-                        <div className="flex gap-2 text-[10px] text-slate-500">
-                            <span>Esc pour fermer</span>
+                    <div className="p-3 bg-slate-950/50 border-t border-slate-800 flex justify-between items-center text-[10px] font-bold text-slate-500 uppercase tracking-widest">
+                        <span>Powered by MediPlan AI Insights</span>
+                        <div className="flex gap-2">
+                            <span>{results.length} résultats</span>
                         </div>
                     </div>
                 </div>
