@@ -23,7 +23,7 @@ import { HealthRecord } from './entities/health-record.entity';
   imports: [TypeOrmModule.forFeature([Agent, Contract, HospitalService, Grade, Facility, AgentBeneficiary, BonusTemplate, ContractBonus, HealthRecord]), AuditModule],
   controllers: [AgentsController, HospitalServicesController, GradesController, BeneficiaryController],
   providers: [AgentsService, HospitalServicesService, GradesService, BeneficiaryService],
-  exports: [AgentsService, HospitalServicesService, GradesService, BeneficiaryService],
+  exports: [AgentsService, HospitalServicesService, GradesService, BeneficiaryService, TypeOrmModule],
 })
 export class AgentsModule { }
 

@@ -18,11 +18,11 @@ export default defineConfig({
         },
         proxy: {
             '/api': {
-                target: 'http://backend:3005',
+                target: 'http://localhost:3005',
                 changeOrigin: true,
             },
             '/socket.io': {
-                target: 'http://backend:3005',
+                target: 'http://localhost:3005',
                 ws: true,
                 changeOrigin: true,
             },

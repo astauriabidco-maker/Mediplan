@@ -121,22 +121,15 @@ let AuthService = class AuthService {
         await this.agentRepository.save(agent);
     }
     async validateUser(email, pass) {
-        console.log(`[AuthDebug] Attempting login for: ${email}`);
         const user = await this.agentRepository.createQueryBuilder('agent')
             .addSelect('agent.password')
             .leftJoinAndSelect('agent.dbRole', 'role')
             .where('agent.email = :email', { email })
             .getOne();
-        if (!user) {
-            console.log(`[AuthDebug] User not found: ${email}`);
-            return null;
-        }
-        if (!user.password) {
-            console.log(`[AuthDebug] User has no password set: ${email}`);
+        if (!user || !user.password) {
             return null;
         }
         const isMatch = await bcrypt.compare(pass, user.password);
-        console.log(`[AuthDebug] Password match for ${email}: ${isMatch}`);
         if (isMatch) {
             const { password, ...result } = user;
             return result;
