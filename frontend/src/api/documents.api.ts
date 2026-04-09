@@ -35,3 +35,8 @@ export const generateEmploymentContract = async (agentId: number, templateId: nu
     const response = await api.post('/api/documents/generate-contract', { agentId, templateId });
     return response.data;
 };
+
+export const updateDocument = async (docId: number, data: any): Promise<any> => {
+    const response = await api.post(`/api/documents/${docId}`, data);
+    return response.data;
+};

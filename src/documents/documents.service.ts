@@ -44,15 +44,29 @@ export class DocumentsService {
         return this.docRepo.find({ where, order: { createdAt: 'DESC' }, relations: ['agent'] });
     }
 
+    async updateDocument(tenantId: string, id: number, data: Partial<Document>): Promise<Document> {
+        const doc = await this.docRepo.findOne({ where: { id, tenantId } });
+        if (!doc) throw new NotFoundException('Document introuvable');
+        
+        // Only allow edits to DRAFT documents for security
+        if (doc.status !== DocumentStatus.DRAFT) {
+            throw new BadRequestException('Seuls les documents en Brouillon peuvent être modifiés');
+        }
+
+        Object.assign(doc, data);
+        return this.docRepo.save(doc);
+    }
+
     async requestSignature(tenantId: string, docId: number, agentId: number): Promise<void> {
         const doc = await this.docRepo.findOne({ where: { id: docId, tenantId, agentId }, relations: ['agent'] });
         if (!doc) throw new NotFoundException('Document introuvable');
         if (doc.status === DocumentStatus.SIGNED) throw new BadRequestException('Document déjà signé');
 
+        // Validation step: Moving from DRAFT (or re-sending from PENDING) to PENDING_SIGNATURE
         // Generate 4-digit OTP
         const otp = Math.floor(1000 + Math.random() * 9000).toString();
         doc.otpSecret = otp;
-        doc.status = DocumentStatus.PENDING_SIGNATURE;
+        doc.status = DocumentStatus.PENDING_SIGNATURE; 
         await this.docRepo.save(doc);
 
         const msg = `🔐 Signature requise pour le document: "${doc.title}".\nVotre code de signature sécurisé est: *${otp}*.\nNe transmettez jamais ce code.`;
@@ -62,7 +76,6 @@ export class DocumentsService {
             await this.whatsappService.sendMessage(doc.agent.telephone, msg);
         } else {
             console.warn(`Agent ${agentId} n'a pas de téléphone pour la signature 2FA.`);
-            // In a real app we might fallback to email OTP
         }
     }
 

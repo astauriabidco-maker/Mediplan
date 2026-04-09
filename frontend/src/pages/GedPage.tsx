@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { FileText, Upload, ShieldCheck, Clock, FileBadge, CheckCircle, FileSignature, Sparkles, Wand2, X } from 'lucide-react';
-import { fetchDocuments, requestSignature, signDocument, uploadDocument, generateEmploymentContract } from '../api/documents.api';
+import { FileText, Upload, ShieldCheck, Clock, FileBadge, CheckCircle, FileSignature, Sparkles, Wand2, X, Edit2 } from 'lucide-react';
+import { fetchDocuments, requestSignature, signDocument, uploadDocument, generateEmploymentContract, updateDocument } from '../api/documents.api';
 import api from '../api/axios';
 import { fetchSettings } from '../api/settings.api';
 import { fetchAgents, Agent } from '../api/agents.api';
@@ -15,6 +15,8 @@ export const GedPage = () => {
     const [title, setTitle] = useState('');
     const [docType, setDocType] = useState('Contrat de Travail');
     const [signingDoc, setSigningDoc] = useState<any>(null);
+    const [editingDoc, setEditingDoc] = useState<any>(null);
+    const [editContent, setEditContent] = useState('');
     const [otp, setOtp] = useState('');
     const [filterStatus, setFilterStatus] = useState<string>('ALL');
 
@@ -115,6 +117,33 @@ export const GedPage = () => {
         }
     };
 
+    const handleOpenEdit = (doc: any) => {
+        setEditingDoc(doc);
+        if (doc.fileUrl.startsWith('data:text/html;base64,')) {
+            const base64 = doc.fileUrl.replace('data:text/html;base64,', '');
+            try {
+                setEditContent(decodeURIComponent(escape(window.atob(base64))));
+            } catch (e) {
+                setEditContent(window.atob(base64));
+            }
+        } else {
+            setEditContent("Ce document n'est pas éditable directement (format non-HTML ou distant).");
+        }
+    };
+
+    const handleSaveEdit = async () => {
+        if (!editingDoc) return;
+        try {
+            const newBase64 = 'data:text/html;base64,' + window.btoa(unescape(encodeURIComponent(editContent)));
+            await updateDocument(editingDoc.id, { fileUrl: newBase64 });
+            setEditingDoc(null);
+            await refetch();
+            alert("Document mis à jour avec succès.");
+        } catch (error) {
+            alert("Erreur lors de l'enregistrement");
+        }
+    };
+
     return (
         <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
             <div className="flex flex-col gap-2">
@@ -127,7 +156,6 @@ export const GedPage = () => {
                 <p className="text-slate-400">Coffre-fort RH, contrats et fiches de paie. Signatures eIDAS sécurisées.</p>
             </div>
 
-            {/* Actions Grid */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                 {/* Upload Form */}
                 <div className="bg-slate-900/50 border border-slate-800 p-6 rounded-3xl backdrop-blur-md">
@@ -186,7 +214,7 @@ export const GedPage = () => {
                     </form>
                 </div>
 
-                {/* Contract Generation Form - NEW */}
+                {/* Assistant RH */}
                 {!isAgent && (
                     <div className="bg-slate-900/50 border border-slate-800 p-6 rounded-3xl backdrop-blur-md relative overflow-hidden group">
                         <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
@@ -284,7 +312,7 @@ export const GedPage = () => {
                                     )}
                                 </div>
                             </div>
-                            <div className="flex items-center gap-4">
+                            <div className="flex items-center gap-3">
                                 {doc.status === 'SIGNED' ? (
                                     <div className="flex items-center gap-2 text-emerald-500 bg-emerald-500/10 px-3 py-1 rounded-full border border-emerald-500/20">
                                         <CheckCircle size={14} />
@@ -298,12 +326,22 @@ export const GedPage = () => {
                                         <ShieldCheck size={14} /> Continuer Signature
                                     </button>
                                 ) : (
-                                    <button 
-                                        onClick={() => handleRequestSignature(doc)}
-                                        className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-lg transition-colors"
-                                    >
-                                        Déclencher Signature
-                                    </button>
+                                    <div className="flex items-center gap-2">
+                                        {!isAgent && doc.status === 'DRAFT' && (
+                                            <button 
+                                                onClick={() => handleOpenEdit(doc)}
+                                                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold rounded-lg transition-colors flex items-center gap-2"
+                                            >
+                                                <Edit2 size={14} /> Relire / Éditer
+                                            </button>
+                                        )}
+                                        <button 
+                                            onClick={() => handleRequestSignature(doc)}
+                                            className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-lg transition-colors"
+                                        >
+                                            {doc.status === 'DRAFT' ? 'Valider pour Signature' : 'Déclencher Signature'}
+                                        </button>
+                                    </div>
                                 )}
                             </div>
                         </div>
@@ -311,6 +349,49 @@ export const GedPage = () => {
                     {documents.length === 0 && <p className="text-slate-500 italic text-center py-12">Aucun document ne correspond à vos critères.</p>}
                 </div>
             </div>
+
+            {/* Edit Modal */}
+            {editingDoc && (
+                <div className="fixed inset-0 bg-black/80 backdrop-blur-xl flex items-center justify-center z-[60] p-4">
+                    <div className="bg-slate-900 border border-slate-800 rounded-3xl p-8 max-w-4xl w-full animate-in zoom-in-95 duration-200 flex flex-col h-[90vh]">
+                        <div className="flex justify-between items-center mb-6">
+                            <div>
+                                <h2 className="text-2xl font-bold text-white flex items-center gap-3">
+                                    <Edit2 size={24} className="text-blue-500" />
+                                    Relecture & Correction RH
+                                </h2>
+                                <p className="text-sm text-slate-500 mt-1">Modifiez le contenu du contrat avant validation finale.</p>
+                            </div>
+                            <button onClick={() => setEditingDoc(null)} className="p-2 text-slate-500 hover:text-white"><X /></button>
+                        </div>
+
+                        <div className="flex-1 overflow-hidden flex flex-col bg-slate-950 rounded-2xl border border-slate-800 mb-6">
+                            <textarea 
+                                value={editContent}
+                                onChange={(e) => setEditContent(e.target.value)}
+                                className="w-full h-full p-6 bg-transparent text-slate-300 font-mono text-sm outline-none resize-none"
+                                placeholder="Contenu HTML du contrat..."
+                            />
+                        </div>
+
+                        <div className="flex justify-end gap-3">
+                            <button 
+                                onClick={() => setEditingDoc(null)}
+                                className="px-6 py-3 text-slate-400 font-bold transition-colors"
+                            >
+                                Annuler
+                            </button>
+                            <button 
+                                onClick={handleSaveEdit}
+                                className="px-8 py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl transition-all flex items-center gap-2 shadow-lg shadow-blue-500/20"
+                            >
+                                <CheckCircle size={18} />
+                                Enregistrer les modifications
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Signature Modal */}
             {signingDoc && (

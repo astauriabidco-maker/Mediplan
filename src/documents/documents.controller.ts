@@ -75,6 +75,12 @@ export class DocumentsController {
         });
     }
 
+    @Post(':id')
+    @Permissions('documents:write')
+    async updateDocument(@Request() req: any, @Param('id') id: string, @Body() body: Partial<Document>) {
+        return this.documentsService.updateDocument(req.user.tenantId, +id, body);
+    }
+
     @Post(':id/request-signature')
     @Permissions('documents:write')
     async requestSignature(@Request() req: any, @Param('id') id: string, @Body() body: { agentId: number }) {
