@@ -10,6 +10,7 @@ import { HospitalService } from '../agents/entities/hospital-service.entity';
 import { HealthRecord } from '../agents/entities/health-record.entity';
 import { Competency } from '../competencies/entities/competency.entity';
 import { AgentCompetency } from '../competencies/entities/agent-competency.entity';
+import { AgentAlert } from '../agents/entities/agent-alert.entity';
 
 @Module({
     imports: [
@@ -21,7 +22,8 @@ import { AgentCompetency } from '../competencies/entities/agent-competency.entit
             HospitalService, 
             HealthRecord, 
             Competency, 
-            AgentCompetency
+            AgentCompetency,
+            AgentAlert
         ])
     ],
     controllers: [AnalyticsController],

@@ -18,9 +18,10 @@ import { BeneficiaryController } from './beneficiary.controller';
 import { BonusTemplate } from './entities/bonus-template.entity';
 import { ContractBonus } from './entities/contract-bonus.entity';
 import { HealthRecord } from './entities/health-record.entity';
+import { AgentAlert } from './entities/agent-alert.entity';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Agent, Contract, HospitalService, Grade, Facility, AgentBeneficiary, BonusTemplate, ContractBonus, HealthRecord]), AuditModule],
+  imports: [TypeOrmModule.forFeature([Agent, Contract, HospitalService, Grade, Facility, AgentBeneficiary, BonusTemplate, ContractBonus, HealthRecord, AgentAlert]), AuditModule],
   controllers: [AgentsController, HospitalServicesController, GradesController, BeneficiaryController],
   providers: [AgentsService, HospitalServicesService, GradesService, BeneficiaryService],
   exports: [AgentsService, HospitalServicesService, GradesService, BeneficiaryService, TypeOrmModule],

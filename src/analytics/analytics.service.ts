@@ -9,6 +9,7 @@ import { HospitalService } from '../agents/entities/hospital-service.entity';
 import { HealthRecord, HealthRecordStatus } from '../agents/entities/health-record.entity';
 import { Competency } from '../competencies/entities/competency.entity';
 import { AgentCompetency } from '../competencies/entities/agent-competency.entity';
+import { AgentAlert } from '../agents/entities/agent-alert.entity';
 import { differenceInYears, parseISO } from 'date-fns';
 
 @Injectable()
@@ -21,6 +22,7 @@ export class AnalyticsService {
         @InjectRepository(HealthRecord) private healthRepo: Repository<HealthRecord>,
         @InjectRepository(Competency) private compRepo: Repository<Competency>,
         @InjectRepository(AgentCompetency) private agentCompRepo: Repository<AgentCompetency>,
+        @InjectRepository(AgentAlert) private agentAlertRepo: Repository<AgentAlert>,
     ) {
         if (process.env.MISTRAL_API_KEY) {
             this.mistralClient = new Mistral({ apiKey: process.env.MISTRAL_API_KEY });
@@ -63,6 +65,13 @@ export class AnalyticsService {
             }
         });
 
+        const qvtAlerts = await this.agentAlertRepo.count({
+            where: {
+                tenantId,
+                isAcknowledged: false
+            }
+        });
+
         // QVT Workload Index: (Shifts Hours / Contractual Hours)
         // Simulated for now based on recent planning activity
         const qvtScore = Math.max(0, 92 - (healthAlerts * 3) - (3.2 * 2));
@@ -74,6 +83,7 @@ export class AnalyticsService {
             tauxAbsentéisme: { value: 3.2, growth: 0.4 },
             gpecConformity: { value: gpecConformity, growth: 1.5 },
             healthAlerts: { value: healthAlerts, growth: healthAlerts > 0 ? 100 : 0 },
+            qvtAlerts: { value: qvtAlerts, growth: qvtAlerts > 0 ? 100 : 0 },
             qvtIndex: { value: qvtScore, growth: -0.5 }
         };
     }

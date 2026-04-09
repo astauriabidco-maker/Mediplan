@@ -134,6 +134,23 @@ export const DashboardPage = () => {
             )}
 
             {/* AI Insights Quick Alert */}
+            {kpis?.qvtAlerts?.value > 0 && (
+                <div className="bg-orange-500/10 border border-orange-500/20 p-4 rounded-2xl flex items-center justify-between group animate-in slide-in-from-top-4 duration-500 mt-6">
+                    <div className="flex items-center gap-4">
+                        <div className="bg-orange-500 p-2 rounded-xl text-white shadow-lg shadow-orange-500/20">
+                            <Activity size={20} />
+                        </div>
+                        <div>
+                            <div className="text-orange-500 font-bold">ALERTE QVT & FATIGUE</div>
+                            <div className="text-sm text-orange-500/70">{kpis.qvtAlerts.value} anomalies détectées (Dépassement 48h, Repos {'<'} 11h, Trop de nuits). Risque légal et épuisement.</div>
+                        </div>
+                    </div>
+                    <button onClick={() => window.location.href='/planning'} className="flex items-center gap-2 bg-orange-500 text-white px-4 py-2 rounded-xl font-bold hover:scale-105 transition-all">
+                        Réassigner <ChevronRight size={16} />
+                    </button>
+                </div>
+            )}
+
             {kpis?.healthAlerts?.value > 0 && (
                 <div className="bg-rose-500/10 border border-rose-500/20 p-4 rounded-2xl flex items-center justify-between group animate-in slide-in-from-top-4 duration-500">
                     <div className="flex items-center gap-4">

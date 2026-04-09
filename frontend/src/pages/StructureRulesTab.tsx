@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Trash2, Edit2, Save, X, Building2, User, AlertTriangle, ShieldCheck } from 'lucide-react';
+import { Plus, Trash2, Edit2, Save, X, Building2, User, AlertTriangle, ShieldCheck, Activity } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { gradesApi, Grade } from '../api/grades.api';
 import { workPoliciesApi, WorkPolicy } from '../api/work-policies.api';
 import { hospitalServicesApi } from '../api/hospital-services.api';
 import { facilityApi, Facility } from '../api/facility.api';
+import { fetchSettings, updateSetting, Setting } from '../api/settings.api';
 import { useAppConfig } from '../store/useAppConfig';
 
 // Helper for classes 
@@ -37,6 +38,12 @@ export const StructureRulesTab = () => {
     const { data: grades = [] } = useQuery({ queryKey: ['grades'], queryFn: gradesApi.getAll });
     const { data: policies = [] } = useQuery({ queryKey: ['work-policies'], queryFn: workPoliciesApi.getAll });
     const { data: services = [] } = useQuery({ queryKey: ['hospital-services'], queryFn: hospitalServicesApi.getAll });
+    const { data: globalSettings = [] } = useQuery({ queryKey: ['settings'], queryFn: () => fetchSettings() });
+
+    const mutateSetting = useMutation({
+        mutationFn: updateSetting,
+        onSuccess: () => queryClient.invalidateQueries({ queryKey: ['settings'] })
+    });
 
     // --- Mutations Sites ---
     const createSite = useMutation({
@@ -305,6 +312,44 @@ export const StructureRulesTab = () => {
             {/* RULES SECTION */}
             {activeSection === 'rules' && (
                 <div className="space-y-6">
+                    {/* QVT GLOBAL SETTINGS */}
+                    <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6">
+                        <div className="flex items-center gap-3 mb-6">
+                            <Activity size={20} className="text-orange-500" />
+                            <div>
+                                <h3 className="text-lg font-bold text-white">Paramètres Globaux QVT & Fatigue</h3>
+                                <p className="text-slate-400 text-xs">Ces limites sont analysées chaque nuit par l'IA pour générer les alertes au Manager.</p>
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                            {[
+                                { key: 'planning.weekly_hours_limit', label: 'Heures max / Semaine', icon: <User size={16}/> },
+                                { key: 'planning.daily_rest_hours', label: 'Repos mini post-garde (h)', icon: <ShieldCheck size={16}/> },
+                                { key: 'planning.max_night_shifts_month', label: 'Max Nuits / Mois', icon: <AlertTriangle size={16}/> },
+                            ].map(st => {
+                                const settingObj = (Array.isArray(globalSettings) ? globalSettings : []).find(s => s.key === st.key);
+                                const val = settingObj ? settingObj.value : '';
+                                return (
+                                    <div key={st.key} className="space-y-2 bg-slate-800/30 p-4 rounded-xl border border-white/5">
+                                        <label className="text-xs uppercase font-bold text-slate-400 flex items-center gap-2">
+                                            {st.icon} {st.label}
+                                        </label>
+                                        <input 
+                                            type="number" 
+                                            defaultValue={val} 
+                                            onBlur={e => {
+                                                if(e.target.value !== val) {
+                                                    mutateSetting.mutate({ key: st.key, value: e.target.value, type: 'number' });
+                                                }
+                                            }}
+                                            className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-orange-500 transition-colors" 
+                                        />
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
                     <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6">
                         <div className="flex items-center justify-between mb-6">
                             <div>
