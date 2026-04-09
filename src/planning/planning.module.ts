@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { PlanningService } from './planning.service';
 import { OptimizationService } from './optimization.service';
@@ -33,7 +33,7 @@ import { HealthRecord } from '../agents/entities/health-record.entity';
   imports: [
     TypeOrmModule.forFeature([Shift, Agent, Leave, LeaveBalance, WorkPolicy, ShiftApplication, ShiftProposal, Attendance, HospitalService, HealthRecord]),
     AuditModule,
-    WhatsappModule,
+    forwardRef(() => WhatsappModule),
     DocumentsModule,
     SettingsModule
   ],

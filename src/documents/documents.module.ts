@@ -15,7 +15,7 @@ import { AgentsModule } from '../agents/agents.module';
     imports: [
         TypeOrmModule.forFeature([Document, SignatureLog, ContractTemplate]),
         AuditModule,
-        WhatsappModule,
+        forwardRef(() => WhatsappModule),
         forwardRef(() => AgentsModule),
     ],
     controllers: [DocumentsController, DocumentsPublicController],

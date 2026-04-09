@@ -17,7 +17,7 @@
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
-    "test:e2e": "jest --config ./test/jest-e2e.json",
+    "test:e2e": "JWT_SECRET=test_secret COUNTRY_CODE=FR MISTRAL_API_KEY=dummy PORT=3000 DB_TYPE=sqlite DB_NAME=:memory: jest --config ./test/jest-e2e.json",
     "seed:hgd": "ts-node -r tsconfig-paths/register seed-hgd.ts"
   },
   "dependencies": {

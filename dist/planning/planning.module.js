@@ -42,7 +42,7 @@ exports.PlanningModule = PlanningModule = __decorate([
         imports: [
             typeorm_1.TypeOrmModule.forFeature([shift_entity_1.Shift, agent_entity_1.Agent, leave_entity_1.Leave, leave_balance_entity_1.LeaveBalance, work_policy_entity_1.WorkPolicy, shift_application_entity_1.ShiftApplication, shift_proposal_entity_1.ShiftProposal, attendance_entity_1.Attendance, hospital_service_entity_1.HospitalService, health_record_entity_1.HealthRecord]),
             audit_module_1.AuditModule,
-            whatsapp_module_1.WhatsappModule,
+            (0, common_1.forwardRef)(() => whatsapp_module_1.WhatsappModule),
             documents_module_1.DocumentsModule,
             settings_module_1.SettingsModule
         ],

@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { CompetenciesService } from './competencies.service';
 import { CompetenciesController } from './competencies.controller';
@@ -13,7 +13,7 @@ import { GpecWorkerService } from './gpec-worker.service';
 @Module({
   imports: [
       TypeOrmModule.forFeature([Competency, AgentCompetency, Agent, Shift, AgentAlert]),
-      WhatsappModule
+      forwardRef(() => WhatsappModule)
   ],
   controllers: [CompetenciesController],
 
