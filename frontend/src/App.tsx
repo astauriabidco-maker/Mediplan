@@ -18,6 +18,7 @@ import { WhatsAppInbox } from './pages/WhatsAppInbox'
 import { AcceptInvitePage } from './pages/AcceptInvitePage'
 import { GedPage } from './pages/GedPage'
 import { QvtPage } from './pages/QvtPage'
+import { ContractTemplatesPage } from './pages/ContractTemplatesPage'
 import { useAppConfig } from './store/useAppConfig'
 import { useAuth } from './store/useAuth'
 
@@ -68,6 +69,7 @@ function App() {
                                 <Route index element={<AgentsPage />} />
                                 <Route path="services" element={<HospitalServicesPage />} />
                                 <Route path="hierarchy" element={<HierarchyPage />} />
+                                <Route path="templates" element={<ContractTemplatesPage />} />
                             </Route>
                             <Route path="competencies" element={<CompetenciesPage />} />
                             <Route path="payment" element={<PayrollPage />} />

@@ -31,7 +31,7 @@ export const uploadDocument = async (file: File, title: string, type: string, ag
     return response.data;
 };
 
-export const generateEmploymentContract = async (agentId: number): Promise<any> => {
-    const response = await api.post('/api/documents/generate-contract', { agentId });
+export const generateEmploymentContract = async (agentId: number, templateId: number): Promise<any> => {
+    const response = await api.post('/api/documents/generate-contract', { agentId, templateId });
     return response.data;
 };

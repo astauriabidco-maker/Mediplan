@@ -4,19 +4,22 @@ import { DocumentsService } from './documents.service';
 import { DocumentsController } from './documents.controller';
 import { Document } from './entities/document.entity';
 import { SignatureLog } from './entities/signature-log.entity';
+import { ContractTemplate } from './entities/contract-template.entity';
 import { AuditModule } from '../audit/audit.module';
 import { WhatsappModule } from '../whatsapp/whatsapp.module';
+import { ContractGeneratorService } from './contract-generator.service';
+import { forwardRef } from '@nestjs/common';
 import { AgentsModule } from '../agents/agents.module';
 
 @Module({
     imports: [
-        TypeOrmModule.forFeature([Document, SignatureLog]),
+        TypeOrmModule.forFeature([Document, SignatureLog, ContractTemplate]),
         AuditModule,
         WhatsappModule,
-        AgentsModule
+        forwardRef(() => AgentsModule),
     ],
     controllers: [DocumentsController],
-    providers: [DocumentsService],
-    exports: [DocumentsService],
+    providers: [DocumentsService, ContractGeneratorService],
+    exports: [DocumentsService, ContractGeneratorService],
 })
 export class DocumentsModule {}

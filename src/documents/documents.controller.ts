@@ -1,7 +1,8 @@
-import { Controller, Get, Post, Param, Body, UseGuards, Request, Query, UploadedFile, UseInterceptors } from '@nestjs/common';
+import { Controller, Get, Post, Param, Body, UseGuards, Request, Query, UploadedFile, UseInterceptors, Req } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { DocumentsService } from './documents.service';
 import { AgentsService } from '../agents/agents.service';
+import { ContractGeneratorService } from './contract-generator.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { Permissions } from '../auth/permissions.decorator';
 import { diskStorage } from 'multer';
@@ -12,7 +13,8 @@ import * as path from 'path';
 export class DocumentsController {
     constructor(
         private readonly documentsService: DocumentsService,
-        private readonly agentsService: AgentsService
+        private readonly agentsService: AgentsService,
+        private readonly contractGenerator: ContractGeneratorService
     ) { }
 
     @Get()
@@ -73,19 +75,6 @@ export class DocumentsController {
         });
     }
 
-    @Post('generate-contract')
-    @Permissions('documents:write')
-    async generateContract(
-        @Request() req: any,
-        @Body() body: { agentId: number }
-    ) {
-        // Fetch the target agent fully using the actor's permissions (usually an ADMIN)
-        const agent = await this.agentsService.findOne(body.agentId, req.user.tenantId, req.user.id);
-        
-        // Generate the contract document
-        return this.documentsService.generateEmploymentContract(req.user.tenantId, agent, req.user.id);
-    }
-
     @Post(':id/request-signature')
     @Permissions('documents:write')
     async requestSignature(@Request() req: any, @Param('id') id: string, @Body() body: { agentId: number }) {
@@ -94,16 +83,36 @@ export class DocumentsController {
     }
 
     @Post(':id/sign')
-    @Permissions('documents:read') // An agent signing their own document.
+    @Permissions('documents:read')
     async signDocument(
-        @Request() req: any,
         @Param('id') id: string,
-        @Body() body: { agentId: number, otp: string }
+        @Body() body: { otp: string, agentId: number },
+        @Query('tenantId') tenantId: string,
+        @Req() req: any
     ) {
-        // Collect IP and User-Agent for eIDAS simulated tracking
-        const ip = req.ip || req.connection.remoteAddress || '0.0.0.0';
-        const userAgent = req.headers['user-agent'] || 'Unknown';
+        const clientIp = req.ip || req.connection.remoteAddress;
+        const userAgent = req.headers['user-agent'] || 'MediPlan-Web-Client';
+        return this.documentsService.signDocument(tenantId || req.user.tenantId, +id, body.agentId, body.otp, clientIp, userAgent);
+    }
 
-        return this.documentsService.signDocument(req.user.tenantId, +id, body.agentId, body.otp, ip, userAgent);
+    // --- CONTRACT GENERATION ---
+
+    @Get('templates')
+    async getTemplates(@Query('tenantId') tenantId: string, @Req() req: any) {
+        return this.contractGenerator.findAllTemplates(tenantId || req.user.tenantId);
+    }
+
+    @Post('templates')
+    async createTemplate(@Body() body: any, @Query('tenantId') tenantId: string, @Req() req: any) {
+        return this.contractGenerator.createTemplate({ ...body, tenantId: tenantId || req.user.tenantId });
+    }
+
+    @Post('generate-contract')
+    async generateContract(
+        @Body() body: { agentId: number, templateId: number },
+        @Query('tenantId') tenantId: string,
+        @Req() req: any
+    ) {
+        return this.contractGenerator.generateContract(body.agentId, body.templateId, tenantId || req.user.tenantId);
     }
 }
