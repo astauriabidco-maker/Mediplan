@@ -1,6 +1,7 @@
 import { Controller, Get, Post, Param, Body, UseGuards, Request, Query, UploadedFile, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { DocumentsService } from './documents.service';
+import { AgentsService } from '../agents/agents.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { Permissions } from '../auth/permissions.decorator';
 import { diskStorage } from 'multer';
@@ -9,7 +10,10 @@ import * as path from 'path';
 @Controller('documents')
 @UseGuards(JwtAuthGuard)
 export class DocumentsController {
-    constructor(private readonly documentsService: DocumentsService) { }
+    constructor(
+        private readonly documentsService: DocumentsService,
+        private readonly agentsService: AgentsService
+    ) { }
 
     @Get()
     @Permissions('documents:read', 'agents:read')
@@ -67,6 +71,19 @@ export class DocumentsController {
             type: body.type || 'Autre',
             fileUrl: fileUrl,
         });
+    }
+
+    @Post('generate-contract')
+    @Permissions('documents:write')
+    async generateContract(
+        @Request() req: any,
+        @Body() body: { agentId: number }
+    ) {
+        // Fetch the target agent fully using the actor's permissions (usually an ADMIN)
+        const agent = await this.agentsService.findOne(body.agentId, req.user.tenantId, req.user.id);
+        
+        // Generate the contract document
+        return this.documentsService.generateEmploymentContract(req.user.tenantId, agent, req.user.id);
     }
 
     @Post(':id/request-signature')

@@ -43,6 +43,12 @@ export declare class PlanningController {
         start: string;
         end: string;
     }): Promise<Shift[]>;
+    publish(req: any, body: {
+        start: string;
+        end: string;
+    }): Promise<{
+        message: string;
+    }>;
     getShiftApplications(req: any): Promise<import("./entities/shift-application.entity").ShiftApplication[]>;
     approveGhtApplication(req: any, id: string): Promise<import("./entities/shift-application.entity").ShiftApplication>;
     rejectGhtApplication(req: any, id: string): Promise<import("./entities/shift-application.entity").ShiftApplication>;

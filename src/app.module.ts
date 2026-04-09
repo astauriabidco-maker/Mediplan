@@ -34,6 +34,7 @@ import { EventsModule } from './events/events.module';
 import { GhtModule } from './ght/ght.module';
 import { FacilityModule } from './facility/facility.module';
 import { SettingsModule } from './settings/settings.module';
+import { AnalyticsModule } from './analytics/analytics.module';
 
 @Module({
   imports: [
@@ -88,6 +89,7 @@ import { SettingsModule } from './settings/settings.module';
     GhtModule,
     FacilityModule,
     SettingsModule,
+    AnalyticsModule,
   ],
   controllers: [AppController],
   providers: [AppService, SeedService],

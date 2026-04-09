@@ -75,29 +75,56 @@ export class AutoSchedulerService {
 
             for (const service of services) {
                 const capacity = service.bedCapacity || 0;
-                // Calcul jour
-                const countDay = Math.max(1, Math.ceil(capacity / ratioDay)); // At least 1 agent even if 0 beds
+                // Calcul Infirmier Jour
+                const countDayNurses = Math.max(1, Math.ceil(capacity / ratioDay));
                 needs.push({
                     start: dayStart,
                     end: dayEnd,
                     postId: `[${service.name}] Infirmier Jour`,
-                    count: countDay,
+                    count: countDayNurses,
                     facilityId: service.facility?.id,
                     serviceId: service.id,
-                    serviceName: service.name
+                    serviceName: service.name,
+                    requiredSkills: ['Infirmier']
+                });
+
+                // Calcul Médecin Jour (1 médecin pour 20 lits minimum 1)
+                const countDayDoctors = Math.max(1, Math.ceil(capacity / 20));
+                needs.push({
+                    start: dayStart,
+                    end: dayEnd,
+                    postId: `[${service.name}] Médecin Garde`,
+                    count: countDayDoctors,
+                    facilityId: service.facility?.id,
+                    serviceId: service.id,
+                    serviceName: service.name,
+                    requiredSkills: ['Médecin']
                 });
 
                 // Calcul Nuit (seulement si is24x7 = true)
                 if (service.is24x7) {
-                    const countNight = Math.max(1, Math.ceil(capacity / ratioNight));
+                    const countNightNurses = Math.max(1, Math.ceil(capacity / ratioNight));
                     needs.push({
                         start: nightStart,
                         end: nightEnd,
                         postId: `[${service.name}] Infirmier Nuit`,
-                        count: countNight,
+                        count: countNightNurses,
                         facilityId: service.facility?.id,
                         serviceId: service.id,
-                        serviceName: service.name
+                        serviceName: service.name,
+                        requiredSkills: ['Infirmier']
+                    });
+
+                    // Optionnel : 1 Médecin / Interne de Garde Nuit par service H24
+                    needs.push({
+                        start: nightStart,
+                        end: nightEnd,
+                        postId: `[${service.name}] Médecin Nuit`,
+                        count: 1, // On laisse un standard de 1 garde
+                        facilityId: service.facility?.id,
+                        serviceId: service.id,
+                        serviceName: service.name,
+                        requiredSkills: ['Médecin'] // Compétence exigée ou par défaut 'Médecin'
                     });
                 }
             }
@@ -129,18 +156,28 @@ export class AutoSchedulerService {
                 // A. Check Competency & Role
                 let matchesRole = true;
                 if (need.requiredSkills && need.requiredSkills.length > 0) {
-                    const agentSkills = agent.agentCompetencies?.map(ac => ac.competency.name) || [];
-                    matchesRole = need.requiredSkills.every(skill => agentSkills.includes(skill));
+                    const targetSkills = need.requiredSkills.map(s => s.toLowerCase());
+                    const agentSkills = agent.agentCompetencies?.map(ac => ac.competency.name.toLowerCase()) || [];
+                    const job = (agent.jobTitle || '').toLowerCase();
+                    const dept = (agent.department || '').toLowerCase();
+
+                    // Soft Match: If required skill matches job title or explicitly defined skills
+                    matchesRole = targetSkills.every(skill => 
+                        agentSkills.some(as => as.includes(skill)) || 
+                        job.includes(skill) || 
+                        dept.includes(skill) ||
+                        // Soft mapping Docteur <=> Médecin
+                        (skill === 'médecin' && job.includes('docteur')) ||
+                        (skill === 'docteur' && job.includes('médecin'))
+                    );
                 } else if (need.postId) {
-                    // Fallback: Match by Job Title or Department (fuzzy match)
+                    // Fallback fuzzy
                     const target = need.postId.toLowerCase();
                     const job = (agent.jobTitle || '').toLowerCase();
                     const dept = (agent.department || '').toLowerCase();
                     matchesRole = job.includes(target) || dept.includes(target);
-                    // Special case for 'MEDECIN' matching 'Docteur'
                     if (!matchesRole && target.includes('medecin') && job.includes('docteur')) matchesRole = true;
                     if (!matchesRole && target.includes('infirmier') && job.includes('infirmier')) matchesRole = true;
-                    if (!matchesRole && target.includes('garde') && job.includes('garde')) matchesRole = true;
                 }
 
                 if (!matchesRole) continue;
@@ -185,7 +222,7 @@ export class AutoSchedulerService {
                     start: need.start,
                     end: need.end,
                     postId: need.postId,
-                    status: 'AUTO_GENERATED',
+                    status: 'PENDING', // Généré en Brouillon
                     agent: candidate.agent,
                     tenantId: tenantId || 'DEFAULT_TENANT'
                 });

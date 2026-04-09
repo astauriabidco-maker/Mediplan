@@ -12,12 +12,16 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.Contract = void 0;
 const typeorm_1 = require("typeorm");
 const agent_entity_1 = require("./agent.entity");
+const contract_bonus_entity_1 = require("./contract-bonus.entity");
 let Contract = class Contract {
     id;
     type;
     date_debut;
     solde_conges;
+    baseSalary;
+    hourlyRate;
     agent;
+    bonuses;
 };
 exports.Contract = Contract;
 __decorate([
@@ -37,9 +41,21 @@ __decorate([
     __metadata("design:type", Number)
 ], Contract.prototype, "solde_conges", void 0);
 __decorate([
-    (0, typeorm_1.ManyToOne)(() => agent_entity_1.Agent, (agent) => agent.contracts),
+    (0, typeorm_1.Column)('float', { nullable: true, default: 0 }),
+    __metadata("design:type", Number)
+], Contract.prototype, "baseSalary", void 0);
+__decorate([
+    (0, typeorm_1.Column)('float', { nullable: true, default: 0 }),
+    __metadata("design:type", Number)
+], Contract.prototype, "hourlyRate", void 0);
+__decorate([
+    (0, typeorm_1.ManyToOne)(() => agent_entity_1.Agent, (agent) => agent.contracts, { onDelete: 'CASCADE' }),
     __metadata("design:type", agent_entity_1.Agent)
 ], Contract.prototype, "agent", void 0);
+__decorate([
+    (0, typeorm_1.OneToMany)(() => contract_bonus_entity_1.ContractBonus, cb => cb.contract, { cascade: true }),
+    __metadata("design:type", Array)
+], Contract.prototype, "bonuses", void 0);
 exports.Contract = Contract = __decorate([
     (0, typeorm_1.Entity)()
 ], Contract);

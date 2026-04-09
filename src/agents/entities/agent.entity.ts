@@ -173,7 +173,10 @@ export class Agent {
     niu: string; // Numéro d'Identifiant Unique
 
     @Column({ nullable: true })
-    cnpsNumber: string; // Prévoyance Sociale
+    cnpsNumber: string; // Numéro CNPS
+
+    @Column({ nullable: true })
+    categorieEchelon: string; // Ex: Catégorie 9, Échelon C
 
     @Column({
         type: 'enum',

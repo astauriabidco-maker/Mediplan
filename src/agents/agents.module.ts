@@ -15,9 +15,11 @@ import { AuditModule } from '../audit/audit.module';
 import { AgentBeneficiary } from './entities/beneficiary.entity';
 import { BeneficiaryService } from './beneficiary.service';
 import { BeneficiaryController } from './beneficiary.controller';
+import { BonusTemplate } from './entities/bonus-template.entity';
+import { ContractBonus } from './entities/contract-bonus.entity';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Agent, Contract, HospitalService, Grade, Facility, AgentBeneficiary]), AuditModule],
+  imports: [TypeOrmModule.forFeature([Agent, Contract, HospitalService, Grade, Facility, AgentBeneficiary, BonusTemplate, ContractBonus]), AuditModule],
   controllers: [AgentsController, HospitalServicesController, GradesController, BeneficiaryController],
   providers: [AgentsService, HospitalServicesService, GradesService, BeneficiaryService],
   exports: [AgentsService, HospitalServicesService, GradesService, BeneficiaryService],

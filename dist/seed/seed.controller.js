@@ -55,6 +55,10 @@ const leave_entity_1 = require("../planning/entities/leave.entity");
 const competency_entity_1 = require("../competencies/entities/competency.entity");
 const agent_competency_entity_1 = require("../competencies/entities/agent-competency.entity");
 const document_entity_1 = require("../documents/entities/document.entity");
+const contract_entity_1 = require("../agents/entities/contract.entity");
+const bonus_template_entity_1 = require("../agents/entities/bonus-template.entity");
+const contract_bonus_entity_1 = require("../agents/entities/contract-bonus.entity");
+const payroll_rule_entity_1 = require("../payroll/entities/payroll-rule.entity");
 const bcrypt = __importStar(require("bcrypt"));
 const date_fns_1 = require("date-fns");
 let SeedController = class SeedController {
@@ -64,13 +68,21 @@ let SeedController = class SeedController {
     compRepo;
     agentCompRepo;
     documentRepo;
-    constructor(agentRepo, serviceRepo, leaveRepo, compRepo, agentCompRepo, documentRepo) {
+    contractRepo;
+    bonusTemplateRepo;
+    contractBonusRepo;
+    payrollRuleRepo;
+    constructor(agentRepo, serviceRepo, leaveRepo, compRepo, agentCompRepo, documentRepo, contractRepo, bonusTemplateRepo, contractBonusRepo, payrollRuleRepo) {
         this.agentRepo = agentRepo;
         this.serviceRepo = serviceRepo;
         this.leaveRepo = leaveRepo;
         this.compRepo = compRepo;
         this.agentCompRepo = agentCompRepo;
         this.documentRepo = documentRepo;
+        this.contractRepo = contractRepo;
+        this.bonusTemplateRepo = bonusTemplateRepo;
+        this.contractBonusRepo = contractBonusRepo;
+        this.payrollRuleRepo = payrollRuleRepo;
     }
     async seedHGD() {
         const tenantId = 'HGD-DOUALA';
@@ -82,6 +94,10 @@ let SeedController = class SeedController {
             majorId: null,
             nursingManagerId: null
         });
+        await this.payrollRuleRepo.delete({ tenantId });
+        await this.contractBonusRepo.createQueryBuilder().delete().execute();
+        await this.contractRepo.createQueryBuilder().delete().execute();
+        await this.bonusTemplateRepo.delete({ tenantId });
         await this.agentCompRepo.createQueryBuilder().delete().execute();
         await this.compRepo.createQueryBuilder().delete().execute();
         await this.documentRepo.delete({ tenantId });
@@ -351,7 +367,62 @@ let SeedController = class SeedController {
                 password: passwordHash,
             });
         }
+        const bonusTemplates = await Promise.all([
+            this.bonusTemplateRepo.save(this.bonusTemplateRepo.create({ tenantId, name: 'Prime de Transport', amount: 25000, isTaxable: false })),
+            this.bonusTemplateRepo.save(this.bonusTemplateRepo.create({ tenantId, name: 'Prime de Technicité Médicale', amount: 45000, isTaxable: true })),
+            this.bonusTemplateRepo.save(this.bonusTemplateRepo.create({ tenantId, name: 'Prime de Risque (Laboratoire/Radio)', amount: 35000, isTaxable: false })),
+            this.bonusTemplateRepo.save(this.bonusTemplateRepo.create({ tenantId, name: 'Indemnité de Garde Forfaitaire', amount: 60000, isTaxable: true })),
+            this.bonusTemplateRepo.save(this.bonusTemplateRepo.create({ tenantId, name: 'Prime de Santé Publique', amount: 20000, isTaxable: true })),
+        ]);
         const allAgents = await this.agentRepo.find({ where: { tenantId }, relations: ['manager'] });
+        for (const agent of allAgents) {
+            let baseSalary = 150000;
+            let hourlyRate = 1200;
+            if (agent.role === agent_entity_1.UserRole.ADMIN || agent.jobTitle?.includes('Directeur')) {
+                baseSalary = 800000;
+                hourlyRate = 5000;
+            }
+            else if (agent.jobTitle?.includes('Chef') || agent.jobTitle?.includes('Médecin') || agent.jobTitle?.includes('Chirurgien')) {
+                baseSalary = 500000;
+                hourlyRate = 3000;
+            }
+            else if (agent.jobTitle?.includes('Infirmière') || agent.jobTitle?.includes('Major')) {
+                baseSalary = 250000;
+                hourlyRate = 1800;
+            }
+            const contract = await this.contractRepo.save({
+                agent,
+                type: agent.contractType || 'CDI',
+                date_debut: new Date(agent.hiringDate || '2020-01-01'),
+                solde_conges: Math.floor(Math.random() * 20) + 10,
+                baseSalary,
+                hourlyRate,
+            });
+            if (agent.jobTitle?.includes('Chef')) {
+                await this.contractBonusRepo.save({ contract, bonusTemplate: bonusTemplates[1] });
+            }
+            if (agent.hospitalServiceId === urgences?.id) {
+                await this.contractBonusRepo.save({ contract, bonusTemplate: bonusTemplates[3] });
+            }
+            if (agent.contractType === 'CDI') {
+                await this.contractBonusRepo.save({ contract, bonusTemplate: bonusTemplates[2] });
+            }
+        }
+        const rules = [
+            { code: 'GROSS_TAXABLE', name: 'Brut Imposable', type: payroll_rule_entity_1.PayrollRuleType.CALCULATION, formula: 'baseSalary + taxableAllowances', executionOrder: 1, isActive: true },
+            { code: 'CNPS_TAX', name: 'Cotisation CNPS (4.2%)', type: payroll_rule_entity_1.PayrollRuleType.TAX, formula: 'min(GROSS_TAXABLE, 750000) * 0.042', executionOrder: 2, isActive: true },
+            { code: 'IRPP_BASE', name: 'Base Nette Imposable', type: payroll_rule_entity_1.PayrollRuleType.CALCULATION, formula: 'GROSS_TAXABLE - (GROSS_TAXABLE * 0.30) - CNPS_TAX', executionOrder: 3, isActive: true },
+            { code: 'IRPP_ANNUAL', name: 'Base Annuelle IRPP', type: payroll_rule_entity_1.PayrollRuleType.CALCULATION, formula: 'max((IRPP_BASE * 12) - 500000, 0)', executionOrder: 4, isActive: true },
+            { code: 'IRPP_TAX_ANNUAL', name: 'Calcul IRPP Annuel (Barème Progressif)', type: payroll_rule_entity_1.PayrollRuleType.CALCULATION, formula: 'IRPP_ANNUAL <= 2000000 ? IRPP_ANNUAL * 0.1 : (IRPP_ANNUAL <= 3000000 ? 200000 + ((IRPP_ANNUAL - 2000000) * 0.15) : (IRPP_ANNUAL <= 5000000 ? 350000 + ((IRPP_ANNUAL - 3000000)*0.25) : 850000 + ((IRPP_ANNUAL - 5000000)*0.33)))', executionOrder: 5, isActive: true },
+            { code: 'IRPP_TAX', name: 'IRPP (10 à 33%)', type: payroll_rule_entity_1.PayrollRuleType.TAX, formula: 'IRPP_TAX_ANNUAL / 12', executionOrder: 6, isActive: true },
+            { code: 'CAC_TAX', name: 'Centimes Additionnels Communaux (10%)', type: payroll_rule_entity_1.PayrollRuleType.TAX, formula: 'IRPP_TAX * 0.1', executionOrder: 7, isActive: true },
+            { code: 'CCF_TAX', name: 'Crédit Foncier (1%)', type: payroll_rule_entity_1.PayrollRuleType.TAX, formula: 'GROSS_TAXABLE * 0.01', executionOrder: 8, isActive: true },
+            { code: 'RAV_TAX', name: 'Redevance Audiovisuelle (RAV)', type: payroll_rule_entity_1.PayrollRuleType.TAX, formula: 'GROSS_TAXABLE >= 1000000 ? 13000 : GROSS_TAXABLE >= 900000 ? 12350 : GROSS_TAXABLE >= 800000 ? 11050 : GROSS_TAXABLE >= 700000 ? 9750 : GROSS_TAXABLE >= 600000 ? 8450 : GROSS_TAXABLE >= 500000 ? 7150 : GROSS_TAXABLE >= 400000 ? 5850 : GROSS_TAXABLE >= 300000 ? 4550 : GROSS_TAXABLE >= 200000 ? 3250 : GROSS_TAXABLE >= 100000 ? 1950 : GROSS_TAXABLE > 50000 ? 750 : 0', executionOrder: 9, isActive: true },
+            { code: 'TC_TAX', name: 'Taxe Communale (TC)', type: payroll_rule_entity_1.PayrollRuleType.TAX, formula: 'GROSS_TAXABLE >= 500000 ? 3000 : GROSS_TAXABLE >= 400000 ? 2500 : GROSS_TAXABLE >= 300000 ? 2000 : GROSS_TAXABLE >= 200000 ? 1500 : GROSS_TAXABLE >= 100000 ? 1000 : 0', executionOrder: 10, isActive: true }
+        ];
+        for (const rule of rules) {
+            await this.payrollRuleRepo.save(this.payrollRuleRepo.create({ ...rule, tenantId }));
+        }
         const leaveData = [
             { agent: 'Thomas', type: leave_entity_1.LeaveType.CONGE_ANNUEL, status: leave_entity_1.LeaveStatus.APPROVED, daysOffset: -10, duration: 5, reason: 'Congés annuels' },
             { agent: 'André', type: leave_entity_1.LeaveType.MALADIE, status: leave_entity_1.LeaveStatus.APPROVED, daysOffset: -2, duration: 3, reason: 'Grippe' },
@@ -475,7 +546,15 @@ exports.SeedController = SeedController = __decorate([
     __param(3, (0, typeorm_1.InjectRepository)(competency_entity_1.Competency)),
     __param(4, (0, typeorm_1.InjectRepository)(agent_competency_entity_1.AgentCompetency)),
     __param(5, (0, typeorm_1.InjectRepository)(document_entity_1.Document)),
+    __param(6, (0, typeorm_1.InjectRepository)(contract_entity_1.Contract)),
+    __param(7, (0, typeorm_1.InjectRepository)(bonus_template_entity_1.BonusTemplate)),
+    __param(8, (0, typeorm_1.InjectRepository)(contract_bonus_entity_1.ContractBonus)),
+    __param(9, (0, typeorm_1.InjectRepository)(payroll_rule_entity_1.PayrollRule)),
     __metadata("design:paramtypes", [typeorm_2.Repository,
+        typeorm_2.Repository,
+        typeorm_2.Repository,
+        typeorm_2.Repository,
+        typeorm_2.Repository,
         typeorm_2.Repository,
         typeorm_2.Repository,
         typeorm_2.Repository,

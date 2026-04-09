@@ -89,6 +89,7 @@ let Agent = class Agent {
     bic;
     niu;
     cnpsNumber;
+    categorieEchelon;
     idType;
     idNumber;
     idExpiryDate;
@@ -284,6 +285,10 @@ __decorate([
     (0, typeorm_1.Column)({ nullable: true }),
     __metadata("design:type", String)
 ], Agent.prototype, "cnpsNumber", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ nullable: true }),
+    __metadata("design:type", String)
+], Agent.prototype, "categorieEchelon", void 0);
 __decorate([
     (0, typeorm_1.Column)({
         type: 'enum',

@@ -76,6 +76,7 @@ const events_module_1 = require("./events/events.module");
 const ght_module_1 = require("./ght/ght.module");
 const facility_module_1 = require("./facility/facility.module");
 const settings_module_1 = require("./settings/settings.module");
+const analytics_module_1 = require("./analytics/analytics.module");
 let AppModule = class AppModule {
 };
 exports.AppModule = AppModule;
@@ -133,6 +134,7 @@ exports.AppModule = AppModule = __decorate([
             ght_module_1.GhtModule,
             facility_module_1.FacilityModule,
             settings_module_1.SettingsModule,
+            analytics_module_1.AnalyticsModule,
         ],
         controllers: [app_controller_1.AppController],
         providers: [app_service_1.AppService, seed_service_1.SeedService],

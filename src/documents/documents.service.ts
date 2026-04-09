@@ -157,4 +157,86 @@ export class DocumentsService {
 
         return doc;
     }
+
+    async generateEmploymentContract(tenantId: string, agent: any, actorId?: number): Promise<Document> {
+        // Gabarit Standard de Contrat de Travail de Droit Privé - OHADA / Cameroun
+        const startDate = agent.hiringDate ? new Date(agent.hiringDate).toLocaleDateString('fr-FR') : new Date().toLocaleDateString('fr-FR');
+        const endDate = agent.contractEndDate ? new Date(agent.contractEndDate).toLocaleDateString('fr-FR') : 'Indéterminée';
+        
+        const content = `
+            <div style="font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; color: #1e293b; line-height: 1.6;">
+                <h1 style="text-align: center; color: #0f172a; text-transform: uppercase;">CONTRAT DE TRAVAIL : ${agent.contractType || 'CDI'}</h1>
+                <hr style="border: 1px solid #cbd5e1; margin-bottom: 20px;" />
+                
+                <h3 style="color: #334155;">ENTRE LES SOUSSIGNÉS :</h3>
+                <p><strong>L'Établissement :</strong> MEDIPLAN GHT Hôpital de Référence (ID: ${tenantId})<br/>
+                Représenté par son Directeur des Ressources Humaines,</p>
+                <p style="text-align: center;"><strong>- D'une part -</strong></p>
+
+                <p><strong>Le Salarié :</strong> ${agent.gender === 'F' ? 'Mme.' : 'M.'} ${agent.nom} ${agent.firstName || ''}<br/>
+                <strong>Né(e) le :</strong> ${agent.dateOfBirth ? new Date(agent.dateOfBirth).toLocaleDateString('fr-FR') : '...'} à ${agent.placeOfBirth || '...'}<br/>
+                <strong>Nationalité :</strong> ${agent.nationality || 'Camerounaise'}<br/>
+                <strong>Pièce d'Identité :</strong> ${agent.idType || 'CNI'} N° ${agent.idNumber || '...'}<br/>
+                <strong>Numéro de Prévoyance Sociale (CNPS) :</strong> ${agent.cnpsNumber || '...'}<br/>
+                <strong>Demeurant à :</strong> ${agent.address || '...'}
+                </p>
+                <p style="text-align: center;"><strong>- D'autre part -</strong></p>
+
+                <p>IL A ÉTÉ CONVENU ET ARRÊTÉ CE QUI SUIT :</p>
+
+                <h4 style="color: #3b82f6; border-bottom: 1px solid #bfdbfe; padding-bottom: 4px;">Article 1 : Engagement et Qualité</h4>
+                <p>L'Établissement engage le Salarié sous contrat à durée <strong>${agent.contractType === 'CDI' ? 'indéterminée' : 'déterminée'}</strong> à compter du <strong>${startDate}</strong>.</p>
+                <p>Le Salarié est engagé en qualité de <strong>${agent.jobTitle || 'Professionnel de Santé'}</strong> (Catégorie/Grade: ${agent.grade?.name || '...'}). Il exercera ses fonctions principalement au sein du service <strong>${agent.hospitalService?.name || 'Général'}</strong>.</p>
+
+                <h4 style="color: #3b82f6; border-bottom: 1px solid #bfdbfe; padding-bottom: 4px;">Article 2 : Période d'essai</h4>
+                <p>Le présent contrat est conclu sous réserve d'une période d'essai de trois (3) mois, renouvelable une fois. Durant cette période, chacune des parties pourra rompre le contrat sans préavis ni indemnité, conformément au Code du Travail.</p>
+
+                <h4 style="color: #3b82f6; border-bottom: 1px solid #bfdbfe; padding-bottom: 4px;">Article 3 : Rémunération</h4>
+                <p>En contrepartie de ses services, le Salarié percevra un salaire de base mensuel brut conforme à la grille salariale de son échelon, versé à terme échu.</p>
+
+                <h4 style="color: #3b82f6; border-bottom: 1px solid #bfdbfe; padding-bottom: 4px;">Article 4 : Assiduité et Planning</h4>
+                <p>Le Salarié s'engage à respecter les plannings et les gardes assignés par la Direction ou son supérieur hiérarchique direct (${agent.manager?.nom || 'la Direction'}). Il s'engage également à utiliser les systèmes de contrôle de pointage en vigueur.</p>
+
+                <h4 style="color: #3b82f6; border-bottom: 1px solid #bfdbfe; padding-bottom: 4px;">Article 5 : Secret Professionnel et Médical</h4>
+                <p>Le Salarié est tenu au secret professionnel absolu concernant les patients, les pathologies et l'organisation interne de l'Hôpital.</p>
+
+                <div style="margin-top: 40px; display: flex; justify-content: space-between;">
+                    <div>
+                        <p><strong>Fait à Yaoundé, le ${new Date().toLocaleDateString('fr-FR')}</strong></p>
+                        <p><strong>L'Établissement</strong><br/><span style="color: #94a3b8; font-style: italic;">Validation RH</span></p>
+                    </div>
+                    <div>
+                        <p><br/></p>
+                        <p><strong>Le Salarié</strong><br/><span style="color: #94a3b8; font-style: italic;">Lu et approuvé - Signature Électronique eIDAS via OTP</span></p>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        const filename = `contrat-travail-${agent.id}-${Date.now()}.html`;
+        const uploadDir = './public/uploads/documents';
+        
+        if (!fs.existsSync(uploadDir)) {
+            fs.mkdirSync(uploadDir, { recursive: true });
+        }
+        
+        const filePath = path.join(uploadDir, filename);
+        fs.writeFileSync(filePath, content);
+        
+        // Creation of the document in PENDING_SIGNATURE initially if directly sent?
+        // But the user requested "Brouillon pour relecture RH".
+        const doc = await this.createDocument({
+            tenantId,
+            agentId: agent.id,
+            title: `Contrat de Travail ${agent.contractType || 'CDI'} - ${agent.nom}`,
+            type: 'Contrat de Travail',
+            fileUrl: `/uploads/documents/${filename}`,
+            status: DocumentStatus.DRAFT, // Will stay DRAFT!
+            agent: agent
+        });
+
+        // NOT triggering 2FA WhatsApp Notification because it is DRAFT for review.
+        
+        return doc;
+    }
 }

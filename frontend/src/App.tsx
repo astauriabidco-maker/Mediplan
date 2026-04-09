@@ -2,7 +2,8 @@ import React, { useEffect } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Layout } from './components/Layout'
-import { DashboardPage, SyncPage } from './pages/PlaceholderPages'
+import { SyncPage } from './pages/PlaceholderPages'
+import { DashboardPage } from './pages/DashboardPage'
 import { HierarchyPage } from './pages/HierarchyPage'
 import SettingsPage from './pages/Settings'
 import { PayrollPage } from './pages/PayrollPage'
@@ -10,6 +11,7 @@ import { HospitalServicesPage } from './pages/HospitalServicesPage'
 import { AgentsPage } from './pages/AgentsPage'
 import { CompetenciesPage } from './pages/CompetenciesPage'
 import { PlanningPage } from './pages/Planning'
+import { AttendancePage } from './pages/AttendancePage'
 import { LeavesPage } from './pages/LeavesPage'
 import { LoginPage } from './pages/LoginPage'
 import { WhatsAppInbox } from './pages/WhatsAppInbox'
@@ -60,6 +62,7 @@ function App() {
                             <Route index element={<Navigate to="/dashboard" replace />} />
                             <Route path="dashboard" element={<DashboardPage />} />
                             <Route path="planning" element={<PlanningPage />} />
+                            <Route path="attendance" element={<AttendancePage />} />
                             <Route path="leaves" element={<LeavesPage />} />
                             <Route path="agents">
                                 <Route index element={<AgentsPage />} />

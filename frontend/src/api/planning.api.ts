@@ -53,6 +53,19 @@ export const generatePlanning = async (startDate: Date, endDate: Date): Promise<
         throw error;
     }
 };
+
+export const publishPlanning = async (startDate: Date, endDate: Date): Promise<any> => {
+    try {
+        const response = await axios.post('/api/planning/publish', {
+            start: startDate.toISOString(),
+            end: endDate.toISOString()
+        });
+        return response.data;
+    } catch (error) {
+        console.error('Error publishing planning:', error);
+        throw error;
+    }
+};
 export const fetchLeaves = async (): Promise<any[]> => {
     const response = await axios.get('/api/planning/leaves');
     return response.data;

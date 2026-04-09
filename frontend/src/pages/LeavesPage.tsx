@@ -432,6 +432,8 @@ function NewRequestModal({ onClose, teamAgents }: { onClose: () => void, teamAge
 
 // Main Component
 export function LeavesPage() {
+    const { user } = useAuth();
+    const isAgent = user?.role === 'AGENT';
     const [activeTab, setActiveTab] = useState<'my-leaves' | 'team-validation'>('my-leaves');
     const [isModalOpen, setIsModalOpen] = useState(false);
 
@@ -507,23 +509,25 @@ export function LeavesPage() {
                     <FileText size={16} />
                     Mes Demandes
                 </button>
-                <button
-                    onClick={() => setActiveTab('team-validation')}
-                    className={cn(
-                        "px-8 py-3.5 rounded-xl font-black text-sm transition-all duration-300 flex items-center gap-2",
-                        activeTab === 'team-validation'
-                            ? "bg-slate-800 text-white shadow-lg ring-1 ring-white/5"
-                            : "text-slate-500 hover:text-slate-300 hover:bg-slate-800/50"
-                    )}
-                >
-                    <CheckCircle size={16} />
-                    Validation Équipe
-                    {teamRequests && teamRequests?.length > 0 && (
-                        <span className="bg-blue-600 text-white text-[10px] px-2 py-0.5 rounded-full animate-bounce">
-                            {teamRequests.length}
-                        </span>
-                    )}
-                </button>
+                {!isAgent && (
+                    <button
+                        onClick={() => setActiveTab('team-validation')}
+                        className={cn(
+                            "px-8 py-3.5 rounded-xl font-black text-sm transition-all duration-300 flex items-center gap-2",
+                            activeTab === 'team-validation'
+                                ? "bg-slate-800 text-white shadow-lg ring-1 ring-white/5"
+                                : "text-slate-500 hover:text-slate-300 hover:bg-slate-800/50"
+                        )}
+                    >
+                        <CheckCircle size={16} />
+                        Validation Équipe
+                        {teamRequests && teamRequests?.length > 0 && (
+                            <span className="bg-blue-600 text-white text-[10px] px-2 py-0.5 rounded-full animate-bounce">
+                                {teamRequests.length}
+                            </span>
+                        )}
+                    </button>
+                )}
             </div>
 
             {/* Tabbed Content */}

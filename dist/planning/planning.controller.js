@@ -125,6 +125,20 @@ let PlanningController = class PlanningController {
         const endDate = new Date(body.end);
         return this.autoSchedulerService.generateSmartSchedule(tenantId, startDate, endDate);
     }
+    async publish(req, body) {
+        const tenantId = req.user.tenantId;
+        const startDate = new Date(body.start);
+        const endDate = new Date(body.end);
+        await this.shiftRepository.createQueryBuilder()
+            .update(shift_entity_1.Shift)
+            .set({ status: 'VALIDATED' })
+            .where('tenantId = :tenantId', { tenantId })
+            .andWhere('status = :status', { status: 'PENDING' })
+            .andWhere('start >= :startDate', { startDate })
+            .andWhere('end <= :endDate', { endDate })
+            .execute();
+        return { message: 'Planning publié avec succès' };
+    }
     async getShiftApplications(req) {
         return this.planningService.getShiftApplications(req.user.tenantId);
     }
@@ -247,6 +261,16 @@ __decorate([
     __metadata("design:paramtypes", [Object, Object]),
     __metadata("design:returntype", Promise)
 ], PlanningController.prototype, "generate", null);
+__decorate([
+    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
+    (0, common_1.Post)('publish'),
+    (0, permissions_decorator_1.Permissions)('planning:manage'),
+    __param(0, (0, common_1.Request)()),
+    __param(1, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Object]),
+    __metadata("design:returntype", Promise)
+], PlanningController.prototype, "publish", null);
 __decorate([
     (0, common_1.Get)('shift-applications'),
     (0, permissions_decorator_1.Permissions)('planning:read'),

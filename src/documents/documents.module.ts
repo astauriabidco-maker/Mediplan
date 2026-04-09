@@ -6,12 +6,14 @@ import { Document } from './entities/document.entity';
 import { SignatureLog } from './entities/signature-log.entity';
 import { AuditModule } from '../audit/audit.module';
 import { WhatsappModule } from '../whatsapp/whatsapp.module';
+import { AgentsModule } from '../agents/agents.module';
 
 @Module({
     imports: [
         TypeOrmModule.forFeature([Document, SignatureLog]),
         AuditModule,
-        WhatsappModule
+        WhatsappModule,
+        AgentsModule
     ],
     controllers: [DocumentsController],
     providers: [DocumentsService],

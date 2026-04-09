@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { FileText, Upload, ShieldCheck, Clock, FileBadge, CheckCircle, FileSignature } from 'lucide-react';
 import { fetchDocuments, requestSignature, signDocument, uploadDocument } from '../api/documents.api';
 import { fetchSettings } from '../api/settings.api';
+import { fetchAgents, Agent } from '../api/agents.api';
 import { useAuth } from '../store/useAuth';
 
 export const GedPage = () => {
@@ -15,9 +16,19 @@ export const GedPage = () => {
     const [otp, setOtp] = useState('');
     const [filterStatus, setFilterStatus] = useState<string>('ALL');
 
+    const isAgent = user?.role === 'AGENT';
+    const [filterAgent, setFilterAgent] = useState<string>('ALL');
+    const [uploadTargetAgent, setUploadTargetAgent] = useState<string>(user?.id?.toString() || '');
+
     const { data: documents = [], refetch } = useQuery({
-        queryKey: ['documents'],
-        queryFn: () => fetchDocuments()
+        queryKey: ['documents', isAgent ? user?.id : filterAgent],
+        queryFn: () => fetchDocuments(filterAgent === 'ALL' || isAgent ? undefined : parseInt(filterAgent))
+    });
+
+    const { data: agents = [] } = useQuery({
+        queryKey: ['agents'],
+        queryFn: fetchAgents,
+        enabled: !isAgent
     });
 
     const { data: categories = ['Contrat de Travail', 'Avenant de Garde', 'Fiche de Paie', 'Attestation de Formation', 'Autre'] } = useQuery({
@@ -28,7 +39,7 @@ export const GedPage = () => {
             if (catSetting && catSetting.value) {
                 return catSetting.value.split(',').map(s => s.trim());
             }
-            return ['Contrat de Travail', 'Avenant de Garde', 'Fiche de Paie', 'Attestation de Formation', 'Autre'];
+            return ['Contrat de Travail', 'Avenant de Garde', 'Fiche de Paie', 'Arrêt Maladie', 'Attestation de Formation', 'Autre'];
         }
     });
 
@@ -43,8 +54,9 @@ export const GedPage = () => {
         if (!selectedFile || !title) return;
         setUploading(true);
         try {
-            if (user) {
-                await uploadDocument(selectedFile, title, docType, user.id);
+            const targetId = isAgent ? user?.id : parseInt(uploadTargetAgent);
+            if (targetId) {
+                await uploadDocument(selectedFile, title, docType, targetId);
                 setTitle('');
                 setSelectedFile(null);
                 await refetch();
@@ -98,6 +110,21 @@ export const GedPage = () => {
                         Nouveau Document
                     </h3>
                     <form onSubmit={handleUpload} className="space-y-4">
+                        {!isAgent && (
+                            <div>
+                                <label className="text-xs font-bold text-slate-500 uppercase">Agent Destinataire</label>
+                                <select 
+                                    value={uploadTargetAgent} onChange={(e) => setUploadTargetAgent(e.target.value)} required
+                                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-2 mt-1 text-sm text-white"
+                                >
+                                    <option value="">-- Sélectionner un Agent --</option>
+                                    <option value={user?.id?.toString()}>Mon propre coffre-fort</option>
+                                    {agents.map((a: Agent) => (
+                                        <option key={a.id} value={a.id}>{a.nom} ({a.jobTitle || 'Agent'})</option>
+                                    ))}
+                                </select>
+                            </div>
+                        )}
                         <div>
                             <label className="text-xs font-bold text-slate-500 uppercase">Titre</label>
                             <input 
@@ -137,21 +164,34 @@ export const GedPage = () => {
                     <div className="flex items-center justify-between mb-6">
                         <h3 className="text-xl font-bold text-white flex items-center gap-2">
                             <FileBadge className="text-emerald-500" />
-                            Dossier Personnel ({user?.email || 'N/A'})
+                            {isAgent ? `Dossier Personnel (${user?.email})` : 'Archives & Dossiers (DRH)'}
                         </h3>
-                        <select 
-                            value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}
-                            className="bg-slate-950 border border-slate-700 text-slate-300 rounded-xl px-4 py-2 text-sm"
-                        >
-                            <option value="ALL">Tous les documents</option>
-                            <option value="PENDING_SIGNATURE">À Signer (URGENT)</option>
-                            <option value="SIGNED">Validés & Signés</option>
-                        </select>
+                        <div className="flex gap-4">
+                            {!isAgent && (
+                                <select 
+                                    value={filterAgent} onChange={(e) => setFilterAgent(e.target.value)}
+                                    className="bg-slate-950 border border-slate-700 text-slate-300 rounded-xl px-4 py-2 text-sm"
+                                >
+                                    <option value="ALL">Tous les agents (Global)</option>
+                                    {agents.map((a: Agent) => (
+                                        <option key={a.id} value={a.id}>Dossier de {a.nom}</option>
+                                    ))}
+                                </select>
+                            )}
+                            <select 
+                                value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}
+                                className="bg-slate-950 border border-slate-700 text-slate-300 rounded-xl px-4 py-2 text-sm"
+                            >
+                                <option value="ALL">Tous les documents</option>
+                                <option value="PENDING_SIGNATURE">À Signer (URGENT)</option>
+                                <option value="SIGNED">Validés & Signés</option>
+                            </select>
+                        </div>
                     </div>
                     
                     <div className="space-y-4 overflow-y-auto pr-2">
                         {documents.filter((d: any) => filterStatus === 'ALL' || d.status === filterStatus).map((doc: any) => (
-                            <div key={doc.id} className="flex items-center justify-between p-4 bg-slate-950 border border-slate-800 rounded-2xl hover:border-slate-700 transition">
+                            <div key={doc.id} className="flex flex-col md:flex-row items-start md:items-center justify-between p-4 bg-slate-950 border border-slate-800 rounded-2xl hover:border-slate-700 transition gap-4">
                                 <div className="flex items-center gap-4">
                                     <div className="p-3 bg-slate-800 text-blue-400 rounded-xl">
                                         <FileText size={20} />
@@ -159,6 +199,9 @@ export const GedPage = () => {
                                     <div>
                                         <p className="font-bold text-white text-sm">{doc.title}</p>
                                         <p className="text-xs text-slate-500 uppercase tracking-widest">{doc.type}</p>
+                                        {!isAgent && filterAgent === 'ALL' && doc.agent && (
+                                            <p className="text-xs text-blue-400 mt-1">👤 Agent: {doc.agent.nom}</p>
+                                        )}
                                     </div>
                                 </div>
                                 <div className="flex items-center gap-4">

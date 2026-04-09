@@ -17,7 +17,9 @@ export const DEFAULTS: DefaultSetting[] = [
     { key: 'planning.beds_per_nurse_day', value: '10', type: SettingType.NUMBER, description: 'Ratio Lit/Agent de Jour' },
     { key: 'planning.beds_per_nurse_night', value: '15', type: SettingType.NUMBER, description: 'Ratio Lit/Agent de Nuit' },
     { key: 'whatsapp.enabled', value: 'true', type: SettingType.BOOLEAN, description: 'Activer les notifications WhatsApp' },
-    { key: 'documents.categories', value: 'Contrat de Travail,Avenant de Garde,Fiche de Paie,Attestation de Formation,Arrêt Maladie,RIB,Autre', type: SettingType.STRING, description: 'Catégories valides pour le coffre-fort (Séparées par virgules)' }
+    { key: 'documents.categories', value: 'Contrat de Travail,Avenant de Garde,Fiche de Paie,Attestation de Formation,Arrêt Maladie,RIB,Autre', type: SettingType.STRING, description: 'Catégories valides pour le coffre-fort (Séparées par virgules)' },
+    { key: 'ATTENDANCE_LATE_MARGIN_MINUTES', value: '15', type: SettingType.NUMBER, description: 'Tolérance de retard en minutes avant alerte' },
+    { key: 'ATTENDANCE_GEOFENCE_RADIUS_METERS', value: '500', type: SettingType.NUMBER, description: 'Rayon de validation GPS (en mètres) pour le pointage WhatsApp' }
 ];
 
 @Injectable()

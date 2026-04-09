@@ -72,6 +72,7 @@ export declare class Agent {
     bic: string;
     niu: string;
     cnpsNumber: string;
+    categorieEchelon: string;
     idType: IdType;
     idNumber: string;
     idExpiryDate: string;

@@ -211,6 +211,29 @@ export class PlanningController {
         return this.autoSchedulerService.generateSmartSchedule(tenantId, startDate, endDate);
     }
 
+    @UseGuards(JwtAuthGuard)
+    @Post('publish')
+    @Permissions('planning:manage')
+    async publish(
+        @Request() req: any,
+        @Body() body: { start: string; end: string }
+    ) {
+        const tenantId = req.user.tenantId;
+        const startDate = new Date(body.start);
+        const endDate = new Date(body.end);
+
+        await this.shiftRepository.createQueryBuilder()
+            .update(Shift)
+            .set({ status: 'VALIDATED' })
+            .where('tenantId = :tenantId', { tenantId })
+            .andWhere('status = :status', { status: 'PENDING' })
+            .andWhere('start >= :startDate', { startDate })
+            .andWhere('end <= :endDate', { endDate })
+            .execute();
+
+        return { message: 'Planning publié avec succès' };
+    }
+
     @Get('shift-applications')
     @Permissions('planning:read')
     async getShiftApplications(@Request() req: any) {

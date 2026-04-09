@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { fetchPayslips, generateAllPayslips } from '../api/payroll.api';
-import { Loader2, Calendar, Euro, Calculator, FileText, X } from 'lucide-react';
+import { fetchPayslips, generateAllPayslips, downloadPayslipPdf, exportSageOdPaie, exportDipe } from '../api/payroll.api';
+import { Loader2, Calendar, Euro, Calculator, FileText, X, Download } from 'lucide-react';
 import { useAuth } from '../store/useAuth';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -54,9 +54,34 @@ export const PayrollPage = () => {
         }
     };
 
+    const handleDownloadPdf = async (payslip: any) => {
+        try {
+            const filename = `Fiche_de_Paie_${payslip.agent?.nom}_${payslip.month}_${payslip.year}.pdf`;
+            await downloadPayslipPdf(payslip.id, filename);
+        } catch (error) {
+            alert('Erreur lors du téléchargement du PDF');
+        }
+    };
+
+    const handleExportSage = async () => {
+        try {
+            await exportSageOdPaie(filterPeriod.month, filterPeriod.year, 'HGD-DOUALA'); // Or from Auth token
+        } catch (error) {
+            alert('Erreur lors de l’export SAGE.');
+        }
+    };
+
+    const handleExportDipe = async () => {
+        try {
+            await exportDipe(filterPeriod.month, filterPeriod.year, 'HGD-DOUALA'); // Or from Auth token
+        } catch (error) {
+            alert('Erreur lors de l’export DIPE.');
+        }
+    };
+
     const totalSalaireBase = payslips.reduce((acc, p) => acc + (Number(p.baseSalary) || 0), 0);
     const totalPrimes = payslips.reduce((acc, p) => acc + (Number(p.allowances) || 0), 0);
-    const totalGeneral = totalSalaireBase + totalPrimes;
+    const totalGeneral = payslips.reduce((acc, p) => acc + (Number(p.details?.netSalary) || 0), 0);
 
     return (
         <div className="flex flex-col h-full overflow-hidden">
@@ -86,29 +111,37 @@ export const PayrollPage = () => {
                         ))}
                     </select>
                 </div>
+                <div className="ml-4 flex items-center pr-2 gap-3">
+                    <button onClick={handleExportSage} className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-xl flex items-center gap-2 font-bold transition-colors">
+                        <Download size={18} /> Export SAGE (CSV)
+                    </button>
+                    <button onClick={handleExportDipe} className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-xl flex items-center gap-2 font-bold transition-colors shadow-lg shadow-emerald-600/20">
+                        <FileText size={18} /> Export DIPE (CSV)
+                    </button>
+                </div>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
                 <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl flex flex-col justify-center">
                     <div className="flex items-center justify-between">
-                        <span className="text-slate-400 font-medium">Bases Indexées</span>
-                        <div className="p-3 bg-blue-500/10 rounded-xl text-blue-500">
-                            <Euro size={24} />
+                        <span className="text-slate-400 font-medium">Bases Salariales (Brut)</span>
+                        <div className="p-3 bg-blue-500/10 rounded-xl text-blue-500 font-bold text-xs">
+                            XAF
                         </div>
                     </div>
-                    <div className="text-3xl font-bold text-white mt-4">{totalSalaireBase.toFixed(2)} €</div>
-                    <div className="text-sm text-slate-500 mt-2">Total des salaires hors primes</div>
+                    <div className="text-3xl font-bold text-white mt-4">{totalSalaireBase.toLocaleString()} FCFA</div>
+                    <div className="text-sm text-slate-500 mt-2">Total des salaires contractuels</div>
                 </div>
 
                 <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl flex flex-col justify-center">
                     <div className="flex items-center justify-between">
-                        <span className="text-slate-400 font-medium">Majorations & Gardes</span>
-                        <div className="p-3 bg-amber-500/10 rounded-xl text-amber-500">
-                            <Euro size={24} />
+                        <span className="text-slate-400 font-medium">Primes & Majorations</span>
+                        <div className="p-3 bg-amber-500/10 rounded-xl text-amber-500 font-bold text-xs">
+                            XAF
                         </div>
                     </div>
-                    <div className="text-3xl font-bold text-white mt-4">+{totalPrimes.toFixed(2)} €</div>
-                    <div className="text-sm text-amber-500/80 mt-2">Nuits, Dimanches et Forfaits fixes</div>
+                    <div className="text-3xl font-bold text-white mt-4">+{totalPrimes.toLocaleString()} FCFA</div>
+                    <div className="text-sm text-amber-500/80 mt-2">Primes fixes et indemnités de garde</div>
                 </div>
 
                 <div className="bg-purple-600 border border-purple-500 p-6 rounded-2xl flex flex-col justify-center shadow-lg shadow-purple-900/50">
@@ -146,22 +179,22 @@ export const PayrollPage = () => {
                                     </div>
                                     <div>
                                         <h3 className="text-lg font-bold text-white">{payslip.agent?.nom} {payslip.agent?.firstName}</h3>
-                                        <div className="text-sm text-slate-400">Idx {payslip.details?.index} × {payslip.details?.valPoint}€</div>
+                                        <div className="text-sm text-slate-400">{payslip.agent?.jobTitle}</div>
                                     </div>
                                 </div>
                                 
                                 <div className="flex items-center gap-8">
                                     <div className="text-right hidden md:block">
                                         <div className="text-sm text-slate-400">Salaire Base</div>
-                                        <div className="font-semibold text-slate-200">{Number(payslip.baseSalary).toFixed(2)} €</div>
+                                        <div className="font-semibold text-slate-200">{Number(payslip.baseSalary).toLocaleString()} FCFA</div>
                                     </div>
                                     <div className="text-right hidden md:block">
                                         <div className="text-sm text-amber-500">Primes Variables</div>
-                                        <div className="font-semibold text-amber-400">+{Number(payslip.allowances).toFixed(2)} €</div>
+                                        <div className="font-semibold text-amber-400">+{Number(payslip.allowances).toLocaleString()} FCFA</div>
                                     </div>
                                     <div className="text-right">
-                                        <div className="text-sm text-slate-400">Total Net</div>
-                                        <div className="font-bold text-white text-xl">{(Number(payslip.baseSalary) + Number(payslip.allowances)).toFixed(2)} €</div>
+                                        <div className="text-sm text-emerald-400 font-bold uppercase tracking-widest">Net à Payer</div>
+                                        <div className="font-bold text-white text-xl">{Number(payslip.details?.netSalary || 0).toLocaleString()} FCFA</div>
                                     </div>
                                 </div>
                             </div>
@@ -179,7 +212,16 @@ export const PayrollPage = () => {
                                 <FileText size={20} className="text-purple-600" />
                                 Détail de Facturation
                             </div>
-                            <button onClick={() => setSelectedDetail(null)} className="p-2 hover:bg-slate-200 rounded-full text-slate-500"><X size={20}/></button>
+                            <div className="flex items-center gap-2">
+                                <button 
+                                    onClick={() => handleDownloadPdf(selectedDetail)} 
+                                    className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-lg flex items-center gap-2 transition-colors text-sm"
+                                >
+                                    <Download size={18}/>
+                                    Télécharger PDF
+                                </button>
+                                <button onClick={() => setSelectedDetail(null)} className="p-2 hover:bg-slate-200 rounded-full text-slate-500 transition-colors"><X size={20}/></button>
+                            </div>
                         </div>
                         <div className="p-8 overflow-y-auto space-y-6 text-slate-800">
                             <div className="flex justify-between items-start border-b border-slate-200 pb-6 mb-6">
@@ -205,43 +247,79 @@ export const PayrollPage = () => {
                                     </thead>
                                     <tbody className="divide-y divide-slate-200">
                                         <tr>
-                                            <td className="p-3 font-medium">Traitement de Base (Index)</td>
-                                            <td className="p-3">{selectedDetail.details?.index} pts</td>
-                                            <td className="p-3">{selectedDetail.details?.valPoint} €</td>
-                                            <td className="p-3 text-right">{Number(selectedDetail.baseSalary).toFixed(2)} €</td>
+                                            <td className="p-3 font-medium">Traitement de Base</td>
+                                            <td className="p-3">Contrat</td>
+                                            <td className="p-3">-</td>
+                                            <td className="p-3 text-right font-bold">{Number(selectedDetail.baseSalary).toLocaleString()} FCFA</td>
                                         </tr>
-                                        {selectedDetail.details?.gardesCount > 0 && (
+                                        {selectedDetail.details?.appliedBonuses?.map((bonus: any, idx: number) => (
+                                            <tr key={idx}>
+                                                <td className="p-3 font-medium text-amber-600">{bonus.name} {bonus.taxable ? '' : '(Non-Imposable)'}</td>
+                                                <td className="p-3">Forfait</td>
+                                                <td className="p-3">-</td>
+                                                <td className="p-3 text-right text-amber-600">+{Number(bonus.amount).toLocaleString()} FCFA</td>
+                                            </tr>
+                                        ))}
+                                        {selectedDetail.details?.metrics?.shiftBonus > 0 && (
                                             <tr>
-                                                <td className="p-3 font-medium text-amber-600">Forfaits Garde</td>
-                                                <td className="p-3">{selectedDetail.details?.gardesCount}</td>
-                                                <td className="p-3">{selectedDetail.details?.primeGarde} €</td>
-                                                <td className="p-3 text-right text-amber-600">{(selectedDetail.details?.gardesCount * selectedDetail.details?.primeGarde).toFixed(2)} €</td>
+                                                <td className="p-3 font-medium text-indigo-600">Majoration Heures de Nuit</td>
+                                                <td className="p-3">{selectedDetail.details?.metrics.nightHours} h</td>
+                                                <td className="p-3">-</td>
+                                                <td className="p-3 text-right text-indigo-600">+{Number(selectedDetail.details?.metrics.shiftBonus).toLocaleString()} FCFA</td>
                                             </tr>
                                         )}
-                                        {selectedDetail.details?.nightHours > 0 && (
-                                            <tr>
-                                                <td className="p-3 font-medium text-indigo-600">Majoration de Nuit (21h-06h)</td>
-                                                <td className="p-3">{selectedDetail.details?.nightHours} h</td>
-                                                <td className="p-3">{selectedDetail.details?.primeNuitHour} €/h</td>
-                                                <td className="p-3 text-right text-indigo-600">{(selectedDetail.details?.nightHours * selectedDetail.details?.primeNuitHour).toFixed(2)} €</td>
-                                            </tr>
-                                        )}
-                                        {selectedDetail.details?.sundayHours > 0 && (
-                                            <tr>
-                                                <td className="p-3 font-medium text-rose-600">Majoration Dimanche & Fériés</td>
-                                                <td className="p-3">{selectedDetail.details?.sundayHours} h</td>
-                                                <td className="p-3">{selectedDetail.details?.primeDimancheHour} €/h</td>
-                                                <td className="p-3 text-right text-rose-600">{(selectedDetail.details?.sundayHours * selectedDetail.details?.primeDimancheHour).toFixed(2)} €</td>
-                                            </tr>
-                                        )}
+                                        <tr className="bg-slate-200/50">
+                                            <td className="p-3 font-bold text-slate-700 uppercase" colSpan={3}>Total Brut</td>
+                                            <td className="p-3 text-right font-black">{Number(selectedDetail.details?.grossSalary || 0).toLocaleString()} FCFA</td>
+                                        </tr>
+                                        <tr>
+                                            <td className="p-3 font-medium text-rose-600">Cotisation CNPS (4.2%)</td>
+                                            <td className="p-3">Retenue légale</td>
+                                            <td className="p-3">-</td>
+                                            <td className="p-3 text-right text-rose-600">-{Number(selectedDetail.details?.taxes?.cnpsTax || 0).toLocaleString()} FCFA</td>
+                                        </tr>
+                                        <tr>
+                                            <td className="p-3 font-medium text-rose-600">Impôt sur le Revenu (IRPP)</td>
+                                            <td className="p-3">Barème Progressif</td>
+                                            <td className="p-3">-</td>
+                                            <td className="p-3 text-right text-rose-600">-{Number(selectedDetail.details?.taxes?.irppTax || 0).toLocaleString()} FCFA</td>
+                                        </tr>
+                                        <tr>
+                                            <td className="p-3 font-medium text-rose-600">Centimes Additionnels (CAC)</td>
+                                            <td className="p-3">10% IRPP</td>
+                                            <td className="p-3">-</td>
+                                            <td className="p-3 text-right text-rose-600">-{Number(selectedDetail.details?.taxes?.cacTax || 0).toLocaleString()} FCFA</td>
+                                        </tr>
+                                        <tr>
+                                            <td className="p-3 font-medium text-rose-600">Taxe Communale (TC)</td>
+                                            <td className="p-3">Forfait</td>
+                                            <td className="p-3">-</td>
+                                            <td className="p-3 text-right text-rose-600">-{Number(selectedDetail.details?.taxes?.tcTax || 0).toLocaleString()} FCFA</td>
+                                        </tr>
+                                        <tr>
+                                            <td className="p-3 font-medium text-rose-600">Crédit Foncier (CCF)</td>
+                                            <td className="p-3">1% Brut Taxable</td>
+                                            <td className="p-3">-</td>
+                                            <td className="p-3 text-right text-rose-600">-{Number(selectedDetail.details?.taxes?.ccfTax || 0).toLocaleString()} FCFA</td>
+                                        </tr>
+                                        <tr>
+                                            <td className="p-3 font-medium text-rose-600">Redevance Audiovisuelle (RAV)</td>
+                                            <td className="p-3">Barème d'état</td>
+                                            <td className="p-3">-</td>
+                                            <td className="p-3 text-right text-rose-600">-{Number(selectedDetail.details?.taxes?.ravTax || 0).toLocaleString()} FCFA</td>
+                                        </tr>
                                     </tbody>
                                 </table>
                             </div>
 
                             <div className="flex justify-end pt-6 border-t border-slate-200">
                                 <div className="text-right">
-                                    <div className="text-sm font-bold text-slate-500 uppercase tracking-widest mb-1">Net à payer estimé</div>
-                                    <div className="text-4xl font-black text-slate-900">{(Number(selectedDetail.baseSalary) + Number(selectedDetail.allowances)).toFixed(2)} €</div>
+                                    <div className="flex justify-end gap-16 mb-4 text-sm font-bold">
+                                        <div className="text-slate-400 uppercase">Total Retenues</div>
+                                        <div className="text-rose-600">-{Number(selectedDetail.details?.taxes?.totalDeductions || 0).toLocaleString()} FCFA</div>
+                                    </div>
+                                    <div className="text-sm font-bold text-slate-500 uppercase tracking-widest mb-1">Net à Payer (Virement)</div>
+                                    <div className="text-4xl font-black text-emerald-600">{Number(selectedDetail.details?.netSalary || 0).toLocaleString()} FCFA</div>
                                 </div>
                             </div>
                         </div>

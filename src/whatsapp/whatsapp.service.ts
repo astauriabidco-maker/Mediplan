@@ -12,6 +12,7 @@ import { startOfWeek, endOfWeek, parse } from 'date-fns';
 import { LeavesService } from '../planning/leaves.service';
 import { LeaveType } from '../planning/entities/leave.entity';
 import { forwardRef, Inject } from '@nestjs/common';
+import { SettingsService } from '../settings/settings.service';
 
 @Injectable()
 export class WhatsappService {
@@ -34,6 +35,7 @@ export class WhatsappService {
         private configService: ConfigService,
         @Inject(forwardRef(() => LeavesService))
         private leavesService: LeavesService,
+        private settingsService: SettingsService,
     ) {
         this.token = this.configService.get<string>('WHATSAPP_API_TOKEN') || '';
         this.phoneId = this.configService.get<string>('WHATSAPP_PHONE_ID') || '';
@@ -86,7 +88,7 @@ export class WhatsappService {
 
         // 1. Normalize number and find agent
         const normalizedFrom = from.replace(/\D/g, ''); // Keep only digits
-        const agents = await this.agentRepo.find();
+        const agents = await this.agentRepo.find({ relations: ['facility'] });
         const agent = agents.find(a => {
             const agentPhone = a.telephone.replace(/\D/g, '');
             return agentPhone === normalizedFrom || normalizedFrom.endsWith(agentPhone);
@@ -109,6 +111,11 @@ export class WhatsappService {
         });
 
         // 3. Chatbot Logic
+        if (message.type === 'location' && agent) {
+            await this.handleLocationPointage(agent, message.location.latitude, message.location.longitude);
+            return;
+        }
+
         const commandText = text.toUpperCase().trim();
         
         const prendreMatch = commandText.match(/^PRENDRE\s+(\d+)$/);
@@ -144,7 +151,49 @@ export class WhatsappService {
         }
     }
 
-    private async handlePointage(agent: Agent, type: 'IN' | 'OUT', rawText: string) {
+    private async handleLocationPointage(agent: Agent, lat: number, lng: number) {
+        if (!agent.facility || !agent.facility.latitude || !agent.facility.longitude) {
+            await this.sendMessage(agent.telephone, `❌ Pointage refusé. Votre établissement n'a pas de coordonnées GPS configurées dans le système.`);
+            return;
+        }
+
+        const radiusStr = await this.settingsService.getSetting(agent.tenantId, agent.facilityId, 'ATTENDANCE_GEOFENCE_RADIUS_METERS') || "500";
+        const maxRadius = parseFloat(radiusStr);
+
+        // Distance de Haversine
+        const R = 6371e3; // metres
+        const φ1 = agent.facility.latitude * Math.PI/180;
+        const φ2 = lat * Math.PI/180;
+        const Δφ = (lat - agent.facility.latitude) * Math.PI/180;
+        const Δλ = (lng - agent.facility.longitude) * Math.PI/180;
+
+        const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+                  Math.cos(φ1) * Math.cos(φ2) *
+                  Math.sin(Δλ/2) * Math.sin(Δλ/2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+        const distance = R * c; // en mètres
+
+        if (distance > maxRadius) {
+            await this.sendMessage(agent.telephone, `❌ Pointage refusé. Vous êtes à ${Math.round(distance)} mètres de l'hôpital. Le rayon autorisé est de ${maxRadius} mètres.`);
+            return;
+        }
+
+        // Calcul dynamique IN ou OUT
+        const startOfDay = new Date();
+        startOfDay.setHours(0, 0, 0, 0);
+        const endOfDay = new Date();
+        endOfDay.setHours(23, 59, 59, 999);
+
+        const logsToday = await this.attendanceRepo.createQueryBuilder('att')
+            .where('att.agentId = :agentId', { agentId: agent.id })
+            .andWhere('att.timestamp >= :start', { start: startOfDay })
+            .andWhere('att.timestamp <= :end', { end: endOfDay })
+            .orderBy('att.timestamp', 'ASC')
+            .getMany();
+
+        const inLog = logsToday.find(l => l.type === 'IN');
+        const type = inLog ? 'OUT' : 'IN';
+
         // Record attendance
         const attendance = this.attendanceRepo.create({
             tenantId: agent.tenantId,
@@ -152,7 +201,7 @@ export class WhatsappService {
             type: type,
             timestamp: new Date(),
             source: 'WHATSAPP',
-            locationGPS: undefined // Can be expanded if WhatsApp shares Location message type
+            locationGPS: `${lat},${lng}`
         });
 
         await this.attendanceRepo.save(attendance);
@@ -160,7 +209,26 @@ export class WhatsappService {
         const typeStr = type === 'IN' ? 'ARRIVÉE' : 'DÉPART';
         const timeStr = attendance.timestamp.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
         
-        await this.sendMessage(agent.telephone, `✅ Pointage de *${typeStr}* confirmé à ${timeStr}. Ce pointage est sécurisé et horodaté pour le service paie.`);
+        await this.sendMessage(agent.telephone, `✅ Pointage GPS de *${typeStr}* validé à ${timeStr} (${Math.round(distance)}m).`);
+    }
+
+    private async handlePointage(agent: Agent, type: 'IN' | 'OUT', rawText: string) {
+        // Fallback for manual text pointage if needed, though they should use GPS
+        const attendance = this.attendanceRepo.create({
+            tenantId: agent.tenantId,
+            agent: agent,
+            type: type,
+            timestamp: new Date(),
+            source: 'WHATSAPP',
+            locationGPS: undefined
+        });
+
+        await this.attendanceRepo.save(attendance);
+
+        const typeStr = type === 'IN' ? 'ARRIVÉE' : 'DÉPART';
+        const timeStr = attendance.timestamp.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+        
+        await this.sendMessage(agent.telephone, `✅ Pointage de *${typeStr}* confirmé à ${timeStr}. Pensez à utiliser le partage de position GPS !`);
     }
 
     private async handlePlanningCommand(agent: Agent) {

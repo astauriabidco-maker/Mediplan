@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
-import { LayoutDashboard, Calendar, Settings, Bell, User, LogOut, Award, Smartphone, HeartPulse, Wifi, ChevronRight, ChevronDown, List, Layers, Network, MessageSquare } from 'lucide-react'
+import { LayoutDashboard, Calendar, Settings, Bell, User, LogOut, Award, Smartphone, HeartPulse, Wifi, ChevronRight, ChevronDown, List, Layers, Network, MessageSquare, Clock, ShieldCheck } from 'lucide-react'
 import { useAppConfig } from '../store/useAppConfig'
 import { useAuth } from '../store/useAuth'
 import { clsx, type ClassValue } from 'clsx'
@@ -85,6 +85,8 @@ export const Layout = () => {
     const isAdminOrManager = user?.role === 'SUPER_ADMIN' || user?.role === 'ADMIN' || user?.role === 'MANAGER'
     const hasPermission = (perm: string) => user?.permissions?.includes('*') || user?.permissions?.includes(perm) || isAdminOrManager
 
+    const isAgent = user?.role === 'AGENT';
+
     return (
         <div className="flex h-screen w-full bg-slate-950 text-slate-100 overflow-hidden">
             {/* Sidebar */}
@@ -97,23 +99,30 @@ export const Layout = () => {
                 </div>
 
                 <nav className="flex-1 mt-6 space-y-1 overflow-y-auto">
-                    <SidebarItem to="/dashboard" icon={LayoutDashboard} label="Tableau de bord" themeColor={themeColor} />
+                    {!isAgent && <SidebarItem to="/dashboard" icon={LayoutDashboard} label="Tableau de bord" themeColor={themeColor} />}
+                    
                     <SidebarItem to="/planning" icon={Calendar} label="Planning" themeColor={themeColor} />
-                    <SidebarItem to="/leaves" icon={Calendar} label="Congés" themeColor={themeColor} />
+                    <SidebarItem to="/attendance" icon={Clock} label={isAgent ? "Mes Pointages" : "Assiduité"} themeColor={themeColor} />
+                    <SidebarItem to="/leaves" icon={Calendar} label={isAgent ? "Mes Congés" : "Congés"} themeColor={themeColor} />
 
-                    <SidebarGroup icon={User} label="Agents" themeColor={themeColor} activePaths={['/agents']}>
-                        <SidebarItem to="/agents" icon={List} label="Liste des Agents" themeColor={themeColor} isSubItem />
-                        <SidebarItem to="/agents/services" icon={Layers} label="Services" themeColor={themeColor} isSubItem />
-                        <SidebarItem to="/agents/hierarchy" icon={Network} label="Hiérarchie" themeColor={themeColor} isSubItem />
-                    </SidebarGroup>
+                    {!isAgent && (
+                        <SidebarGroup icon={User} label="Agents" themeColor={themeColor} activePaths={['/agents']}>
+                            <SidebarItem to="/agents" icon={List} label="Liste des Agents" themeColor={themeColor} isSubItem />
+                            <SidebarItem to="/agents/services" icon={Layers} label="Services" themeColor={themeColor} isSubItem />
+                            <SidebarItem to="/agents/hierarchy" icon={Network} label="Hiérarchie" themeColor={themeColor} isSubItem />
+                        </SidebarGroup>
+                    )}
 
-                    <SidebarItem to="/competencies" icon={Award} label="Compétences" themeColor={themeColor} />
-                    <SidebarItem to="/payment" icon={Smartphone} label="Facturation & Paies" themeColor={themeColor} />
-                    <SidebarItem to="/ged" icon={Layers} label="GED & Documents" themeColor={themeColor} />
-                    <SidebarItem to="/qvt" icon={HeartPulse} label="Santé & QVT" themeColor={themeColor} />
-                    <SidebarItem to="/sync" icon={Wifi} label="Synchronisation" themeColor={themeColor} />
-                    <SidebarItem to="/whatsapp-inbox" icon={MessageSquare} label="Messages WhatsApp" themeColor={themeColor} />
-                    {hasPermission('settings:all') && (
+                    {!isAgent && <SidebarItem to="/competencies" icon={Award} label="Compétences" themeColor={themeColor} />}
+                    {!isAgent && <SidebarItem to="/payment" icon={Smartphone} label="Facturation & Paies" themeColor={themeColor} />}
+                    
+                    <SidebarItem to="/ged" icon={Layers} label={isAgent ? "Mes Documents" : "GED & Documents"} themeColor={themeColor} />
+                    
+                    {!isAgent && <SidebarItem to="/qvt" icon={HeartPulse} label="Santé & QVT" themeColor={themeColor} />}
+                    {!isAgent && <SidebarItem to="/sync" icon={Wifi} label="Synchronisation" themeColor={themeColor} />}
+                    {!isAgent && <SidebarItem to="/whatsapp-inbox" icon={MessageSquare} label="Messages WhatsApp" themeColor={themeColor} />}
+                    
+                    {!isAgent && hasPermission('settings:all') && (
                         <SidebarItem to="/settings" icon={Settings} label="Paramètres" themeColor={themeColor} />
                     )}
                 </nav>

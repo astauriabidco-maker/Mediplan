@@ -70,26 +70,49 @@ let AutoSchedulerService = class AutoSchedulerService {
             nightEnd.setHours(7, 0, 0, 0);
             for (const service of services) {
                 const capacity = service.bedCapacity || 0;
-                const countDay = Math.max(1, Math.ceil(capacity / ratioDay));
+                const countDayNurses = Math.max(1, Math.ceil(capacity / ratioDay));
                 needs.push({
                     start: dayStart,
                     end: dayEnd,
                     postId: `[${service.name}] Infirmier Jour`,
-                    count: countDay,
+                    count: countDayNurses,
                     facilityId: service.facility?.id,
                     serviceId: service.id,
-                    serviceName: service.name
+                    serviceName: service.name,
+                    requiredSkills: ['Infirmier']
+                });
+                const countDayDoctors = Math.max(1, Math.ceil(capacity / 20));
+                needs.push({
+                    start: dayStart,
+                    end: dayEnd,
+                    postId: `[${service.name}] Médecin Garde`,
+                    count: countDayDoctors,
+                    facilityId: service.facility?.id,
+                    serviceId: service.id,
+                    serviceName: service.name,
+                    requiredSkills: ['Médecin']
                 });
                 if (service.is24x7) {
-                    const countNight = Math.max(1, Math.ceil(capacity / ratioNight));
+                    const countNightNurses = Math.max(1, Math.ceil(capacity / ratioNight));
                     needs.push({
                         start: nightStart,
                         end: nightEnd,
                         postId: `[${service.name}] Infirmier Nuit`,
-                        count: countNight,
+                        count: countNightNurses,
                         facilityId: service.facility?.id,
                         serviceId: service.id,
-                        serviceName: service.name
+                        serviceName: service.name,
+                        requiredSkills: ['Infirmier']
+                    });
+                    needs.push({
+                        start: nightStart,
+                        end: nightEnd,
+                        postId: `[${service.name}] Médecin Nuit`,
+                        count: 1,
+                        facilityId: service.facility?.id,
+                        serviceId: service.id,
+                        serviceName: service.name,
+                        requiredSkills: ['Médecin']
                     });
                 }
             }
@@ -109,8 +132,15 @@ let AutoSchedulerService = class AutoSchedulerService {
             for (const agent of agents) {
                 let matchesRole = true;
                 if (need.requiredSkills && need.requiredSkills.length > 0) {
-                    const agentSkills = agent.agentCompetencies?.map(ac => ac.competency.name) || [];
-                    matchesRole = need.requiredSkills.every(skill => agentSkills.includes(skill));
+                    const targetSkills = need.requiredSkills.map(s => s.toLowerCase());
+                    const agentSkills = agent.agentCompetencies?.map(ac => ac.competency.name.toLowerCase()) || [];
+                    const job = (agent.jobTitle || '').toLowerCase();
+                    const dept = (agent.department || '').toLowerCase();
+                    matchesRole = targetSkills.every(skill => agentSkills.some(as => as.includes(skill)) ||
+                        job.includes(skill) ||
+                        dept.includes(skill) ||
+                        (skill === 'médecin' && job.includes('docteur')) ||
+                        (skill === 'docteur' && job.includes('médecin')));
                 }
                 else if (need.postId) {
                     const target = need.postId.toLowerCase();
@@ -120,8 +150,6 @@ let AutoSchedulerService = class AutoSchedulerService {
                     if (!matchesRole && target.includes('medecin') && job.includes('docteur'))
                         matchesRole = true;
                     if (!matchesRole && target.includes('infirmier') && job.includes('infirmier'))
-                        matchesRole = true;
-                    if (!matchesRole && target.includes('garde') && job.includes('garde'))
                         matchesRole = true;
                 }
                 if (!matchesRole)
@@ -152,7 +180,7 @@ let AutoSchedulerService = class AutoSchedulerService {
                     start: need.start,
                     end: need.end,
                     postId: need.postId,
-                    status: 'AUTO_GENERATED',
+                    status: 'PENDING',
                     agent: candidate.agent,
                     tenantId: tenantId || 'DEFAULT_TENANT'
                 });

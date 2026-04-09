@@ -1,16 +1,17 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useAuth } from '../store/useAuth';
 import { Calendar, dateFnsLocalizer, Views } from 'react-big-calendar';
 import withDragAndDrop from 'react-big-calendar/lib/addons/dragAndDrop';
 import 'react-big-calendar/lib/addons/dragAndDrop/styles.css';
 import { format, parse, startOfWeek, getDay } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { useAppConfig } from '../store/useAppConfig';
-import { fetchShifts, generatePlanning, updateShift, Shift, fetchLeaves } from '../api/planning.api';
+import { fetchShifts, generatePlanning, publishPlanning, updateShift, Shift, fetchLeaves } from '../api/planning.api';
 import { ShiftDetailsModal } from '../components/ShiftDetailsModal';
 import { LeaveCreationModal } from '../components/LeaveCreationModal';
 import { ReplacementModal } from '../components/ReplacementModal';
 import { GhtValidationModal } from '../components/GhtValidationModal';
-import { Filter, ChevronRight, ChevronLeft, Zap, Loader2, CheckCircle, AlertOctagon, UserPlus, ShieldAlert, Wifi, WifiOff, MapPin } from 'lucide-react';
+import { Filter, ChevronRight, ChevronLeft, Zap, Loader2, CheckCircle, AlertOctagon, UserPlus, ShieldAlert, Wifi, WifiOff, MapPin, Send } from 'lucide-react';
 import { facilityApi, Facility as FacilityEntity } from '../api/facility.api';
 import { fetchHospitalServices, HospitalService } from '../api/hospital-services.api';
 import { fetchPlanningProblems, fetchShiftProposals, applyShiftProposal, rejectShiftProposal, PlanningIssue, ShiftProposal } from '../api/planning-ai.api';
@@ -55,9 +56,13 @@ export const PlanningPage = () => {
     const [showVigie, setShowVigie] = useState(true);
     const { socket, isConnected } = useSocket();
 
-    // New states for generation
     const [isGenerating, setIsGenerating] = useState(false);
+    const [isPublishing, setIsPublishing] = useState(false);
     const [showToast, setShowToast] = useState(false);
+    const [toastMessage, setToastMessage] = useState('');
+
+    const { user } = useAuth();
+    const isAgent = user?.role === 'AGENT';
 
     const loadEvents = async () => {
         const start = new Date(date);
@@ -152,6 +157,7 @@ export const PlanningPage = () => {
 
             // Success
             await loadEvents(); // Refresh data
+            setToastMessage("Brouillon généré selon la capacité litière et les impératifs H24 !");
             setShowToast(true);
             setTimeout(() => setShowToast(false), 3000);
         } catch (err) {
@@ -159,6 +165,37 @@ export const PlanningPage = () => {
             alert("Erreur lors de la génération");
         } finally {
             setIsGenerating(false);
+        }
+    };
+
+    const handlePublish = async () => {
+        setIsPublishing(true);
+        try {
+            const start = startOfWeek(date, { weekStartsOn: 1 });
+            const end = new Date(start);
+            end.setDate(start.getDate() + 6);
+            start.setHours(0, 0, 0, 0);
+            end.setHours(23, 59, 59, 999);
+
+            await publishPlanning(start, end);
+            await loadEvents();
+            setToastMessage("Le planning a été officiellement publié !");
+            setShowToast(true);
+            setTimeout(() => setShowToast(false), 3000);
+        } catch (err) {
+            console.error(err);
+            alert("Erreur lors de la publication");
+        } finally {
+            setIsPublishing(false);
+        }
+    };
+
+    const handleApplyProposal = async (proposalId: number) => {
+        try {
+            await applyShiftProposal(proposalId);
+            await loadEvents();
+        } catch (error) {
+            console.error(error);
         }
     };
 
@@ -175,7 +212,15 @@ export const PlanningPage = () => {
         }
 
         const status = event.resource.status;
-        let className = 'border-none text-white font-medium ';
+        let className = 'border-none font-medium ';
+
+        // If Agent view, dim others
+        if (isAgent && event.resource.agent?.id !== user?.id) {
+            className += 'bg-slate-800 text-slate-500 opacity-50';
+            return { className };
+        }
+
+        className += 'text-white ';
 
         if (status === 'VALIDATED' || status === 'PUBLISHED') {
             className += themeColor === 'emerald-600' ? 'bg-emerald-500' : 'bg-blue-500';
@@ -209,6 +254,7 @@ export const PlanningPage = () => {
 
     const onEventResize = useCallback(
         async (data: any) => {
+            if (isAgent) return; // Prevent agents from resizing
             const { event, start, end } = data;
             if (event.type === 'LEAVE') return; // Cannot edit leaves this way
 
@@ -235,6 +281,7 @@ export const PlanningPage = () => {
 
     const onEventDrop = useCallback(
         async (data: any) => {
+            if (isAgent) return; // Prevent agents from dragging
             const { event, start, end } = data;
             if (event.type === 'LEAVE') return; // Cannot drop leaves this way
 
@@ -266,7 +313,7 @@ export const PlanningPage = () => {
                 <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 animate-in fade-in slide-in-from-top-4 duration-300">
                     <div className="bg-emerald-500 text-white px-6 py-3 rounded-full shadow-2xl flex items-center gap-2 font-medium">
                         <CheckCircle size={20} />
-                        Planning généré avec succès selon la capacité litière et les impératifs H24 !
+                        {toastMessage}
                     </div>
                 </div>
             )}
@@ -276,8 +323,8 @@ export const PlanningPage = () => {
                 <div className="flex-1 flex flex-col p-8 overflow-hidden bg-slate-950">
                     <div className="flex items-center justify-between mb-8">
                         <div className="flex items-center gap-4">
-                            <h1 className="text-3xl font-bold text-white">Planning Hospitalier</h1>
-                            {isConnected ? (
+                            <h1 className="text-3xl font-bold text-white">{isAgent ? "Mon Planning Personnel" : "Planning Hospitalier"}</h1>
+                            {!isAgent && isConnected ? (
                                 <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-medium">
                                     <Wifi size={14} />
                                     <span>Temps-Réel Actif</span>
@@ -371,15 +418,16 @@ export const PlanningPage = () => {
                     </div>
 
                     <div className="space-y-6">
-                        <div className="space-y-3">
-                            <label className="text-xs font-bold text-slate-500 uppercase tracking-widest">Actions</label>
-                            <button
-                                onClick={() => setIsLeaveModalOpen(true)}
-                                className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl font-bold transition-all duration-300 border border-rose-500/30 text-rose-500 hover:bg-rose-500/10"
-                            >
-                                <AlertOctagon size={18} />
-                                Signaler Absence
-                            </button>
+                        {!isAgent && (
+                            <div className="space-y-3">
+                                <label className="text-xs font-bold text-slate-500 uppercase tracking-widest">Actions</label>
+                                <button
+                                    onClick={() => setIsLeaveModalOpen(true)}
+                                    className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl font-bold transition-all duration-300 border border-rose-500/30 text-rose-500 hover:bg-rose-500/10"
+                                >
+                                    <AlertOctagon size={18} />
+                                    Signaler Absence
+                                </button>
 
                             <button
                                 onClick={() => setIsGhtModalOpen(true)}
@@ -388,38 +436,64 @@ export const PlanningPage = () => {
                                 <ShieldAlert size={18} />
                                 Validations GHT
                             </button>
+                            </div>
+                        )}
 
-                            <button
-                                onClick={handleGenerate}
-                                disabled={isGenerating}
-                                className={cn(
-                                    "w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl font-bold transition-all duration-300",
-                                    "bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white shadow-lg hover:shadow-indigo-500/25",
-                                    isGenerating && "opacity-75 cursor-wait"
+                        {!isAgent && (
+                            <div className="space-y-3">
+                                <label className="text-xs font-bold text-slate-500 uppercase tracking-widest">IA & Planification</label>
+                                <button
+                                    onClick={handleGenerate}
+                                    disabled={isGenerating}
+                                    className={cn(
+                                        "w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl font-bold transition-all duration-300",
+                                        "bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white shadow-lg hover:shadow-indigo-500/25",
+                                        isGenerating && "opacity-75 cursor-wait"
+                                    )}
+                                >
+                                    {isGenerating ? (
+                                        <Loader2 size={18} className="animate-spin" />
+                                    ) : (
+                                        <Zap size={18} className="text-yellow-300 fill-yellow-300" />
+                                    )}
+                                    {isGenerating ? 'Calcul...' : 'Générer Planning'}
+                                </button>
+                                
+                                {events.some(e => e.resource?.status === 'PENDING') && (
+                                    <button
+                                        onClick={handlePublish}
+                                        disabled={isPublishing}
+                                        className={cn(
+                                            "w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl font-bold transition-all duration-300",
+                                            "bg-emerald-500 hover:bg-emerald-400 text-white shadow-lg",
+                                            isPublishing && "opacity-75 cursor-wait"
+                                        )}
+                                    >
+                                        {isPublishing ? (
+                                            <Loader2 size={18} className="animate-spin" />
+                                        ) : (
+                                            <Send size={18} />
+                                        )}
+                                        {isPublishing ? 'Publication...' : 'Publier Brouillon'}
+                                    </button>
                                 )}
-                            >
-                                {isGenerating ? (
-                                    <Loader2 size={18} className="animate-spin" />
-                                ) : (
-                                    <Zap size={18} className="text-yellow-300 fill-yellow-300" />
-                                )}
-                                {isGenerating ? 'Calcul...' : 'Générer Auto'}
-                            </button>
-                        </div>
-
-                        <div className="space-y-3">
-                            <label className="text-xs font-bold text-slate-500 uppercase tracking-widest">Établissement (GHT)</label>
-                            <select 
-                                value={selectedFacility}
-                                onChange={(e) => setSelectedFacility(e.target.value)}
-                                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-slate-200 outline-none focus:border-purple-500 transition-colors font-bold text-purple-400"
-                            >
-                                <option value="ALL">🌐 Tout le GHT (Macro)</option>
-                                {facilities.map(f => (
-                                    <option key={f.id} value={f.id}>🏥 {f.name}</option>
-                                ))}
-                            </select>
-                        </div>
+                            </div>
+                        )}
+                        {!isAgent && (
+                            <div className="space-y-3">
+                                <label className="text-xs font-bold text-slate-500 uppercase tracking-widest">Établissement (GHT)</label>
+                                <select 
+                                    value={selectedFacility}
+                                    onChange={(e) => setSelectedFacility(e.target.value)}
+                                    className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-slate-200 outline-none focus:border-purple-500 transition-colors font-bold text-purple-400"
+                                >
+                                    <option value="ALL">🌐 Tout le GHT (Macro)</option>
+                                    {facilities.map(f => (
+                                        <option key={f.id} value={f.id}>🏥 {f.name}</option>
+                                    ))}
+                                </select>
+                            </div>
+                        )}
 
                         <div className="space-y-3">
                             <label className="text-xs font-bold text-slate-500 uppercase tracking-widest">Service</label>
@@ -438,19 +512,21 @@ export const PlanningPage = () => {
                             </select>
                         </div>
 
-                        <div className="space-y-3">
-                            <label className="text-xs font-bold text-slate-500 uppercase tracking-widest">Compétence</label>
-                            <div className="space-y-2">
-                                {['Infirmier', 'Médecin', 'Aide-soignant'].map(role => (
-                                    <label key={role} className="flex items-center gap-3 group cursor-pointer">
-                                        <div className="w-5 h-5 border-2 border-slate-700 rounded flex items-center justify-center group-hover:border-slate-500 transition-colors">
-                                            <div className="w-2.5 h-2.5 bg-blue-500 rounded-sm opacity-0 group-hover:opacity-20 transition-opacity" />
-                                        </div>
-                                        <span className="text-slate-400 group-hover:text-slate-200 transition-colors">{role}</span>
-                                    </label>
-                                ))}
+                        {!isAgent && (
+                            <div className="space-y-3">
+                                <label className="text-xs font-bold text-slate-500 uppercase tracking-widest">Compétence</label>
+                                <div className="space-y-2">
+                                    {['Infirmier', 'Médecin', 'Aide-soignant'].map(role => (
+                                        <label key={role} className="flex items-center gap-3 group cursor-pointer">
+                                            <div className="w-5 h-5 border-2 border-slate-700 rounded flex items-center justify-center group-hover:border-slate-500 transition-colors">
+                                                <div className="w-2.5 h-2.5 bg-blue-500 rounded-sm opacity-0 group-hover:opacity-20 transition-opacity" />
+                                            </div>
+                                            <span className="text-slate-400 group-hover:text-slate-200 transition-colors">{role}</span>
+                                        </label>
+                                    ))}
+                                </div>
                             </div>
-                        </div>
+                        )}
 
                         <div className="mt-8 p-4 bg-slate-800/50 rounded-xl border border-slate-700/50">
                             <h3 className="text-sm font-semibold text-slate-200 mb-2">Légende</h3>
@@ -481,6 +557,7 @@ export const PlanningPage = () => {
                 </aside>
 
                 {/* Vigie IA Side Panel */}
+                {!isAgent && (
                 <aside className={cn(
                     "bg-slate-900 border-l border-slate-800 flex flex-col transition-all duration-500 overflow-hidden relative",
                     showVigie ? "w-96" : "w-0"
@@ -594,8 +671,9 @@ export const PlanningPage = () => {
                         {/* Floating button if closed - but integrated as toggle */}
                     </div>
                 </aside>
+                )}
 
-                {!showVigie && (
+                {!showVigie && !isAgent && (
                     <button 
                         onClick={() => setShowVigie(true)}
                         className="fixed bottom-8 right-8 w-14 h-14 bg-purple-600 rounded-full shadow-2xl flex items-center justify-center text-white hover:scale-110 transition-all active:scale-90 z-40 group"

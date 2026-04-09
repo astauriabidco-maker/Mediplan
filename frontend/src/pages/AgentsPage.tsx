@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { fetchAgents, createAgent, updateAgent, Agent } from '../api/agents.api';
 import { fetchHospitalServices, HospitalService } from '../api/hospital-services.api';
+import { generateEmploymentContract } from '../api/documents.api';
 import { useAuth } from '../store/useAuth';
 import {
     Users, Plus, Search, Trash2, Edit2, X, Loader2, Award, Network,
@@ -71,6 +72,16 @@ export const AgentsPage = () => {
             queryClient.invalidateQueries({ queryKey: ['agents'] });
             setIsModalOpen(false);
         },
+    });
+
+    const generateContractMutation = useMutation({
+        mutationFn: generateEmploymentContract,
+        onSuccess: () => {
+            alert('✅ Contrat RH généré avec succès dans la GED (Brouillon) !');
+        },
+        onError: () => {
+             alert('❌ Erreur lors de la génération du contrat.');
+        }
     });
 
     // Advanced filtering logic
@@ -458,6 +469,19 @@ export const AgentsPage = () => {
                                         <td className="p-4 text-right">
                                             <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                                                 <button
+                                                    title="Générer le contrat"
+                                                    disabled={generateContractMutation.isPending}
+                                                    onClick={() => {
+                                                        if(window.confirm('Voulez-vous générer le Contrat de Travail pour cet agent dans la GED ?')) {
+                                                            generateContractMutation.mutate(agent.id);
+                                                        }
+                                                    }}
+                                                    className="p-2 hover:bg-emerald-500/10 rounded-lg text-slate-400 hover:text-emerald-500 transition-colors disabled:opacity-50"
+                                                >
+                                                    <FileText size={16} />
+                                                </button>
+                                                <button
+                                                    title="Modifier le dossier"
                                                     onClick={() => {
                                                         setEditingAgent(agent);
                                                         setIsModalOpen(true);
@@ -466,7 +490,7 @@ export const AgentsPage = () => {
                                                 >
                                                     <Edit2 size={16} />
                                                 </button>
-                                                <button className="p-2 hover:bg-red-500/10 rounded-lg text-slate-400 hover:text-red-500 transition-colors">
+                                                <button title="Supprimer" className="p-2 hover:bg-red-500/10 rounded-lg text-slate-400 hover:text-red-500 transition-colors">
                                                     <Trash2 size={16} />
                                                 </button>
                                             </div>
