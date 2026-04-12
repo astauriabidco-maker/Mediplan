@@ -15,6 +15,7 @@ import { EventsGateway } from '../events/events.gateway';
 import { DocumentsService } from '../documents/documents.service';
 import { SettingsService } from '../settings/settings.service';
 import { HealthRecord, HealthRecordStatus } from '../agents/entities/health-record.entity';
+import { AgentCompetency } from '../competencies/entities/agent-competency.entity';
 
 @Injectable()
 export class PlanningService {
@@ -23,6 +24,8 @@ export class PlanningService {
         private shiftRepository: Repository<Shift>,
         @InjectRepository(HealthRecord)
         private healthRecordRepository: Repository<HealthRecord>,
+        @InjectRepository(AgentCompetency)
+        private agentCompRepository: Repository<AgentCompetency>,
         @InjectRepository(Leave)
         private leaveRepository: Repository<Leave>,
         @InjectRepository(Agent)
@@ -43,6 +46,7 @@ export class PlanningService {
     async validateShift(tenantId: string, agentId: number, start: Date, end: Date): Promise<boolean> {
         // 0. Get Dynamic Constraints
         const constraints = await this.getConstraintsForAgent(tenantId, agentId);
+        const minRestHours = constraints.restHoursAfterGuard || 11; // Strict 11h default if not specified
 
         // 0.5. Check Health Records (Medical Obligations)
         const expiredMandatoryRecords = await this.healthRecordRepository.find({
@@ -55,8 +59,24 @@ export class PlanningService {
         });
 
         if (expiredMandatoryRecords.length > 0) {
-            // If any mandatory record is EXPIRED, block planning physically
-            // The frontend or AutoScheduler will receive `false` and treat it as invalid
+            return false;
+        }
+
+        // 0.6. Check Legal/Security Certifications (GPEC Mandatory Competencies)
+        const expiredMandatoryCompetencies = await this.agentCompRepository.find({
+            where: {
+                agent: { id: agentId },
+                competency: { isMandatoryToWork: true },
+            },
+            relations: ['competency']
+        });
+
+        const now = new Date();
+        const hasExpired = expiredMandatoryCompetencies.some(
+            (ac: AgentCompetency) => ac.expirationDate && ac.expirationDate.getTime() <= now.getTime()
+        );
+
+        if (hasExpired) {
             return false;
         }
 
@@ -77,11 +97,10 @@ export class PlanningService {
 
         // 3. Dynamic Rules Check: Max Guard Duration
         if (shiftDuration > constraints.maxGuardDuration) {
-            return false; // Exceeds specific max duration for this agent's grade/service
+            return false; 
         }
 
-        // 4. Dynamic Rules Check: Rest Hours After Guard
-        // Check previous shift
+        // 4. PREVIOUS SHIFT REST CHECK
         const previousShift = await this.shiftRepository.createQueryBuilder('shift')
             .where('shift.agentId = :agentId', { agentId })
             .andWhere('shift.end <= :start', { start })
@@ -89,14 +108,27 @@ export class PlanningService {
             .getOne();
 
         if (previousShift) {
-            const restTime = (start.getTime() - previousShift.end.getTime()) / (1000 * 60 * 60);
-            if (restTime < constraints.restHoursAfterGuard) {
-                return false; // Not enough rest after previous shift
+            const restTimeBefore = (start.getTime() - previousShift.end.getTime()) / (1000 * 60 * 60);
+            if (restTimeBefore < minRestHours) {
+                return false; 
+            }
+        }
+
+        // 4.1 NEXT SHIFT REST CHECK (Important for insertions/updates)
+        const nextShift = await this.shiftRepository.createQueryBuilder('shift')
+            .where('shift.agentId = :agentId', { agentId })
+            .andWhere('shift.start >= :end', { end })
+            .orderBy('shift.start', 'ASC')
+            .getOne();
+
+        if (nextShift) {
+            const restTimeAfter = (nextShift.start.getTime() - end.getTime()) / (1000 * 60 * 60);
+            if (restTimeAfter < minRestHours) {
+                return false; 
             }
         }
 
         // 5. Cross-Facility Overlap Check
-        // Ensure the agent doesn't have an overlapping shift on ANY facility in this tenant
         const overlappingShift = await this.shiftRepository.createQueryBuilder('shift')
             .where('shift.tenantId = :tenantId', { tenantId })
             .andWhere('shift.agentId = :agentId', { agentId })

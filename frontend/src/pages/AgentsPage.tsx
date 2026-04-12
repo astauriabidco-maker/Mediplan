@@ -188,10 +188,22 @@ export const AgentsPage = () => {
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div className="space-y-1">
                     <h1 className="text-3xl font-bold text-white tracking-tight">Gestion des Agents</h1>
-                    <p className="text-slate-400">
-                        {stats.total} agent{stats.total > 1 ? 's' : ''} au total
-                        {stats.filtered !== stats.total && ` • ${stats.filtered} affiché${stats.filtered > 1 ? 's' : ''}`}
-                    </p>
+                    <div className="flex items-center gap-3">
+                        <p className="text-slate-400">
+                            {stats.total} agent{stats.total > 1 ? 's' : ''} au total
+                        </p>
+                        <div className="h-4 w-[1px] bg-slate-800" />
+                        <select 
+                            value={filters.service}
+                            onChange={(e) => setFilters({ ...filters, service: e.target.value })}
+                            className="bg-slate-900 border border-slate-800 text-blue-400 text-[10px] font-bold px-3 py-1 rounded-full outline-none hover:border-blue-500/50 transition-all uppercase"
+                        >
+                            <option value="">Tous les Services</option>
+                            {services.map((s: any) => (
+                                <option key={s.id} value={s.id}>{s.name}</option>
+                            ))}
+                        </select>
+                    </div>
                 </div>
                 <button
                     onClick={() => setIsModalOpen(true)}

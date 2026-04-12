@@ -1,8 +1,8 @@
 import { Agent } from '../../agents/entities/agent.entity';
 import { Facility } from '../../agents/entities/facility.entity';
 export declare enum ShiftType {
-    WORK = "WORK",
-    GARDE = "GARDE",
+    NORMAL = "NORMAL",
+    GARDE_SUR_PLACE = "GARDE_SUR_PLACE",
     ASTREINTE = "ASTREINTE"
 }
 export declare class Shift {

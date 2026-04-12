@@ -108,6 +108,9 @@ export class HospitalService {
     })
     riskLevel: RiskLevel;
 
+    @Column({ type: 'jsonb', nullable: true })
+    coverageRules: any; // e.g. { minStaffing: [{ jobTitle: 'Infirmier', min: 2 }] }
+
     @CreateDateColumn()
     createdAt: Date;
 

@@ -17,10 +17,17 @@ export const DashboardPage = () => {
     const { impersonatedTenantId } = useAuth();
     const tenantId = impersonatedTenantId || 'HGD-DOUALA';
     const [dynamicWidgets, setDynamicWidgets] = useState<any[]>([]);
+    const [hospitalServiceId, setHospitalServiceId] = useState<number | undefined>(undefined);
+
+    // Fetch services for the filter
+    const { data: allServices } = useQuery({
+        queryKey: ['hospital-services', tenantId],
+        queryFn: async () => (await api.get('/api/hospital-services', { params: { tenantId } })).data
+    });
 
     const { data: kpis, isLoading: isLoadingKpis } = useQuery({
-        queryKey: ['analytics', 'kpis', tenantId],
-        queryFn: async () => (await api.get('/api/analytics/kpis', { params: { tenantId } })).data
+        queryKey: ['analytics', 'kpis', tenantId, hospitalServiceId],
+        queryFn: async () => (await api.get('/api/analytics/kpis', { params: { tenantId, hospitalServiceId } })).data
     });
 
     const { data: trends, isLoading: isLoadingTrends } = useQuery({
@@ -62,7 +69,20 @@ export const DashboardPage = () => {
                     <h1 className="text-4xl font-black text-white flex items-center gap-3 tracking-tighter">
                         <Activity className="text-blue-500" size={36} /> Dashboard <span className="text-slate-500 font-light">MediPlan</span>
                     </h1>
-                    <p className="text-slate-400 mt-1 font-medium italic">Intelligence opérationnelle & Pilotage RH — {tenantId}</p>
+                    <div className="flex items-center gap-4 mt-2">
+                        <p className="text-slate-400 font-medium italic">Intelligence opérationnelle & Pilotage RH — {tenantId}</p>
+                        <div className="h-4 w-[1px] bg-slate-800 mx-2" />
+                        <select 
+                            value={hospitalServiceId || ''} 
+                            onChange={(e) => setHospitalServiceId(e.target.value ? Number(e.target.value) : undefined)}
+                            className="bg-slate-900 border border-slate-800 text-blue-400 text-xs font-bold px-3 py-1.5 rounded-full hover:border-blue-500/50 transition-all outline-none"
+                        >
+                            <option value="">Vue Globale (Hôpital)</option>
+                            {allServices?.map((s: any) => (
+                                <option key={s.id} value={s.id}>{s.name.toUpperCase()}</option>
+                            ))}
+                        </select>
+                    </div>
                 </div>
                 <InsightEngine tenantId={tenantId} onSelectWidget={addWidget} />
             </div>
@@ -114,16 +134,27 @@ export const DashboardPage = () => {
                                             <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
                                             <XAxis dataKey="name" stroke="#94a3b8" tick={{fill: '#94a3b8'}} axisLine={false} tickLine={false} />
                                             <YAxis stroke="#94a3b8" tick={{fill: '#94a3b8'}} axisLine={false} tickLine={false} />
-                                            <RechartsTooltip contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', borderRadius: '0.75rem' }} />
-                                            <Bar dataKey="value" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                                            <RechartsTooltip contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', borderRadius: '0.75rem', border: 'none' }} />
+                                            <Bar dataKey="value" fill="#3b82f6" radius={[4, 4, 0, 0]}>
+                                                {widget.data.map((_: any, index: number) => (
+                                                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                                                ))}
+                                            </Bar>
                                         </BarChart>
+                                    ) : widget.chartType === 'RADAR' ? (
+                                        <RadarChart cx="50%" cy="50%" outerRadius="80%" data={widget.data}>
+                                            <PolarGrid stroke="#334155" />
+                                            <PolarAngleAxis dataKey="name" tick={{ fill: '#94a3b8', fontSize: 10 }} />
+                                            <Radar name="Valeur" dataKey="value" stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.6} />
+                                            <RechartsTooltip contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', borderRadius: '0.75rem', border: 'none' }} />
+                                        </RadarChart>
                                     ) : (
                                         <LineChart data={widget.data}>
                                             <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
                                             <XAxis dataKey="name" stroke="#94a3b8" tick={{fill: '#94a3b8'}} axisLine={false} tickLine={false} />
                                             <YAxis stroke="#94a3b8" tick={{fill: '#94a3b8'}} axisLine={false} tickLine={false} />
-                                            <RechartsTooltip contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', borderRadius: '0.75rem' }} />
-                                            <Line type="monotone" dataKey="value" stroke="#3b82f6" strokeWidth={3} dot={{ r: 4, fill: '#3b82f6' }} />
+                                            <RechartsTooltip contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', borderRadius: '0.75rem', border: 'none' }} />
+                                            <Line type="monotone" dataKey="value" stroke="#3b82f6" strokeWidth={3} dot={{ r: 4, fill: '#3b82f6', strokeWidth: 2 }} />
                                         </LineChart>
                                     )}
                                 </ResponsiveContainer>

@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, MoreThanOrEqual } from 'typeorm';
-import { Shift } from '../planning/entities/shift.entity';
+import { Shift, ShiftType } from '../planning/entities/shift.entity';
 import { Agent } from '../agents/entities/agent.entity';
 import { AgentAlert, AlertSeverity, AlertType } from '../agents/entities/agent-alert.entity';
 import { SettingsService } from '../settings/settings.service';
@@ -101,19 +101,47 @@ export class QvtWorkerService {
             }
         }
 
-        // 3. Check Max Night Shifts per month
-        if (maxNightShifts && nightShiftsCount > maxNightShifts) {
+        // 3. FATIGUE SCORE CALCULATION (0-100)
+        let fatigueScore = 0;
+        
+        // a) Base: Total Hours (Max 40 points)
+        fatigueScore += Math.min(40, (totalHoursWeek / weeklyHoursLimit) * 30);
+        if (totalHoursWeek > weeklyHoursLimit) fatigueScore += 10;
+
+        // b) Night Shifts (Max 30 points)
+        fatigueScore += Math.min(30, nightShiftsCount * 6); // 1 night = 6 points
+
+        // c) High Pressure Shifts (GARDE_SUR_PLACE)
+        const guards = shifts30Days.filter(s => s.type === ShiftType.GARDE_SUR_PLACE && s.start >= sevenDaysAgo);
+        fatigueScore += guards.length * 8; // Each guard in last 7 days adds 8 points
+
+        // d) Rest Violations (Direct penalty)
+        if (restViolationDetected) fatigueScore += 25;
+
+        fatigueScore = Math.min(100, fatigueScore);
+
+        if (fatigueScore > 75) {
             await this.createOrUpdateAlert(
                 agent.id,
                 agent.tenantId,
                 AlertType.QVT_FATIGUE,
                 AlertSeverity.HIGH,
-                `Surmenage: ${nightShiftsCount} gardes de nuit effectuées ce mois-ci (limite ${maxNightShifts})`
+                `🔥 RISQUE DE BURN-OUT ÉLEVÉ (Score: ${Math.round(fatigueScore)}/100)`,
+                { fatigueScore, nightShiftsCount, totalHoursWeek }
+            );
+        } else if (fatigueScore > 50) {
+            await this.createOrUpdateAlert(
+                agent.id,
+                agent.tenantId,
+                AlertType.QVT_FATIGUE,
+                AlertSeverity.MEDIUM,
+                `⚠️ Vigilance Fatigue (Score: ${Math.round(fatigueScore)}/100)`,
+                { fatigueScore, totalHoursWeek }
             );
         }
     }
 
-    private async createOrUpdateAlert(agentId: number, tenantId: string, type: AlertType, severity: AlertSeverity, message: string) {
+    private async createOrUpdateAlert(agentId: number, tenantId: string, type: AlertType, severity: AlertSeverity, message: string, metadata: any = {}) {
         // Prevent duplicate spam: Check if an identical unacknowledged alert already exists
         const existingAlert = await this.alertRepository.findOne({
             where: { agentId, type, message, isAcknowledged: false }
@@ -125,7 +153,8 @@ export class QvtWorkerService {
                 tenantId,
                 type,
                 severity,
-                message
+                message,
+                metadata
             });
             await this.alertRepository.save(alert);
             this.logger.warn(`New QVT Alert created for Agent ID ${agentId} - [${severity}] ${message}`);

@@ -15,8 +15,8 @@ const agent_entity_1 = require("../../agents/entities/agent.entity");
 const facility_entity_1 = require("../../agents/entities/facility.entity");
 var ShiftType;
 (function (ShiftType) {
-    ShiftType["WORK"] = "WORK";
-    ShiftType["GARDE"] = "GARDE";
+    ShiftType["NORMAL"] = "NORMAL";
+    ShiftType["GARDE_SUR_PLACE"] = "GARDE_SUR_PLACE";
     ShiftType["ASTREINTE"] = "ASTREINTE";
 })(ShiftType || (exports.ShiftType = ShiftType = {}));
 let Shift = class Shift {
@@ -53,7 +53,7 @@ __decorate([
     (0, typeorm_1.Column)({
         type: 'enum',
         enum: ShiftType,
-        default: ShiftType.WORK,
+        default: ShiftType.NORMAL,
     }),
     __metadata("design:type", String)
 ], Shift.prototype, "type", void 0);

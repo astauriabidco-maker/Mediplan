@@ -28,16 +28,28 @@ import { DocumentsModule } from '../documents/documents.module';
 import { SettingsModule } from '../settings/settings.module';
 import { HospitalService } from '../agents/entities/hospital-service.entity';
 import { HealthRecord } from '../agents/entities/health-record.entity';
+import { AgentCompetency } from '../competencies/entities/agent-competency.entity';
+import { ComplianceWorkerService } from './compliance-worker.service';
+import { AgentAlert } from '../agents/entities/agent-alert.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Shift, Agent, Leave, LeaveBalance, WorkPolicy, ShiftApplication, ShiftProposal, Attendance, HospitalService, HealthRecord]),
+    TypeOrmModule.forFeature([
+      Shift, Agent, Leave, LeaveBalance, WorkPolicy, 
+      ShiftApplication, ShiftProposal, Attendance, 
+      HospitalService, HealthRecord, AgentCompetency, 
+      AgentAlert
+    ]),
     AuditModule,
     forwardRef(() => WhatsappModule),
     DocumentsModule,
     SettingsModule
   ],
-  providers: [PlanningService, OptimizationService, AutoSchedulerService, LeavesService, WorkPoliciesService, UnderstaffingService],
+  providers: [
+    PlanningService, OptimizationService, AutoSchedulerService, 
+    LeavesService, WorkPoliciesService, UnderstaffingService,
+    ComplianceWorkerService
+  ],
   exports: [PlanningService, OptimizationService, AutoSchedulerService, LeavesService, WorkPoliciesService],
   controllers: [
     PlanningController,

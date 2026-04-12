@@ -3,8 +3,8 @@ import { Agent } from '../../agents/entities/agent.entity';
 import { Facility } from '../../agents/entities/facility.entity';
 
 export enum ShiftType {
-    WORK = 'WORK',
-    GARDE = 'GARDE',
+    NORMAL = 'NORMAL',
+    GARDE_SUR_PLACE = 'GARDE_SUR_PLACE',
     ASTREINTE = 'ASTREINTE',
 }
 
@@ -25,7 +25,7 @@ export class Shift {
     @Column({
         type: 'enum',
         enum: ShiftType,
-        default: ShiftType.WORK,
+        default: ShiftType.NORMAL,
     })
     type: ShiftType;
 

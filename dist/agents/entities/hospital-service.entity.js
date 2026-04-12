@@ -49,6 +49,7 @@ let HospitalService = class HospitalService {
     bedCapacity;
     contactNumber;
     riskLevel;
+    coverageRules;
     createdAt;
     updatedAt;
 };
@@ -171,6 +172,10 @@ __decorate([
     }),
     __metadata("design:type", String)
 ], HospitalService.prototype, "riskLevel", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ type: 'jsonb', nullable: true }),
+    __metadata("design:type", Object)
+], HospitalService.prototype, "coverageRules", void 0);
 __decorate([
     (0, typeorm_1.CreateDateColumn)(),
     __metadata("design:type", Date)

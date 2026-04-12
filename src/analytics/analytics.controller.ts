@@ -8,8 +8,8 @@ export class AnalyticsController {
     constructor(private readonly analyticsService: AnalyticsService) {}
 
     @Get('kpis')
-    async getKpis(@Query('tenantId') tenantId: string) {
-        return this.analyticsService.getOverviewKpis(tenantId || 'HGD-DOUALA');
+    async getKpis(@Query('tenantId') tenantId: string, @Query('hospitalServiceId') hospitalServiceId?: number) {
+        return this.analyticsService.getOverviewKpis(tenantId || 'HGD-DOUALA', hospitalServiceId);
     }
 
     @Get('trends')

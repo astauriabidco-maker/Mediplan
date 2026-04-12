@@ -114,7 +114,7 @@ export class PayrollService {
             }
 
             // Calcul Effectif
-            if (shift.type === 'GARDE') gardesCount++;
+            if (shift.type === ShiftType.GARDE_SUR_PLACE) gardesCount++;
             const actualStart = inPunch.timestamp > shift.start ? inPunch.timestamp : shift.start; // S'il est en retard, on prend le chrono réel
             const actualEnd = outPunch.timestamp > shift.end ? shift.end : outPunch.timestamp; // On ne paie pas les débordements non justifiés par un "EXTRA"
 

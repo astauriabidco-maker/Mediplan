@@ -35,6 +35,7 @@ export declare class HospitalService {
     bedCapacity: number;
     contactNumber: string;
     riskLevel: RiskLevel;
+    coverageRules: any;
     createdAt: Date;
     updatedAt: Date;
 }

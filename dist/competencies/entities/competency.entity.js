@@ -9,13 +9,22 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.Competency = void 0;
+exports.Competency = exports.CompetencyType = void 0;
 const typeorm_1 = require("typeorm");
 const agent_competency_entity_1 = require("./agent-competency.entity");
+var CompetencyType;
+(function (CompetencyType) {
+    CompetencyType["SKILL"] = "SKILL";
+    CompetencyType["LEGAL_CERTIFICATION"] = "LEGAL_CERTIFICATION";
+    CompetencyType["CACES"] = "CACES";
+    CompetencyType["OTHER"] = "OTHER";
+})(CompetencyType || (exports.CompetencyType = CompetencyType = {}));
 let Competency = class Competency {
     id;
     name;
     category;
+    type;
+    isMandatoryToWork;
     agentCompetencies;
 };
 exports.Competency = Competency;
@@ -31,6 +40,18 @@ __decorate([
     (0, typeorm_1.Column)(),
     __metadata("design:type", String)
 ], Competency.prototype, "category", void 0);
+__decorate([
+    (0, typeorm_1.Column)({
+        type: 'enum',
+        enum: CompetencyType,
+        default: CompetencyType.SKILL
+    }),
+    __metadata("design:type", String)
+], Competency.prototype, "type", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ default: false }),
+    __metadata("design:type", Boolean)
+], Competency.prototype, "isMandatoryToWork", void 0);
 __decorate([
     (0, typeorm_1.OneToMany)(() => agent_competency_entity_1.AgentCompetency, (agentCompetency) => agentCompetency.competency),
     __metadata("design:type", Array)

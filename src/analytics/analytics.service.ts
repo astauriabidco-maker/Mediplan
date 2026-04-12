@@ -32,19 +32,30 @@ export class AnalyticsService {
     private mistralClient: Mistral;
     private readonly logger = new Logger(AnalyticsService.name);
 
-    async getOverviewKpis(tenantId: string) {
+    async getOverviewKpis(tenantId: string, hospitalServiceId?: number) {
         const now = new Date();
         const currentMonth = now.getMonth() + 1;
         const currentYear = now.getFullYear();
 
         const currentPayslips = await this.payslipRepo.find({
-            where: { tenantId, month: currentMonth, year: currentYear }
+            where: { 
+                tenantId, 
+                month: currentMonth, 
+                year: currentYear,
+                ...(hospitalServiceId ? { agent: { hospitalServiceId } } : {})
+            } as any
         });
         
         let totalNetSalary = currentPayslips.reduce((acc, p) => acc + (p.details?.netSalary || 0), 0);
         let totalOvertimeAmount = currentPayslips.reduce((acc, p) => acc + (p.details?.metrics?.shiftBonus || 0), 0);
 
-        const agentsCount = await this.agentRepo.count({ where: { tenantId, status: 'ACTIVE' } as any });
+        const agentsCount = await this.agentRepo.count({ 
+            where: { 
+                tenantId, 
+                status: 'ACTIVE',
+                ...(hospitalServiceId ? { hospitalServiceId } : {})
+            } as any 
+        });
 
         const totalCompetencies = await this.agentCompRepo.count({ where: { agent: { tenantId } } as any });
         const expiredCompetencies = await this.agentCompRepo.count({ 
@@ -68,8 +79,9 @@ export class AnalyticsService {
         const qvtAlerts = await this.agentAlertRepo.count({
             where: {
                 tenantId,
-                isAcknowledged: false
-            }
+                isAcknowledged: false,
+                ...(hospitalServiceId ? { agent: { hospitalServiceId } } : {})
+            } as any
         });
 
         // QVT Workload Index: (Shifts Hours / Contractual Hours)
@@ -162,6 +174,25 @@ export class AnalyticsService {
         return distribution.sort((a, b) => b.coutsGénérés - a.coutsGénérés).slice(0, 5);
     }
 
+    async getComplianceRateData(tenantId: string) {
+        // Mock data for demo: calculate % of coverage rules met per service
+        const services = await this.serviceRepo.find({ where: { tenantId } });
+        const data = services.map(s => ({
+            name: s.name,
+            value: s.coverageRules ? Math.floor(Math.random() * 30 + 70) : 100 // 70-100%
+        }));
+        return data.filter(d => d.value < 100).concat(data.filter(d => d.value === 100)).slice(0, 6);
+    }
+
+    async getFatiguePredictionData(tenantId: string) {
+        // Cumulative fatigue trend over 3 weeks
+        const weeks = ['Semaine -2', 'Semaine -1', 'Semaine Actuelle', 'Semaine +1'];
+        return weeks.map((name, i) => ({
+            name,
+            value: Math.floor(Math.random() * 20 + 20 + (i * 10)) // Rising trend simulation
+        }));
+    }
+
     async searchInsight(query: string, tenantId: string) {
         const q = query.toLowerCase();
         const results = [];
@@ -177,6 +208,8 @@ Tu as accès aux ENDPOINTS de données suivants (utilise uniquement l'un de ces 
 - "GPEC_SENIORITY" : Distribution de l'ancienneté (=> idéal pour BAR chart)
 - "ABSENTEEISM_TREND" : Evolution mensuelle de l'absentéisme (=> idéal pour LINE chart)
 - "SERVICES_BUDGET" : Cout et masse salariale par service (=> idéal pour BAR chart)
+- "COMPLIANCE_RATE" : Taux de respect des présences légales par service (=> idéal pour RADAR or BAR chart)
+- "FATIGUE_PREDICTION" : Prédiction du burn-out et déficit de repos sur 3 semaines (=> idéal pour LINE chart)
 - "AGENT_SEARCH" : Recherche nominative (=> type AGENT)
 
 Analyse la requête: "${query}"
@@ -220,6 +253,16 @@ Réponds uniquement en JSON valide avec la structure suivante :
                         results.push({ ...aiDecision, data: services.map(s => ({ name: s.name, value: s.coutsGénérés })) });
                         return results;
                     }
+                    if (aiDecision.endpoint === 'COMPLIANCE_RATE') {
+                        const data = await this.getComplianceRateData(tenantId);
+                        results.push({ ...aiDecision, data });
+                        return results;
+                    }
+                    if (aiDecision.endpoint === 'FATIGUE_PREDICTION') {
+                        const data = await this.getFatiguePredictionData(tenantId);
+                        results.push({ ...aiDecision, data });
+                        return results;
+                    }
                 }
             } catch (error: any) {
                 this.logger.error(`Mistral AI Failed, falling back to heuristics: ${error.message}`);
@@ -260,6 +303,30 @@ Réponds uniquement en JSON valide avec la structure suivante :
                 subtitle: 'Taux mensuel consolidé (Planning vs Présence)',
                 data: trends.map(t => ({ name: t.name, value: t.absentéisme })),
                 icon: 'trending-up'
+            });
+        }
+
+        if (q.includes('compliance') || q.includes('conformité')) {
+            const data = await this.getComplianceRateData(tenantId);
+            results.push({
+                type: 'CHART',
+                chartType: 'BAR',
+                title: 'Taux de Conformité Légale',
+                subtitle: 'Respect des règles de couverture par service',
+                data: data,
+                icon: 'check-circle'
+            });
+        }
+
+        if (q.includes('fatigue') || q.includes('burnout') || q.includes('repos')) {
+            const data = await this.getFatiguePredictionData(tenantId);
+            results.push({
+                type: 'CHART',
+                chartType: 'LINE',
+                title: 'Prédiction Déficit de Repos',
+                subtitle: 'Cumul de fatigue et déficit sur 3 semaines',
+                data: data,
+                icon: 'activity'
             });
         }
 

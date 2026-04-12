@@ -29,9 +29,11 @@ const events_gateway_1 = require("../events/events.gateway");
 const documents_service_1 = require("../documents/documents.service");
 const settings_service_1 = require("../settings/settings.service");
 const health_record_entity_1 = require("../agents/entities/health-record.entity");
+const agent_competency_entity_1 = require("../competencies/entities/agent-competency.entity");
 let PlanningService = class PlanningService {
     shiftRepository;
     healthRecordRepository;
+    agentCompRepository;
     leaveRepository;
     agentRepository;
     workPolicyRepository;
@@ -42,9 +44,10 @@ let PlanningService = class PlanningService {
     eventsGateway;
     documentsService;
     settingsService;
-    constructor(shiftRepository, healthRecordRepository, leaveRepository, agentRepository, workPolicyRepository, shiftApplicationRepository, localeRules, auditService, whatsappService, eventsGateway, documentsService, settingsService) {
+    constructor(shiftRepository, healthRecordRepository, agentCompRepository, leaveRepository, agentRepository, workPolicyRepository, shiftApplicationRepository, localeRules, auditService, whatsappService, eventsGateway, documentsService, settingsService) {
         this.shiftRepository = shiftRepository;
         this.healthRecordRepository = healthRecordRepository;
+        this.agentCompRepository = agentCompRepository;
         this.leaveRepository = leaveRepository;
         this.agentRepository = agentRepository;
         this.workPolicyRepository = workPolicyRepository;
@@ -58,6 +61,7 @@ let PlanningService = class PlanningService {
     }
     async validateShift(tenantId, agentId, start, end) {
         const constraints = await this.getConstraintsForAgent(tenantId, agentId);
+        const minRestHours = constraints.restHoursAfterGuard || 11;
         const expiredMandatoryRecords = await this.healthRecordRepository.find({
             where: {
                 agentId,
@@ -67,6 +71,18 @@ let PlanningService = class PlanningService {
             }
         });
         if (expiredMandatoryRecords.length > 0) {
+            return false;
+        }
+        const expiredMandatoryCompetencies = await this.agentCompRepository.find({
+            where: {
+                agent: { id: agentId },
+                competency: { isMandatoryToWork: true },
+            },
+            relations: ['competency']
+        });
+        const now = new Date();
+        const hasExpired = expiredMandatoryCompetencies.some((ac) => ac.expirationDate && ac.expirationDate.getTime() <= now.getTime());
+        if (hasExpired) {
             return false;
         }
         const isAvailable = await this.checkLeaveAvailability(tenantId, agentId, start, end);
@@ -88,8 +104,19 @@ let PlanningService = class PlanningService {
             .orderBy('shift.end', 'DESC')
             .getOne();
         if (previousShift) {
-            const restTime = (start.getTime() - previousShift.end.getTime()) / (1000 * 60 * 60);
-            if (restTime < constraints.restHoursAfterGuard) {
+            const restTimeBefore = (start.getTime() - previousShift.end.getTime()) / (1000 * 60 * 60);
+            if (restTimeBefore < minRestHours) {
+                return false;
+            }
+        }
+        const nextShift = await this.shiftRepository.createQueryBuilder('shift')
+            .where('shift.agentId = :agentId', { agentId })
+            .andWhere('shift.start >= :end', { end })
+            .orderBy('shift.start', 'ASC')
+            .getOne();
+        if (nextShift) {
+            const restTimeAfter = (nextShift.start.getTime() - end.getTime()) / (1000 * 60 * 60);
+            if (restTimeAfter < minRestHours) {
                 return false;
             }
         }
@@ -374,12 +401,14 @@ exports.PlanningService = PlanningService = __decorate([
     (0, common_1.Injectable)(),
     __param(0, (0, typeorm_1.InjectRepository)(shift_entity_1.Shift)),
     __param(1, (0, typeorm_1.InjectRepository)(health_record_entity_1.HealthRecord)),
-    __param(2, (0, typeorm_1.InjectRepository)(leave_entity_1.Leave)),
-    __param(3, (0, typeorm_1.InjectRepository)(agent_entity_1.Agent)),
-    __param(4, (0, typeorm_1.InjectRepository)(work_policy_entity_1.WorkPolicy)),
-    __param(5, (0, typeorm_1.InjectRepository)(shift_application_entity_1.ShiftApplication)),
-    __param(6, (0, common_1.Inject)(locale_module_1.LOCALE_RULES)),
+    __param(2, (0, typeorm_1.InjectRepository)(agent_competency_entity_1.AgentCompetency)),
+    __param(3, (0, typeorm_1.InjectRepository)(leave_entity_1.Leave)),
+    __param(4, (0, typeorm_1.InjectRepository)(agent_entity_1.Agent)),
+    __param(5, (0, typeorm_1.InjectRepository)(work_policy_entity_1.WorkPolicy)),
+    __param(6, (0, typeorm_1.InjectRepository)(shift_application_entity_1.ShiftApplication)),
+    __param(7, (0, common_1.Inject)(locale_module_1.LOCALE_RULES)),
     __metadata("design:paramtypes", [typeorm_2.Repository,
+        typeorm_2.Repository,
         typeorm_2.Repository,
         typeorm_2.Repository,
         typeorm_2.Repository,

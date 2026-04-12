@@ -57,28 +57,38 @@ export class GpecWorkerService {
             });
 
             if (!existingAlert && ac.agent.telephone) {
-                // Formatting Date
+                const isMandatory = ac.competency.isMandatoryToWork;
                 const expireStr = ac.expirationDate.toLocaleDateString('fr-FR');
-                const message = `🏥 Bonjour ${ac.agent.firstName},
+                
+                let message: string;
+                if (isMandatory) {
+                    message = `🚨 *ALERTE COMPLIANCE LÉGALE* 🚨
+                    
+Bonjour ${ac.agent.firstName},
+Attention : Votre habilitation critique *${ac.competency.name}* expire le ${expireStr}.
+
+S'agissant d'une habilitation *obligatoire*, vous serez automatiquement **interdit(e) de garde** dès cette date si elle n'est pas renouvelée.
+Veuillez régulariser votre situation auprès des RH dès aujourd'hui.`;
+                } else {
+                    message = `🏥 Bonjour ${ac.agent.firstName},
                 
 ⚠️ *RAPPEL GPEC*
 Votre habilitation *${ac.competency.name}* arrivera à expiration le ${expireStr} (dans moins de 30 jours). 
 
-Merci de transmettre votre nouvelle attestation au service des Ressources Humaines dès que possible pour éviter toute restriction sur vos prochaines gardes.
-(Vous pouvez aussi prendre l'attestation en photo et l'envoyer directement ici en réponse).`;
+Merci de transmettre votre nouvelle attestation au service des Ressources Humaines dès que possible pour éviter toute restriction sur vos prochaines gardes.`;
+                }
 
                 try {
                     await this.whatsappService.sendMessage(ac.agent.telephone, message);
-                    this.logger.log(`J-30 Alert sent to ${ac.agent.telephone} for competency ${ac.competency.name}`);
+                    this.logger.log(`${isMandatory ? 'Compliance' : 'GPEC'} Alert sent to ${ac.agent.telephone} for competency ${ac.competency.name}`);
                     
-                    // Trace the alert so we don't spam tomorrow
                     const alert = this.alertRepository.create({
                         agentId: ac.agent.id,
                         tenantId: ac.agent.tenantId,
-                        type: AlertType.GPEC,
-                        severity: AlertSeverity.MEDIUM,
+                        type: isMandatory ? AlertType.COMPLIANCE : AlertType.GPEC,
+                        severity: isMandatory ? AlertSeverity.HIGH : AlertSeverity.MEDIUM,
                         message: alertTitle,
-                        metadata: { competencyId: ac.competency.id }
+                        metadata: { competencyId: ac.competency.id, isMandatory }
                     });
                     await this.alertRepository.save(alert);
                 } catch (e) {
@@ -109,14 +119,21 @@ Merci de transmettre votre nouvelle attestation au service des Ressources Humain
             });
 
             if (!existingAlert && ac.agent.telephone) {
-                const message = `🚨 *ALERTE BLOQUANTE GPEC* 🚨
+                const isMandatory = ac.competency.isMandatoryToWork;
+                const message = isMandatory 
+                    ? `💀 *BLOQUAGE LÉGAL OPÉRATIONNEL* 💀
+                    
+Bonjour ${ac.agent.firstName},
+Votre habilitation obligatoire *${ac.competency.name}* a expiré (${ac.expirationDate.toLocaleDateString('fr-FR')}).
+
+Votre accès au planning est désormais **BLOQUÉ TOTALEMENT** pour des raisons réglementaires.
+Veuillez contacter les RH immédiatement.`
+                    : `🚨 *ALERTE BLOQUANTE GPEC* 🚨
 
 Bonjour ${ac.agent.firstName},
 Votre habilitation *${ac.competency.name}* est officiellement expirée depuis le ${ac.expirationDate.toLocaleDateString('fr-FR')}. 
 
-Conformément à la réglementation, *vous n'êtes plus autorisé(e)* à effectuer des gardes nécessitant cette compétence.
-
-Veuillez transmettre *urgemment* l'attestation de recyclage à ce numéro ou vous rapprocher des RH.`;
+Conformément à la réglementation, *vous n'êtes plus autorisé(e)* à effectuer des gardes nécessitant cette compétence.`;
 
                 try {
                     await this.whatsappService.sendMessage(ac.agent.telephone, message);
@@ -125,10 +142,10 @@ Veuillez transmettre *urgemment* l'attestation de recyclage à ce numéro ou vou
                     const alert = this.alertRepository.create({
                         agentId: ac.agent.id,
                         tenantId: ac.agent.tenantId,
-                        type: AlertType.GPEC,
+                        type: isMandatory ? AlertType.COMPLIANCE : AlertType.GPEC,
                         severity: AlertSeverity.HIGH,
                         message: alertTitle,
-                        metadata: { competencyId: ac.competency.id, isExpired: true }
+                        metadata: { competencyId: ac.competency.id, isExpired: true, isMandatory }
                     });
                     await this.alertRepository.save(alert);
                 } catch (e) {

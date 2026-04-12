@@ -5,6 +5,9 @@ import { HospitalServicesService } from './src/agents/hospital-services.service'
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { Agent, UserRole } from './src/agents/entities/agent.entity';
 import { HospitalService } from './src/agents/entities/hospital-service.entity';
+import { Competency, CompetencyType } from './src/competencies/entities/competency.entity';
+import { AgentCompetency } from './src/competencies/entities/agent-competency.entity';
+import { Shift, ShiftType } from './src/planning/entities/shift.entity';
 import { Repository } from 'typeorm';
 
 import { DataSource } from 'typeorm';
@@ -17,13 +20,16 @@ async function bootstrap() {
 
     const agentRepo = app.get<Repository<Agent>>(getRepositoryToken(Agent));
     const serviceRepo = app.get<Repository<HospitalService>>(getRepositoryToken(HospitalService));
+    const compRepo = app.get<Repository<Competency>>(getRepositoryToken(Competency));
+    const agentCompRepo = app.get<Repository<AgentCompetency>>(getRepositoryToken(AgentCompetency));
+    const shiftRepo = app.get<Repository<Shift>>(getRepositoryToken(Shift));
 
     const tenantId = 'HGD-DOUALA';
 
     // Clear existing data
     console.log('🗑️  Clearing existing data...');
     try {
-        await dataSource.query('TRUNCATE TABLE agent, hospital_service, leave, shift, contract, agent_competency RESTART IDENTITY CASCADE');
+        await dataSource.query('TRUNCATE TABLE agent, hospital_service, leave, shift, contract, agent_competency, competency RESTART IDENTITY CASCADE');
     } catch (error) {
         console.warn('⚠️  Could not truncate tables (might be first run):', error.message);
     }
@@ -113,6 +119,16 @@ async function bootstrap() {
         maxAgents: 15,
     });
 
+    const pharmacie = await serviceRepo.save({
+        name: 'Pharmacie Hospitalière',
+        code: 'PHARMA',
+        description: 'Gestion des médicaments et dispositifs médicaux',
+        level: 1,
+        tenantId,
+        minAgents: 5,
+        maxAgents: 10,
+    });
+
     // Sub-services
     const chirurgieViscerale = await serviceRepo.save({
         name: 'Chirurgie Viscérale',
@@ -148,6 +164,23 @@ async function bootstrap() {
     });
 
     console.log(`✅ Created ${await serviceRepo.count({ where: { tenantId } })} services`);
+
+    // --- SETUP COMPLIANCE RULES (Phase 2) ---
+    console.log('\n📜 Setting up Coverage Rules (Compliance Engine)...');
+
+    // Rule for Pharmacy: Minimum 1 agent with 'Délégation Stupéfiants' (Competency ID certPharmacie)
+    // We'll update it later once certPharmacie is created or we use its name (but engine uses ID in checkRuleSatisfied for now)
+    
+    // Rule for Urgences: 1 Médecin Urgentiste + 2 Infirmières
+    // We'll update Urgences with its rules
+    await serviceRepo.update(urgences.id, {
+        coverageRules: {
+            minStaffing: [
+                { name: 'Effectif Médical Minimum', jobTitle: 'Médecin Urgentiste', minCount: 1 },
+                { name: 'Effectif Paramédical Minimum', jobTitle: 'Infirmière', minCount: 2 }
+            ]
+        }
+    });
 
     // Create agents
     console.log('\n👥 Creating Agents...\n');
@@ -254,6 +287,118 @@ async function bootstrap() {
             password: '$2b$10$dNYDjlPp7KksILDRWu1Z0u54QcsdTdxxVqk8u27gVl0zmbwkD2d5m',
         });
     }
+
+    // Add a Pharmacist
+    const pharmacien = await agentRepo.save({
+        nom: 'KAMGA',
+        firstName: 'Thérèse',
+        email: 't.kamga@hgd-douala.cm',
+        matricule: 'HGD-PHA-001',
+        telephone: '+237 699 999 888',
+        gender: 'F',
+        jobTitle: 'Pharmacien Gérant',
+        contractType: 'CDI',
+        hiringDate: '2020-01-01',
+        hospitalServiceId: pharmacie.id,
+        tenantId,
+        password: '$2b$10$dNYDjlPp7KksILDRWu1Z0u54QcsdTdxxVqk8u27gVl0zmbwkD2d5m',
+    });
+
+    // Create Competencies
+    console.log('\n🏅 Creating Competencies & Mandatory Certifications...');
+    
+    const certPharmacie = await compRepo.save({
+        name: 'Délégation Stupéfiants & Gérance',
+        category: 'Légal',
+        type: CompetencyType.LEGAL_CERTIFICATION,
+        isMandatoryToWork: true
+    });
+
+    const certElec = await compRepo.save({
+        name: 'Habilitation Électrique H0B0',
+        category: 'Sécurité',
+        type: CompetencyType.LEGAL_CERTIFICATION,
+        isMandatoryToWork: true
+    });
+
+    const skillUrg = await compRepo.save({
+        name: 'Soins d\'Urgence Avancés',
+        category: 'Médical',
+        type: CompetencyType.SKILL,
+        isMandatoryToWork: false
+    });
+
+    // Assign to some agents
+    const agentsHgd = await agentRepo.find({ where: { tenantId } });
+    
+    // Assign Legal to NKOTTO (Directeur) just for testing
+    const now = new Date();
+    const expiredDate = new Date();
+    expiredDate.setDate(now.getDate() - 5); // Expired 5 days ago
+
+    const validDate = new Date();
+    validDate.setDate(now.getDate() + 45); // Valid 45 more days
+
+    await agentCompRepo.save({
+        agent: directeur,
+        competency: certElec,
+        level: 4,
+        expirationDate: expiredDate // EXPIRED -> should block planning
+    });
+
+    // Assign Valid Skill
+    await agentCompRepo.save({
+        agent: chefUrgences,
+        competency: skillUrg,
+        level: 4,
+        expirationDate: validDate
+    });
+
+    // Assign Pharmacie mandatory to pharmacien
+    await agentCompRepo.save({
+        agent: pharmacien,
+        competency: certPharmacie,
+        level: 4,
+        expirationDate: validDate
+    });
+
+    // Update Pharmacy rule with the correct Competency ID
+    await serviceRepo.update(pharmacie.id, {
+        coverageRules: {
+            minStaffing: [
+                { name: 'Autorisation Gérance', competencyId: certPharmacie.id, competencyName: certPharmacie.name, minCount: 1 }
+            ]
+        }
+    });
+
+    // --- CREATE EXTREME SHIFTS (Phase 3: Burn-out Test) ---
+    console.log('\n😴 Creating extreme shifts for fatigue testing...');
+    
+    // Pour NKOLO FOMO Marie-Claire (Infirmière)
+    const targetAgent = agentsHgd.find(a => a.nom === 'NKOLO FOMO');
+    if (targetAgent) {
+        // Créer 4 gardes de nuit de 12h dans la semaine passée
+        for (let i = 1; i <= 4; i++) {
+            const startStr = new Date();
+            startStr.setDate(now.getDate() - i);
+            startStr.setHours(20, 0, 0, 0); // 20:00
+
+            const endStr = new Date(startStr);
+            endStr.setHours(startStr.getHours() + 12); // till 08:00
+
+            await shiftRepo.save({
+                tenantId,
+                agent: targetAgent,
+                start: startStr,
+                end: endStr,
+                type: ShiftType.GARDE_SUR_PLACE,
+                postId: `URG-NIGHT-${i}`,
+                status: 'PUBLISHED'
+            });
+        }
+    }
+
+    console.log('✅ Mandatory certifications and Coverage Rules seeded.');
 
     const totalServices = await serviceRepo.count({ where: { tenantId } });
     const totalAgents = await agentRepo.count({ where: { tenantId } });

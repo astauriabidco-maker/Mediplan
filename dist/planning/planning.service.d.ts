@@ -11,9 +11,11 @@ import { EventsGateway } from '../events/events.gateway';
 import { DocumentsService } from '../documents/documents.service';
 import { SettingsService } from '../settings/settings.service';
 import { HealthRecord } from '../agents/entities/health-record.entity';
+import { AgentCompetency } from '../competencies/entities/agent-competency.entity';
 export declare class PlanningService {
     private shiftRepository;
     private healthRecordRepository;
+    private agentCompRepository;
     private leaveRepository;
     private agentRepository;
     private workPolicyRepository;
@@ -24,7 +26,7 @@ export declare class PlanningService {
     private eventsGateway;
     private documentsService;
     private settingsService;
-    constructor(shiftRepository: Repository<Shift>, healthRecordRepository: Repository<HealthRecord>, leaveRepository: Repository<Leave>, agentRepository: Repository<Agent>, workPolicyRepository: Repository<WorkPolicy>, shiftApplicationRepository: Repository<ShiftApplication>, localeRules: ILocaleRules, auditService: AuditService, whatsappService: WhatsappService, eventsGateway: EventsGateway, documentsService: DocumentsService, settingsService: SettingsService);
+    constructor(shiftRepository: Repository<Shift>, healthRecordRepository: Repository<HealthRecord>, agentCompRepository: Repository<AgentCompetency>, leaveRepository: Repository<Leave>, agentRepository: Repository<Agent>, workPolicyRepository: Repository<WorkPolicy>, shiftApplicationRepository: Repository<ShiftApplication>, localeRules: ILocaleRules, auditService: AuditService, whatsappService: WhatsappService, eventsGateway: EventsGateway, documentsService: DocumentsService, settingsService: SettingsService);
     validateShift(tenantId: string, agentId: number, start: Date, end: Date): Promise<boolean>;
     private getConstraintsForAgent;
     checkAvailability(tenantId: string, agentId: number, date: Date): Promise<boolean>;
