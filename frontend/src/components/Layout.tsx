@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
-import { LayoutDashboard, Calendar, Settings, Bell, User, LogOut, Award, Smartphone, HeartPulse, Wifi, ChevronRight, ChevronDown, List, Layers, Network, MessageSquare, Clock, ShieldCheck } from 'lucide-react'
+import { LayoutDashboard, Calendar, Settings, Bell, User, LogOut, Award, Smartphone, HeartPulse, Wifi, ChevronRight, ChevronDown, List, Layers, Network, MessageSquare, Clock, ShieldCheck, ClipboardCheck, AlertTriangle } from 'lucide-react'
 import { useAppConfig } from '../store/useAppConfig'
 import { useAuth } from '../store/useAuth'
 import { clsx, type ClassValue } from 'clsx'
@@ -15,7 +15,7 @@ function cn(...inputs: ClassValue[]) {
 const SidebarItem = ({ to, icon: Icon, label, themeColor, isSubItem = false }: { to: string, icon: any, label: string, themeColor: string, isSubItem?: boolean }) => (
     <NavLink
         to={to}
-        end={to === "/agents"}
+        end={to === "/agents" || to === "/manager"}
         className={({ isActive }) => cn(
             "flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all duration-200 group mx-2",
             isActive
@@ -100,8 +100,11 @@ export const Layout = () => {
 
                 <nav className="flex-1 mt-6 space-y-1 overflow-y-auto">
                     {!isAgent && <SidebarItem to="/dashboard" icon={LayoutDashboard} label="Tableau de bord" themeColor={themeColor} />}
+                    {!isAgent && hasPermission('planning:read') && <SidebarItem to="/manager/cockpit" icon={ClipboardCheck} label="Cockpit manager" themeColor={themeColor} />}
+                    {!isAgent && hasPermission('planning:read') && <SidebarItem to="/manager/worklist" icon={AlertTriangle} label="Corrections" themeColor={themeColor} />}
                     
                     <SidebarItem to="/planning" icon={Calendar} label="Planning" themeColor={themeColor} />
+                    {!isAgent && hasPermission('planning:read') && <SidebarItem to="/planning/prepublication" icon={ShieldCheck} label="Pré-publication" themeColor={themeColor} />}
                     <SidebarItem to="/attendance" icon={Clock} label={isAgent ? "Mes Pointages" : "Assiduité"} themeColor={themeColor} />
                     <SidebarItem to="/leaves" icon={Calendar} label={isAgent ? "Mes Congés" : "Congés"} themeColor={themeColor} />
 

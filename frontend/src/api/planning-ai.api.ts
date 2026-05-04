@@ -6,6 +6,7 @@ export interface PlanningIssue {
     serviceName?: string;
     agentId?: number;
     shiftId?: number;
+    alertId?: number;
     severity: 'HIGH' | 'CRITICAL';
     message: string;
 }

@@ -1,47 +1,33 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { lazy, Suspense, useState, useEffect, useCallback } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { useAuth } from '../store/useAuth';
-import { Calendar, dateFnsLocalizer, Views } from 'react-big-calendar';
-import withDragAndDrop from 'react-big-calendar/lib/addons/dragAndDrop';
-import 'react-big-calendar/lib/addons/dragAndDrop/styles.css';
-import { format, parse, startOfWeek, getDay } from 'date-fns';
+import { format, startOfWeek } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { useAppConfig } from '../store/useAppConfig';
-import { fetchShifts, generatePlanning, publishPlanning, updateShift, Shift, fetchLeaves, getAvailableSwaps, requestSwap, applyForSwap } from '../api/planning.api';
-import { ShiftDetailsModal } from '../components/ShiftDetailsModal';
-import { LeaveCreationModal } from '../components/LeaveCreationModal';
-import { ReplacementModal } from '../components/ReplacementModal';
-import { GhtValidationModal } from '../components/GhtValidationModal';
-import { Filter, ChevronRight, ChevronLeft, Zap, Loader2, CheckCircle, AlertOctagon, UserPlus, ShieldAlert, Wifi, WifiOff, MapPin, Send, Briefcase } from 'lucide-react';
-import { facilityApi, Facility as FacilityEntity } from '../api/facility.api';
-import { fetchHospitalServices, HospitalService } from '../api/hospital-services.api';
-import { fetchPlanningProblems, fetchShiftProposals, applyShiftProposal, rejectShiftProposal, PlanningIssue, ShiftProposal } from '../api/planning-ai.api';
-import { clsx, type ClassValue } from 'clsx';
-import { twMerge } from 'tailwind-merge';
+import { fetchShifts, generatePlanning, publishPlanning, updateShift, fetchLeaves, getAvailableSwaps, requestSwap, applyForSwap } from '../api/planning.api';
+import { Filter, ChevronRight, Zap, Loader2, CheckCircle, AlertOctagon, ShieldAlert, Wifi, WifiOff, Send, Briefcase } from 'lucide-react';
+import { facilityApi, type Facility as FacilityEntity } from '../api/facility.api';
+import { fetchHospitalServices, type HospitalService } from '../api/hospital-services.api';
+import { fetchPlanningProblems, fetchShiftProposals, applyShiftProposal, type PlanningIssue, type ShiftProposal } from '../api/planning-ai.api';
 import { useSocket } from '../hooks/useSocket';
+import { cn } from '../utils/cn';
 
-function cn(...inputs: ClassValue[]) {
-    return twMerge(clsx(inputs));
-}
+const PlanningCalendar = lazy(() => import('../components/planning/PlanningCalendar').then((module) => ({ default: module.PlanningCalendar })));
+const ShiftDetailsModal = lazy(() => import('../components/ShiftDetailsModal').then((module) => ({ default: module.ShiftDetailsModal })));
+const ManagerGuidedActions = lazy(() => import('../components/ManagerGuidedActions').then((module) => ({ default: module.ManagerGuidedActions })));
+const LeaveCreationModal = lazy(() => import('../components/LeaveCreationModal').then((module) => ({ default: module.LeaveCreationModal })));
+const ReplacementModal = lazy(() => import('../components/ReplacementModal').then((module) => ({ default: module.ReplacementModal })));
+const GhtValidationModal = lazy(() => import('../components/GhtValidationModal').then((module) => ({ default: module.GhtValidationModal })));
 
-const locales = {
-    'fr': fr,
-};
-
-const localizer = dateFnsLocalizer({
-    format,
-    parse,
-    startOfWeek,
-    getDay,
-    locales,
-});
-
-const DnDCalendar = withDragAndDrop(Calendar);
+const CALENDAR_VIEWS = {
+    MONTH: 'month',
+    WEEK: 'week',
+} as const;
 
 export const PlanningPage = () => {
     const { themeColor } = useAppConfig();
     const [events, setEvents] = useState<any[]>([]);
-    const [view, setView] = useState<any>(Views.WEEK);
+    const [view, setView] = useState<any>(CALENDAR_VIEWS.WEEK);
     const [date, setDate] = useState(new Date());
     const [selectedShift, setSelectedShift] = useState<any | null>(null);
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -367,19 +353,19 @@ export const PlanningPage = () => {
 
                         <div className="flex items-center gap-4 bg-slate-900 p-1 rounded-lg border border-slate-800">
                             <button
-                                onClick={() => setView(Views.MONTH)}
+                                onClick={() => setView(CALENDAR_VIEWS.MONTH)}
                                 className={cn(
                                     "px-4 py-2 rounded-md text-sm transition-all",
-                                    view === Views.MONTH ? "bg-slate-800 text-white shadow-lg" : "text-slate-400 hover:text-slate-200"
+                                    view === CALENDAR_VIEWS.MONTH ? "bg-slate-800 text-white shadow-lg" : "text-slate-400 hover:text-slate-200"
                                 )}
                             >
                                 Mois
                             </button>
                             <button
-                                onClick={() => setView(Views.WEEK)}
+                                onClick={() => setView(CALENDAR_VIEWS.WEEK)}
                                 className={cn(
                                     "px-4 py-2 rounded-md text-sm transition-all",
-                                    view === Views.WEEK ? "bg-slate-800 text-white shadow-lg" : "text-slate-400 hover:text-slate-200"
+                                    view === CALENDAR_VIEWS.WEEK ? "bg-slate-800 text-white shadow-lg" : "text-slate-400 hover:text-slate-200"
                                 )}
                             >
                                 Semaine
@@ -424,53 +410,19 @@ export const PlanningPage = () => {
                     )}
 
                     <div className="flex-1 bg-slate-900/50 rounded-2xl border border-slate-800/50 p-6 backdrop-blur-sm shadow-2xl relative overflow-hidden">
-                        <DnDCalendar
-                            localizer={localizer}
-                            events={events}
-                            startAccessor={(event: any) => event.start}
-                            endAccessor={(event: any) => event.end}
-                            style={{ height: '100%' }}
-                            culture="fr"
-                            view={view}
-                            onView={(v) => setView(v)}
-                            date={date}
-                            onNavigate={(d) => setDate(d)}
-                            eventPropGetter={eventPropGetter}
-                            onSelectEvent={handleSelectEvent}
-                            onEventDrop={onEventDrop}
-                            onEventResize={onEventResize}
-                            resizable
-                            messages={{
-                                next: 'Suivant',
-                                previous: 'Précédent',
-                                today: 'Aujourd\'hui',
-                                month: 'Mois',
-                                week: 'Semaine',
-                                day: 'Jour',
-                            }}
-                            components={{
-                                toolbar: (props) => (
-                                    <div className="flex items-center justify-between mb-4">
-                                        <div className="flex items-center gap-2">
-                                            <button onClick={() => props.onNavigate('PREV')} className="p-2 hover:bg-slate-800 rounded-full transition-colors text-slate-400">
-                                                <ChevronLeft size={20} />
-                                            </button>
-                                            <button onClick={() => props.onNavigate('TODAY')} className="px-4 py-2 hover:bg-slate-800 rounded-lg transition-colors text-sm font-medium text-slate-200">
-                                                Aujourd'hui
-                                            </button>
-                                            <button onClick={() => props.onNavigate('NEXT')} className="p-2 hover:bg-slate-800 rounded-full transition-colors text-slate-400">
-                                                <ChevronRight size={20} />
-                                            </button>
-                                        </div>
-                                        <span className="text-lg font-semibold text-slate-100 uppercase tracking-wide">
-                                            {props.label}
-                                        </span>
-                                        <div />
-                                    </div>
-                                )
-                            }}
-                            className="custom-calendar"
-                        />
+                        <Suspense fallback={<div className="h-full min-h-[420px] rounded-2xl bg-slate-900/70 animate-pulse" />}>
+                            <PlanningCalendar
+                                events={events}
+                                view={view}
+                                onView={(v: any) => setView(v)}
+                                date={date}
+                                onNavigate={(d: Date) => setDate(d)}
+                                eventPropGetter={eventPropGetter}
+                                onSelectEvent={handleSelectEvent}
+                                onEventDrop={onEventDrop}
+                                onEventResize={onEventResize}
+                            />
+                        </Suspense>
                     </div>
                 </div>
 
@@ -669,6 +621,26 @@ export const PlanningPage = () => {
                                             <div className="space-y-1">
                                                 <p className="text-sm font-semibold text-rose-200 leading-tight">{issue.message}</p>
                                                 <p className="text-[10px] text-rose-500/60 font-medium uppercase">{issue.type}</p>
+                                                {(issue.shiftId || issue.alertId) && (
+                                                    <div className="pt-3">
+                                                        <Suspense fallback={<div className="h-10 rounded-xl bg-slate-800/70 animate-pulse" />}>
+                                                            <ManagerGuidedActions
+                                                                compact
+                                                                target={
+                                                                    issue.shiftId
+                                                                        ? { type: 'SHIFT', id: issue.shiftId }
+                                                                        : { type: 'ALERT', id: issue.alertId as number }
+                                                                }
+                                                                onCompleted={(message) => {
+                                                                    loadEvents();
+                                                                    setToastMessage(message);
+                                                                    setShowToast(true);
+                                                                    setTimeout(() => setShowToast(false), 3000);
+                                                                }}
+                                                            />
+                                                        </Suspense>
+                                                    </div>
+                                                )}
                                             </div>
                                         </div>
                                     ))}
@@ -750,84 +722,60 @@ export const PlanningPage = () => {
                 )}
             </div>
 
-            <ShiftDetailsModal
-                isOpen={isModalOpen}
-                onClose={() => setIsModalOpen(false)}
-                shift={selectedShift}
-                onRequestSwap={(shiftId) => {
-                    if (window.confirm("Voulez-vous proposer cette garde à l'échange ?")) {
-                        requestSwapMutation.mutate(Number(shiftId));
-                    }
-                }}
-            />
+            <Suspense fallback={null}>
+                {isModalOpen && (
+                    <ShiftDetailsModal
+                        isOpen={isModalOpen}
+                        onClose={() => setIsModalOpen(false)}
+                        shift={selectedShift}
+                        onRequestSwap={(shiftId) => {
+                            if (window.confirm("Voulez-vous proposer cette garde à l'échange ?")) {
+                                requestSwapMutation.mutate(Number(shiftId));
+                            }
+                        }}
+                        onManagerActionCompleted={(message) => {
+                            loadEvents();
+                            setToastMessage(message);
+                            setShowToast(true);
+                            setTimeout(() => setShowToast(false), 3000);
+                        }}
+                    />
+                )}
 
-            <ReplacementModal
-                isOpen={isReplacementModalOpen}
-                onClose={() => setIsReplacementModalOpen(false)}
-                shift={selectedShift}
-                onSuccess={() => {
-                    loadEvents();
-                    setShowToast(true);
-                }}
-            />
+                {isReplacementModalOpen && (
+                    <ReplacementModal
+                        isOpen={isReplacementModalOpen}
+                        onClose={() => setIsReplacementModalOpen(false)}
+                        shift={selectedShift}
+                        onSuccess={() => {
+                            loadEvents();
+                            setShowToast(true);
+                        }}
+                    />
+                )}
 
-            <LeaveCreationModal
-                isOpen={isLeaveModalOpen}
-                onClose={() => setIsLeaveModalOpen(false)}
-                onSuccess={() => {
-                    refetchLeaves();
-                    setShowToast(true);
-                }}
-            />
+                {isLeaveModalOpen && (
+                    <LeaveCreationModal
+                        isOpen={isLeaveModalOpen}
+                        onClose={() => setIsLeaveModalOpen(false)}
+                        onSuccess={() => {
+                            refetchLeaves();
+                            setShowToast(true);
+                        }}
+                    />
+                )}
 
-            <GhtValidationModal
-                isOpen={isGhtModalOpen}
-                onClose={() => setIsGhtModalOpen(false)}
-                onSuccess={() => {
-                    loadEvents();
-                    setShowToast(true);
-                }}
-            />
-
-            <style>{`
-        .custom-calendar .rbc-header {
-          padding: 12px;
-          color: #94a3b8;
-          font-weight: 600;
-          font-size: 0.75rem;
-          text-transform: uppercase;
-          letter-spacing: 0.05em;
-          border-bottom: 1px solid #1e293b;
-        }
-        .custom-calendar .rbc-month-view, .custom-calendar .rbc-time-view {
-          border: none;
-        }
-        .custom-calendar .rbc-day-bg + .rbc-day-bg {
-          border-left: 1px solid #1e293b;
-        }
-        .custom-calendar .rbc-month-row + .rbc-month-row {
-          border-top: 1px solid #1e293b;
-        }
-        .custom-calendar .rbc-off-range-bg {
-          background-color: transparent;
-          opacity: 0.3;
-        }
-        .custom-calendar .rbc-today {
-          background-color: #1e293b;
-        }
-        .custom-calendar .rbc-event {
-          border-radius: 6px;
-          padding: 4px 8px;
-          font-size: 0.875rem;
-          margin-bottom: 2px;
-        }
-        .custom-calendar .rbc-timeslot-group {
-          border-bottom: 1px solid #1e293b;
-        }
-        .custom-calendar .rbc-time-content {
-          border-top: 1px solid #1e293b;
-        }
-      `}</style>
+                {isGhtModalOpen && (
+                    <GhtValidationModal
+                        isOpen={isGhtModalOpen}
+                        onClose={() => setIsGhtModalOpen(false)}
+                        onSuccess={() => {
+                            loadEvents();
+                            setShowToast(true);
+                        }}
+                    />
+                )}
+            </Suspense>
         </div>
     );
 };

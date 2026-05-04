@@ -6,6 +6,7 @@ import { format } from 'date-fns'
 import { fr } from 'date-fns/locale'
 import { clsx, type ClassValue } from 'clsx'
 import { twMerge } from 'tailwind-merge'
+import { ManagerGuidedActions } from './ManagerGuidedActions'
 
 function cn(...inputs: ClassValue[]) {
     return twMerge(clsx(inputs))
@@ -16,9 +17,10 @@ interface ShiftDetailsModalProps {
     onClose: () => void
     shift: Shift | null
     onRequestSwap?: (shiftId: string) => void
+    onManagerActionCompleted?: (message: string) => void
 }
 
-export const ShiftDetailsModal = ({ isOpen, onClose, shift, onRequestSwap }: ShiftDetailsModalProps) => {
+export const ShiftDetailsModal = ({ isOpen, onClose, shift, onRequestSwap, onManagerActionCompleted }: ShiftDetailsModalProps) => {
     const { mobileMoney, themeColor } = useAppConfig()
 
     if (!isOpen || !shift) return null
@@ -126,6 +128,14 @@ export const ShiftDetailsModal = ({ isOpen, onClose, shift, onRequestSwap }: Shi
                             </p>
                         )}
                     </div>
+
+                    <ManagerGuidedActions
+                        target={{ type: 'SHIFT', id: shift.id }}
+                        onCompleted={(message) => {
+                            onManagerActionCompleted?.(message)
+                            onClose()
+                        }}
+                    />
                 </div>
             </div>
         </div>
