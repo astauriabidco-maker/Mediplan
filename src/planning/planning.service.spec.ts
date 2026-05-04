@@ -71,7 +71,11 @@ describe('PlanningService.validateShift', () => {
   let workPolicyRepository: ReturnType<typeof createRepositoryMock>;
   let alertRepository: ReturnType<typeof createRepositoryMock>;
   let settingsService: { getSetting: jest.Mock };
-  let auditService: { log: jest.Mock; getLogs: jest.Mock };
+  let auditService: {
+    log: jest.Mock;
+    getLogs: jest.Mock;
+    verifyChain: jest.Mock;
+  };
 
   beforeEach(async () => {
     shiftRepository = createRepositoryMock();
@@ -83,7 +87,17 @@ describe('PlanningService.validateShift', () => {
     workPolicyRepository = createRepositoryMock();
     alertRepository = createRepositoryMock();
     settingsService = { getSetting: jest.fn(async () => 48) };
-    auditService = { log: jest.fn(), getLogs: jest.fn(async () => []) };
+    auditService = {
+      log: jest.fn(),
+      getLogs: jest.fn(async () => []),
+      verifyChain: jest.fn(async () => ({
+        tenantId: 'tenant-a',
+        checkedAt: '2026-01-14T10:30:00.000Z',
+        total: 0,
+        valid: true,
+        issues: [],
+      })),
+    };
 
     agentRepository.findOne.mockResolvedValue({
       id: 10,
@@ -1603,6 +1617,7 @@ describe('PlanningService.validateShift', () => {
       to: new Date('2026-01-31T23:59:59.000Z'),
       limit: 20,
     });
+    expect(auditService.verifyChain).toHaveBeenCalledWith('tenant-a');
     expect(result).toEqual(
       expect.objectContaining({
         tenantId: 'tenant-a',
@@ -1633,6 +1648,14 @@ describe('PlanningService.validateShift', () => {
           publicationAttempts: 2,
           refusedPublications: 1,
           successfulPublications: 1,
+        },
+        audit: {
+          chain: {
+            checkedAt: '2026-01-14T10:30:00.000Z',
+            total: 0,
+            valid: true,
+            issues: [],
+          },
         },
         jobs: {
           complianceScan: {

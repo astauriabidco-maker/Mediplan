@@ -18,6 +18,7 @@ describe('BackupController', () => {
   let controller: BackupController;
   const backupService = {
     exportTenant: jest.fn(),
+    getBackupMetrics: jest.fn(),
     importTenant: jest.fn(),
   };
 
@@ -55,6 +56,20 @@ describe('BackupController', () => {
     expect(backupService.exportTenant).toHaveBeenCalledWith('tenant-b', {
       from: undefined,
       to: undefined,
+    });
+  });
+
+  it('returns backup metrics with optional period filters', async () => {
+    await controller.getBackupMetrics(
+      createRequest({ role: 'SUPER_ADMIN', tenantId: 'root' }),
+      'tenant-b',
+      '2026-05-01T00:00:00.000Z',
+      '2026-05-04T23:59:59.999Z',
+    );
+
+    expect(backupService.getBackupMetrics).toHaveBeenCalledWith('tenant-b', {
+      from: new Date('2026-05-01T00:00:00.000Z'),
+      to: new Date('2026-05-04T23:59:59.999Z'),
     });
   });
 

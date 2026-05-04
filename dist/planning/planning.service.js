@@ -746,7 +746,7 @@ let PlanningService = class PlanningService {
         if (filters.to) {
             shiftWhere.end = (0, typeorm_2.LessThanOrEqual)(filters.to);
         }
-        const [openAlerts, shifts, publicationLogs, complianceScanLogs] = await Promise.all([
+        const [openAlerts, shifts, publicationLogs, complianceScanLogs, auditChain,] = await Promise.all([
             this.alertRepository.find({
                 where: {
                     tenantId,
@@ -770,6 +770,7 @@ let PlanningService = class PlanningService {
                 to: filters.to,
                 limit: 20,
             }),
+            this.auditService.verifyChain(tenantId),
         ]);
         const alertCounters = {
             [agent_alert_entity_1.AlertSeverity.HIGH]: 0,
@@ -827,10 +828,14 @@ let PlanningService = class PlanningService {
         if (failedScanLogs.length > 0) {
             reasons.push('COMPLIANCE_SCAN_FAILURES');
         }
+        if (!auditChain.valid) {
+            reasons.push('AUDIT_CHAIN_INVALID');
+        }
         let status = 'HEALTHY';
         if (alertCounters[agent_alert_entity_1.AlertSeverity.HIGH] > 0 ||
             lastPublication?.blocked ||
-            failedScanLogs.length > 0) {
+            failedScanLogs.length > 0 ||
+            !auditChain.valid) {
             status = 'CRITICAL';
         }
         else if (!lastPublication || shiftCounters.pending > 0) {
@@ -857,6 +862,14 @@ let PlanningService = class PlanningService {
                 publicationAttempts: publicationLogs.length,
                 refusedPublications: publicationLogs.filter((log) => Boolean(log.details?.blocked)).length,
                 successfulPublications: publicationLogs.filter((log) => !Boolean(log.details?.blocked)).length,
+            },
+            audit: {
+                chain: {
+                    checkedAt: auditChain.checkedAt,
+                    total: auditChain.total,
+                    valid: auditChain.valid,
+                    issues: auditChain.issues,
+                },
             },
             jobs: {
                 complianceScan: {

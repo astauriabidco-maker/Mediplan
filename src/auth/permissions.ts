@@ -7,6 +7,8 @@ export const Permission = {
   AnalyticsRead: 'analytics:read',
   AuditRead: 'audit:read',
   AuditExport: 'audit:export',
+  BackupRead: 'backup:read',
+  BackupWrite: 'backup:write',
   CompetenciesRead: 'competencies:read',
   CompetenciesWrite: 'competencies:write',
   DocumentsRead: 'documents:read',
@@ -43,10 +45,31 @@ export interface SystemRoleDefinition {
 }
 
 export const HOSPITAL_ROLE_PERMISSIONS: Record<string, SystemRoleDefinition> = {
+  [UserRole.SUPER_ADMIN]: {
+    name: UserRole.SUPER_ADMIN,
+    description: 'Super administrateur plateforme avec accès multi-tenant',
+    permissions: [Permission.All],
+  },
   [UserRole.ADMIN]: {
     name: UserRole.ADMIN,
     description: 'Administrateur établissement avec accès total',
     permissions: [Permission.All],
+  },
+  DIRECTION: {
+    name: 'DIRECTION',
+    description:
+      'Direction établissement: pilotage, analytics, audit et organisation',
+    permissions: [
+      Permission.AgentsRead,
+      Permission.AnalyticsRead,
+      Permission.AuditRead,
+      Permission.DocumentsRead,
+      Permission.PayrollRead,
+      Permission.PlanningRead,
+      Permission.QvtRead,
+      Permission.ServicesRead,
+      Permission.SettingsRead,
+    ],
   },
   [UserRole.MANAGER]: {
     name: UserRole.MANAGER,
@@ -68,7 +91,8 @@ export const HOSPITAL_ROLE_PERMISSIONS: Record<string, SystemRoleDefinition> = {
   },
   [UserRole.AGENT]: {
     name: UserRole.AGENT,
-    description: 'Agent hospitalier: accès personnel planning, congés et profil',
+    description:
+      'Agent hospitalier: accès personnel planning, congés et profil',
     permissions: [
       'profile:read',
       Permission.PlanningRead,
@@ -78,12 +102,15 @@ export const HOSPITAL_ROLE_PERMISSIONS: Record<string, SystemRoleDefinition> = {
   },
   HR_MANAGER: {
     name: 'HR_MANAGER',
-    description: 'Responsable RH: agents, contrats, paie, congés et politiques RH',
+    description:
+      'Responsable RH: agents, contrats, paie, congés et politiques RH',
     permissions: [
       Permission.AgentsRead,
       Permission.AgentsWrite,
       Permission.DocumentsRead,
       Permission.DocumentsWrite,
+      Permission.BackupRead,
+      Permission.BackupWrite,
       Permission.HrPoliciesRead,
       Permission.HrPoliciesWrite,
       Permission.HrPoliciesManage,
@@ -96,7 +123,8 @@ export const HOSPITAL_ROLE_PERMISSIONS: Record<string, SystemRoleDefinition> = {
   },
   PLANNING_COORDINATOR: {
     name: 'PLANNING_COORDINATOR',
-    description: 'Coordinateur planning: corrections, publication et suivi conformité',
+    description:
+      'Coordinateur planning: corrections, publication et suivi conformité',
     permissions: [
       Permission.AgentsRead,
       Permission.ServicesRead,
@@ -119,7 +147,8 @@ export const HOSPITAL_ROLE_PERMISSIONS: Record<string, SystemRoleDefinition> = {
   },
   AUDITOR: {
     name: 'AUDITOR',
-    description: 'Auditeur: consultation des journaux et rapports de conformité',
+    description:
+      'Auditeur: consultation des journaux et rapports de conformité',
     permissions: [
       Permission.AuditRead,
       Permission.AuditExport,

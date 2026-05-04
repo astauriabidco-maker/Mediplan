@@ -67,6 +67,15 @@ export interface TenantImportResult {
   imported: Record<string, number>;
 }
 
+export interface TenantBackupMetrics {
+  tenantId: string;
+  generatedAt: string;
+  schemaVersion: number;
+  datasetCounts: Record<string, number>;
+  planningComplianceSnapshot: TenantBackupSnapshot['planningComplianceSnapshot'];
+  exportable: boolean;
+}
+
 @Injectable()
 export class BackupService {
   constructor(
@@ -189,6 +198,22 @@ export class BackupService {
           Object.entries(datasets).map(([name, rows]) => [name, rows.length]),
         ),
       },
+    };
+  }
+
+  async getBackupMetrics(
+    tenantId: string,
+    period: { from?: Date; to?: Date } = {},
+  ): Promise<TenantBackupMetrics> {
+    const snapshot = await this.exportTenant(tenantId, period);
+
+    return {
+      tenantId,
+      generatedAt: snapshot.exportedAt,
+      schemaVersion: snapshot.schemaVersion,
+      datasetCounts: snapshot.integrity.datasetCounts,
+      planningComplianceSnapshot: snapshot.planningComplianceSnapshot,
+      exportable: snapshot.kind === 'tenant-business-backup',
     };
   }
 

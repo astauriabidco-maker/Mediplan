@@ -57,6 +57,30 @@ $ npm run test:e2e
 $ npm run test:cov
 ```
 
+## Demo / preprod seed
+
+Provision or reset the complete HGD demo tenant:
+
+```bash
+$ npm run demo:reset
+```
+
+Default tenant: `HGD-DOUALA`
+Default password: `password123`
+
+Demo accounts:
+
+| Email                      | Role          |
+| -------------------------- | ------------- |
+| `superadmin@mediplan.demo` | `SUPER_ADMIN` |
+| `directeur@hgd-douala.cm`  | `DIRECTION`   |
+| `p.mbarga@hgd-douala.cm`   | `MANAGER`     |
+| `s.ondoa@hgd-douala.cm`    | `MANAGER`     |
+| `rh@hgd-douala.cm`         | `HR_MANAGER`  |
+| `audit@hgd-douala.cm`      | `AUDITOR`     |
+
+More details: [SEED_README.md](./SEED_README.md).
+
 ## Deployment
 
 When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.

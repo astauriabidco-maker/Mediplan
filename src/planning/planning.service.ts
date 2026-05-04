@@ -9,7 +9,10 @@ import { Shift, ShiftType } from './entities/shift.entity';
 import { Leave } from './entities/leave.entity';
 import { Agent } from '../agents/entities/agent.entity';
 import { HospitalService } from '../agents/entities/hospital-service.entity';
-import { AuditService } from '../audit/audit.service';
+import {
+  AuditChainVerification,
+  AuditService,
+} from '../audit/audit.service';
 import {
   AuditAction,
   AuditEntityType,
@@ -299,6 +302,12 @@ export interface ProductionObservabilityHealth {
     publicationAttempts: number;
     refusedPublications: number;
     successfulPublications: number;
+  };
+  audit: {
+    chain: Pick<
+      AuditChainVerification,
+      'checkedAt' | 'total' | 'valid' | 'issues'
+    >;
   };
   jobs: {
     complianceScan: {
@@ -1405,7 +1414,13 @@ export class PlanningService {
       shiftWhere.end = LessThanOrEqual(filters.to);
     }
 
-    const [openAlerts, shifts, publicationLogs, complianceScanLogs] =
+    const [
+      openAlerts,
+      shifts,
+      publicationLogs,
+      complianceScanLogs,
+      auditChain,
+    ] =
       await Promise.all([
         this.alertRepository.find({
           where: {
@@ -1430,6 +1445,7 @@ export class PlanningService {
           to: filters.to,
           limit: 20,
         }),
+        this.auditService.verifyChain(tenantId),
       ]);
 
     const alertCounters = {
@@ -1492,12 +1508,16 @@ export class PlanningService {
     if (failedScanLogs.length > 0) {
       reasons.push('COMPLIANCE_SCAN_FAILURES');
     }
+    if (!auditChain.valid) {
+      reasons.push('AUDIT_CHAIN_INVALID');
+    }
 
     let status: ProductionObservabilityStatus = 'HEALTHY';
     if (
       alertCounters[AlertSeverity.HIGH] > 0 ||
       lastPublication?.blocked ||
-      failedScanLogs.length > 0
+      failedScanLogs.length > 0 ||
+      !auditChain.valid
     ) {
       status = 'CRITICAL';
     } else if (!lastPublication || shiftCounters.pending > 0) {
@@ -1529,6 +1549,14 @@ export class PlanningService {
         successfulPublications: publicationLogs.filter(
           (log) => !Boolean(log.details?.blocked),
         ).length,
+      },
+      audit: {
+        chain: {
+          checkedAt: auditChain.checkedAt,
+          total: auditChain.total,
+          valid: auditChain.valid,
+          issues: auditChain.issues,
+        },
       },
       jobs: {
         complianceScan: {

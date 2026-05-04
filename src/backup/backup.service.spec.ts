@@ -162,4 +162,38 @@ describe('BackupService', () => {
       } as any),
     ).rejects.toBeInstanceOf(ForbiddenException);
   });
+
+  it('summarizes backup metrics from an exportable tenant snapshot', async () => {
+    const { service, repos } = createService();
+
+    repos.shifts.find.mockResolvedValueOnce([
+      {
+        id: 20,
+        tenantId: 'tenant-a',
+        start: new Date('2026-06-01T08:00:00.000Z'),
+        end: new Date('2026-06-01T20:00:00.000Z'),
+        complianceExceptionApproved: true,
+      },
+    ]);
+
+    const result = await service.getBackupMetrics('tenant-a', {
+      from: new Date('2026-06-01T00:00:00.000Z'),
+      to: new Date('2026-06-02T00:00:00.000Z'),
+    });
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        tenantId: 'tenant-a',
+        schemaVersion: 1,
+        exportable: true,
+        datasetCounts: expect.objectContaining({ shifts: 1 }),
+        planningComplianceSnapshot: expect.objectContaining({
+          totals: expect.objectContaining({
+            shifts: 1,
+            approvedComplianceExceptions: 1,
+          }),
+        }),
+      }),
+    );
+  });
 });

@@ -12,6 +12,7 @@ import { AlertSeverity } from '../../agents/entities/agent-alert.entity';
 import { AgentAlert } from '../../agents/entities/agent-alert.entity';
 import { ComplianceRuleCode } from '../compliance-validation.types';
 import { Shift } from '../entities/shift.entity';
+import type { AuditChainIssue } from '../../audit/audit.service';
 import type {
   CorrectionActionCode,
   CorrectionProblemType,
@@ -612,6 +613,23 @@ export class ProductionObservabilityCountersDto {
   successfulPublications: number;
 }
 
+export class ProductionObservabilityAuditDto {
+  @ApiProperty({
+    example: {
+      checkedAt: '2026-05-04T06:00:00.000Z',
+      total: 128,
+      valid: true,
+      issues: [],
+    },
+  })
+  chain: {
+    checkedAt: string;
+    total: number;
+    valid: boolean;
+    issues: AuditChainIssue[];
+  };
+}
+
 export class ProductionObservabilityComplianceScanJobDto {
   @ApiProperty({ example: true })
   configured: boolean;
@@ -655,6 +673,9 @@ export class ProductionObservabilityHealthResponseDto {
 
   @ApiProperty({ type: ProductionObservabilityCountersDto })
   counters: ProductionObservabilityCountersDto;
+
+  @ApiProperty({ type: ProductionObservabilityAuditDto })
+  audit: ProductionObservabilityAuditDto;
 
   @ApiProperty({ type: ProductionObservabilityJobsDto })
   jobs: ProductionObservabilityJobsDto;

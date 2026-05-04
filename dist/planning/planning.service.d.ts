@@ -3,7 +3,7 @@ import { Shift, ShiftType } from './entities/shift.entity';
 import { Leave } from './entities/leave.entity';
 import { Agent } from '../agents/entities/agent.entity';
 import { HospitalService } from '../agents/entities/hospital-service.entity';
-import { AuditService } from '../audit/audit.service';
+import { AuditChainVerification, AuditService } from '../audit/audit.service';
 import { AuditEntityType } from '../audit/entities/audit-log.entity';
 import { ShiftApplication } from './entities/shift-application.entity';
 import { WhatsappService } from '../whatsapp/whatsapp.service';
@@ -234,6 +234,9 @@ export interface ProductionObservabilityHealth {
         publicationAttempts: number;
         refusedPublications: number;
         successfulPublications: number;
+    };
+    audit: {
+        chain: Pick<AuditChainVerification, 'checkedAt' | 'total' | 'valid' | 'issues'>;
     };
     jobs: {
         complianceScan: {

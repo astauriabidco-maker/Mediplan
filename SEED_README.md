@@ -9,6 +9,7 @@ Ce document explique comment provisionner la base de données avec des données 
 ### 📁 Services Hospitaliers (14 au total)
 
 #### Services Principaux (Niveau 1)
+
 1. **Urgences** (URG) - 15-25 agents
 2. **Chirurgie** (CHIR) - 20-35 agents
 3. **Médecine Interne** (MED) - 18-30 agents
@@ -19,6 +20,7 @@ Ce document explique comment provisionner la base de données avec des données 
 8. **Administration** (ADM) - 8-15 agents
 
 #### Sous-Services (Niveau 2)
+
 - **Chirurgie Viscérale** (sous Chirurgie)
 - **Chirurgie Orthopédique** (sous Chirurgie)
 - **Chirurgie Cardiaque** (sous Chirurgie)
@@ -29,9 +31,11 @@ Ce document explique comment provisionner la base de données avec des données 
 ### 👥 Agents (~30 au total)
 
 #### Direction
+
 - **NKOTTO EMANE Jean-Baptiste** - Directeur Général
 
 #### Chirurgie
+
 - **MBARGA ATANGANA Paul** - Chef de Service
 - **NKOLO FOMO Marie-Claire** - Médecin Adjoint
 - **ESSOMBA BELLE Françoise** - Major
@@ -43,6 +47,7 @@ Ce document explique comment provisionner la base de données avec des données 
 - Et plus...
 
 #### Urgences
+
 - **ONDOA MEKONGO Sylvie** - Chef de Service
 - **EBODE TALLA Martin** - Major
 - **ZAMBO ANGUISSA Léon** - Médecin Urgentiste
@@ -51,6 +56,7 @@ Ce document explique comment provisionner la base de données avec des données 
 - **NGONO EBOGO Pauline** - Infirmière
 
 #### Autres Services
+
 - **ETOA ABENA Bernard** - Chef Médecine Interne
 - **MENDO ZE Christophe** - Cardiologue
 - **NANGA MBARGA Hélène** - Chef Pédiatrie
@@ -71,6 +77,7 @@ curl -X POST http://localhost:[PORT_BACKEND]/seed/hgd
 Remplacez `[PORT_BACKEND]` par le port sur lequel tourne votre backend NestJS (vérifiez dans les logs de démarrage).
 
 **Réponse attendue:**
+
 ```json
 {
   "success": true,
@@ -103,22 +110,40 @@ Remplacez `[PORT_BACKEND]` par le port sur lequel tourne votre backend NestJS (v
 
 Vous pouvez également créer un bouton dans l'interface admin pour appeler cet endpoint.
 
-## 🔐 Identifiants de connexion
+## 🔐 Identifiants de connexion démo
 
 **Mot de passe universel**: `password123`
+**Tenant**: `HGD-DOUALA`
 
 ### Comptes de test
 
-| Email | Rôle | Service |
-|-------|------|---------|
-| `directeur@hgd-douala.cm` | Directeur Général | Administration |
-| `p.mbarga@hgd-douala.cm` | Chef de Service | Chirurgie |
-| `s.ondoa@hgd-douala.cm` | Chef de Service | Urgences |
-| `b.etoa@hgd-douala.cm` | Chef de Service | Médecine Interne |
-| `h.nanga@hgd-douala.cm` | Chef de Service | Pédiatrie |
-| `m.bikoro@hgd-douala.cm` | Chef de Service | Maternité |
-| `e.mvondo@hgd-douala.cm` | Chef de Service | Radiologie |
-| `t.olinga@hgd-douala.cm` | Chef de Service | Laboratoire |
+| Email                      | Rôle applicatif | Parcours recommandé                                   |
+| -------------------------- | --------------- | ----------------------------------------------------- |
+| `superadmin@mediplan.demo` | `SUPER_ADMIN`   | Administration plateforme et accès multi-tenant       |
+| `directeur@hgd-douala.cm`  | `DIRECTION`     | Dashboard, analytics, audit et pilotage établissement |
+| `p.mbarga@hgd-douala.cm`   | `MANAGER`       | Planning et équipe Chirurgie                          |
+| `s.ondoa@hgd-douala.cm`    | `MANAGER`       | Planning et équipe Urgences                           |
+| `rh@hgd-douala.cm`         | `HR_MANAGER`    | Agents, contrats, congés, paie et politiques RH       |
+| `audit@hgd-douala.cm`      | `AUDITOR`       | Journaux d'audit et conformité                        |
+
+Les comptes RH, audit et direction utilisent les rôles dynamiques de la table `role`; les comptes manager/superadmin gardent aussi un rôle legacy compatible avec les guards existants.
+
+## 🔁 Reset démo / préprod
+
+Le seed HGD est réinitialisable: il supprime les données du tenant `HGD-DOUALA`, recrée les rôles système, les services, les agents, les contrats, les congés, les compétences et les documents de démonstration.
+
+```bash
+npm run demo:reset
+```
+
+Alias disponibles:
+
+```bash
+npm run seed:demo
+npm run seed:hgd
+```
+
+Le script `demo:reset` appelle le même contrôleur que `POST /seed/hgd`, afin de garder un seul scénario de données pour l'API et la CLI.
 
 ## 📊 Structure hiérarchique
 
@@ -145,22 +170,26 @@ Directeur Général (NKOTTO EMANE)
 
 - **Tenant ID**: Toutes les données sont créées avec `tenantId = "HGD-DOUALA"`
 - **Nettoyage**: Le script supprime d'abord toutes les données existantes pour ce tenant avant d'insérer les nouvelles
+- **Rôles démo**: `SUPER_ADMIN`, `DIRECTION`, `MANAGER`, `HR_MANAGER` et `AUDITOR` sont recréés à chaque reset
 - **Mot de passe**: Le hash utilisé correspond à `password123`
 - **Emails**: Format `prenom.nom@hgd-douala.cm`
 
 ## 🔧 Dépannage
 
 ### Le endpoint retourne 404
+
 - Vérifiez que le backend est bien démarré
 - Vérifiez que le `SeedModule` est bien importé dans `AppModule`
 - Vérifiez les logs du backend pour voir si le module est chargé
 
 ### Erreur de connexion à la base de données
+
 - Vérifiez que PostgreSQL est démarré
 - Vérifiez les variables d'environnement dans `.env`
 - Vérifiez que la base de données existe
 
 ### Les données ne s'affichent pas
+
 - Vérifiez que vous êtes connecté avec le bon tenant (`HGD-DOUALA`)
 - Vérifiez que les filtres de l'interface ne cachent pas les données
 - Vérifiez directement dans la base de données:
@@ -178,6 +207,7 @@ Directeur Général (NKOTTO EMANE)
 ## 🎯 Prochaines étapes
 
 Après avoir exécuté le seed, vous pourrez:
+
 1. Vous connecter avec n'importe quel compte de test
 2. Explorer la hiérarchie des services
 3. Voir les agents assignés à chaque service

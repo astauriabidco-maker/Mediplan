@@ -41,6 +41,23 @@ export class BackupController {
     );
   }
 
+  @Get('metrics')
+  @Permissions('backup:read')
+  async getBackupMetrics(
+    @Request() req: AuthenticatedRequest,
+    @Query('tenantId') queryTenantId?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    return this.backupService.getBackupMetrics(
+      resolveTenantId(req, queryTenantId),
+      {
+        from: this.toOptionalDate(from, 'from'),
+        to: this.toOptionalDate(to, 'to'),
+      },
+    );
+  }
+
   @Post('import')
   @Permissions('backup:write')
   async importTenant(

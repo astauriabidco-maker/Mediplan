@@ -24,6 +24,8 @@ Cette gate couvre:
 - tests UI frontend;
 - audit npm frontend;
 - smoke test des routes critiques.
+- smoke API preprod `npm run smoke:api:preprod` et rapport quotidien local,
+  decrit dans `docs/SPRINT_12_PREPROD_MONITORING.md`.
 
 Un deploiement est bloque si l'une de ces etapes echoue.
 
@@ -131,6 +133,8 @@ Apres bascule:
 | erreurs API frontend | Observabilite frontend | hausse anormale par route |
 | bundle budget | CI frontend | echec budget |
 | audit npm frontend | CI frontend | vulnerabilite moderate ou plus |
+| health API | `GET /api/health/live`, `GET /api/health/ready` | endpoint DOWN ou base indisponible |
+| rapport preprod | `npm run smoke:api:preprod` | statut `FAILED`, audit chain invalide ou backup non exportable |
 
 ## Rollback
 
