@@ -37,6 +37,8 @@ const health_record_entity_1 = require("../agents/entities/health-record.entity"
 const agent_competency_entity_1 = require("../competencies/entities/agent-competency.entity");
 const compliance_worker_service_1 = require("./compliance-worker.service");
 const agent_alert_entity_1 = require("../agents/entities/agent-alert.entity");
+const compliance_validation_service_1 = require("./compliance-validation.service");
+const compliance_alert_service_1 = require("./compliance-alert.service");
 let PlanningModule = class PlanningModule {
 };
 exports.PlanningModule = PlanningModule;
@@ -55,7 +57,7 @@ exports.PlanningModule = PlanningModule = __decorate([
             settings_module_1.SettingsModule
         ],
         providers: [
-            planning_service_1.PlanningService, optimization_service_1.OptimizationService, auto_scheduler_service_1.AutoSchedulerService,
+            planning_service_1.PlanningService, optimization_service_1.OptimizationService, auto_scheduler_service_1.AutoSchedulerService, compliance_validation_service_1.ComplianceValidationService, compliance_alert_service_1.ComplianceAlertService,
             leaves_service_1.LeavesService, work_policies_service_1.WorkPoliciesService, understaffing_service_1.UnderstaffingService,
             compliance_worker_service_1.ComplianceWorkerService
         ],

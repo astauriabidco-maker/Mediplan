@@ -5,6 +5,8 @@ import { UpdateAgentDto } from './dto/update-agent.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { Permissions } from '../auth/permissions.decorator';
 import { RolesGuard } from '../auth/roles.guard';
+import type { AuthenticatedRequest } from '../auth/authenticated-request';
+import { resolveTenantId } from '../auth/tenant-context';
 
 @Controller('agents')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -13,55 +15,48 @@ export class AgentsController {
 
     @Post()
     @Permissions('agents:write')
-    create(@Request() req: any, @Body() createAgentDto: CreateAgentDto) {
+    create(@Request() req: AuthenticatedRequest, @Body() createAgentDto: CreateAgentDto) {
         // Force tenantId from authenticated user
         const tenantId = req.user.tenantId;
-        const actorId = req.user.userId;
+        const actorId = req.user.id;
         return this.agentsService.create({ ...createAgentDto, tenantId }, actorId);
     }
 
     @Get()
     @Permissions('agents:read')
-    findAll(@Request() req: any, @Query('tenantId') queryTenantId?: string) {
-        const tenantId = (req.user.role === 'SUPER_ADMIN' && queryTenantId) 
-            ? queryTenantId 
-            : req.user.tenantId;
-        return this.agentsService.findAll(tenantId);
+    findAll(@Request() req: AuthenticatedRequest, @Query('tenantId') queryTenantId?: string) {
+        return this.agentsService.findAll(resolveTenantId(req, queryTenantId));
     }
 
     @Get('my-team')
     @Permissions('agents:read') // Or a specific 'team:read'? Sticking to agents:read for simple hierarchy view
-    getMyTeam(@Request() req: any) {
+    getMyTeam(@Request() req: AuthenticatedRequest) {
         const tenantId = req.user.tenantId;
-        const agentId = req.user.userId; // The agent's ID from JWT (mapped as userId in strategy)
+        const agentId = req.user.id;
         return this.agentsService.getMyTeam(agentId, tenantId);
     }
 
     @Get(':id')
     @Permissions('agents:read')
-    findOne(@Request() req: any, @Param('id') id: string, @Query('tenantId') queryTenantId?: string) {
-        const tenantId = (req.user.role === 'SUPER_ADMIN' && queryTenantId) 
-            ? queryTenantId 
-            : req.user.tenantId;
-        const actorId = req.user.userId;
+    findOne(@Request() req: AuthenticatedRequest, @Param('id') id: string, @Query('tenantId') queryTenantId?: string) {
+        const tenantId = resolveTenantId(req, queryTenantId);
+        const actorId = req.user.id;
         return this.agentsService.findOne(+id, tenantId, actorId);
     }
 
     @Patch(':id')
     @Permissions('agents:write', 'services:manage_staff') // Allow both as updateAgent is used for service assignment
-    update(@Request() req: any, @Param('id') id: string, @Body() updateAgentDto: UpdateAgentDto, @Query('tenantId') queryTenantId?: string) {
-        const tenantId = (req.user.role === 'SUPER_ADMIN' && queryTenantId) 
-            ? queryTenantId 
-            : req.user.tenantId;
-        const actorId = req.user.userId;
+    update(@Request() req: AuthenticatedRequest, @Param('id') id: string, @Body() updateAgentDto: UpdateAgentDto, @Query('tenantId') queryTenantId?: string) {
+        const tenantId = resolveTenantId(req, queryTenantId);
+        const actorId = req.user.id;
         return this.agentsService.update(+id, updateAgentDto, tenantId, actorId);
     }
 
     @Delete(':id')
     @Permissions('agents:write')
-    remove(@Request() req: any, @Param('id') id: string) {
+    remove(@Request() req: AuthenticatedRequest, @Param('id') id: string) {
         const tenantId = req.user.tenantId;
-        const actorId = req.user.userId;
+        const actorId = req.user.id;
         return this.agentsService.remove(+id, tenantId, actorId);
     }
 
@@ -69,24 +64,24 @@ export class AgentsController {
 
     @Get(':id/health-records')
     @Permissions('agents:read')
-    getHealthRecords(@Request() req: any, @Param('id') agentId: string) {
+    getHealthRecords(@Request() req: AuthenticatedRequest, @Param('id') agentId: string) {
         const tenantId = req.user.tenantId;
         return this.agentsService.getHealthRecords(+agentId, tenantId);
     }
 
     @Post(':id/health-records')
     @Permissions('agents:write')
-    addHealthRecord(@Request() req: any, @Param('id') agentId: string, @Body() data: any) {
+    addHealthRecord(@Request() req: AuthenticatedRequest, @Param('id') agentId: string, @Body() data: any) {
         const tenantId = req.user.tenantId;
-        const actorId = req.user.userId;
+        const actorId = req.user.id;
         return this.agentsService.addHealthRecord(+agentId, tenantId, data, actorId);
     }
 
     @Delete('health-records/:recordId')
     @Permissions('agents:write')
-    deleteHealthRecord(@Request() req: any, @Param('recordId') recordId: string) {
+    deleteHealthRecord(@Request() req: AuthenticatedRequest, @Param('recordId') recordId: string) {
         const tenantId = req.user.tenantId;
-        const actorId = req.user.userId;
+        const actorId = req.user.id;
         return this.agentsService.deleteHealthRecord(+recordId, tenantId, actorId);
     }
 }

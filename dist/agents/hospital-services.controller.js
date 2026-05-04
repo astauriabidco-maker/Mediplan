@@ -18,28 +18,21 @@ const hospital_services_service_1 = require("./hospital-services.service");
 const jwt_auth_guard_1 = require("../auth/jwt-auth.guard");
 const permissions_decorator_1 = require("../auth/permissions.decorator");
 const roles_guard_1 = require("../auth/roles.guard");
+const hospital_service_dto_1 = require("./dto/hospital-service.dto");
+const tenant_context_1 = require("../auth/tenant-context");
 let HospitalServicesController = class HospitalServicesController {
     servicesService;
     constructor(servicesService) {
         this.servicesService = servicesService;
     }
     findAll(req, queryTenantId) {
-        const tenantId = (req.user.role === 'SUPER_ADMIN' && queryTenantId)
-            ? queryTenantId
-            : req.user.tenantId;
-        return this.servicesService.findAll(tenantId);
+        return this.servicesService.findAll((0, tenant_context_1.resolveTenantId)(req, queryTenantId));
     }
     getStats(req, queryTenantId) {
-        const tenantId = (req.user.role === 'SUPER_ADMIN' && queryTenantId)
-            ? queryTenantId
-            : req.user.tenantId;
-        return this.servicesService.getStats(tenantId);
+        return this.servicesService.getStats((0, tenant_context_1.resolveTenantId)(req, queryTenantId));
     }
     getTree(req, queryTenantId) {
-        const tenantId = (req.user.role === 'SUPER_ADMIN' && queryTenantId)
-            ? queryTenantId
-            : req.user.tenantId;
-        return this.servicesService.getServiceTree(tenantId);
+        return this.servicesService.getServiceTree((0, tenant_context_1.resolveTenantId)(req, queryTenantId));
     }
     findOne(req, id) {
         return this.servicesService.findOne(req.user.tenantId, id);
@@ -48,20 +41,20 @@ let HospitalServicesController = class HospitalServicesController {
         return this.servicesService.getServiceHierarchy(req.user.tenantId, id);
     }
     create(req, data) {
-        return this.servicesService.create(req.user.tenantId, data);
+        return this.servicesService.create(req.user.tenantId, data, req.user.id);
     }
     createSubService(req, parentId, data) {
-        return this.servicesService.createSubService(req.user.tenantId, parentId, data);
+        return this.servicesService.createSubService(req.user.tenantId, parentId, data, req.user.id);
     }
     update(req, id, data) {
-        return this.servicesService.update(req.user.tenantId, id, data);
+        return this.servicesService.update(req.user.tenantId, id, data, req.user.id);
     }
     assignResponsible(req, id, data) {
-        return this.servicesService.assignResponsible(req.user.tenantId, id, data.role, data.agentId);
+        return this.servicesService.assignResponsible(req.user.tenantId, id, data.role, data.agentId, req.user.id);
     }
     async remove(req, id) {
-        await this.servicesService.remove(req.user.tenantId, id);
-        return { message: 'Service deleted successfully' };
+        await this.servicesService.remove(req.user.tenantId, id, req.user.id);
+        return { message: 'Service disabled successfully' };
     }
 };
 exports.HospitalServicesController = HospitalServicesController;
@@ -116,7 +109,7 @@ __decorate([
     __param(0, (0, common_1.Request)()),
     __param(1, (0, common_1.Body)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Object, Object]),
+    __metadata("design:paramtypes", [Object, hospital_service_dto_1.CreateHospitalServiceDto]),
     __metadata("design:returntype", void 0)
 ], HospitalServicesController.prototype, "create", null);
 __decorate([
@@ -126,7 +119,7 @@ __decorate([
     __param(1, (0, common_1.Param)('id', common_1.ParseIntPipe)),
     __param(2, (0, common_1.Body)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Object, Number, Object]),
+    __metadata("design:paramtypes", [Object, Number, hospital_service_dto_1.CreateHospitalServiceDto]),
     __metadata("design:returntype", void 0)
 ], HospitalServicesController.prototype, "createSubService", null);
 __decorate([
@@ -136,7 +129,7 @@ __decorate([
     __param(1, (0, common_1.Param)('id', common_1.ParseIntPipe)),
     __param(2, (0, common_1.Body)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Object, Number, Object]),
+    __metadata("design:paramtypes", [Object, Number, hospital_service_dto_1.UpdateHospitalServiceDto]),
     __metadata("design:returntype", void 0)
 ], HospitalServicesController.prototype, "update", null);
 __decorate([
@@ -146,7 +139,7 @@ __decorate([
     __param(1, (0, common_1.Param)('id', common_1.ParseIntPipe)),
     __param(2, (0, common_1.Body)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Object, Number, Object]),
+    __metadata("design:paramtypes", [Object, Number, hospital_service_dto_1.AssignResponsibleDto]),
     __metadata("design:returntype", void 0)
 ], HospitalServicesController.prototype, "assignResponsible", null);
 __decorate([

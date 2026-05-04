@@ -137,10 +137,15 @@ let AuthService = class AuthService {
         return null;
     }
     async validate(payload) {
+        const userId = payload.sub;
+        const tenantId = payload.tenant;
         return {
-            id: payload.sub,
+            id: userId,
+            userId,
+            sub: userId,
             email: payload.username,
-            tenantId: payload.tenant,
+            tenantId,
+            tenant: tenantId,
             role: payload.role
         };
     }

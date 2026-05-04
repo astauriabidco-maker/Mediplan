@@ -6,6 +6,9 @@ import { AutoSchedulerService, ShiftNeed } from './auto-scheduler.service';
 import { DocumentsService } from '../documents/documents.service';
 import { Shift } from './entities/shift.entity';
 import { Leave, LeaveType } from './entities/leave.entity';
+import type { AuthenticatedRequest } from '../auth/authenticated-request';
+import { CompliancePeriodQueryDto, ComplianceReportResponseDto, ComplianceReportsQueryDto, ComplianceSummaryResponseDto, CorrectionGuidanceResponseDto, DecisionRecommendationsResponseDto, ApproveShiftExceptionResponseDto, ManagerCockpitResponseDto, ManagerWorklistResponseDto, PlanningComplianceTimelineQueryDto, PlanningComplianceTimelineResponseDto, ProductionObservabilityHealthResponseDto, PublishPlanningPreviewResponseDto, PublishPlanningResponseDto, ReassignShiftResponseDto, RevalidateShiftResponseDto, RequestReplacementResponseDto, ResolvePlanningAlertResponseDto, ServiceComplianceIndicatorsResponseDto, ShiftDecisionSuggestionsResponseDto, ShiftComplianceResponseDto } from './dto/compliance-api.dto';
+import { ApproveShiftExceptionDto, CreateShiftDto, PublishPlanningDto, ReassignShiftDto, RequestReplacementDto, ResolvePlanningAlertDto, UpdateShiftDto } from './dto/shift-mutation.dto';
 export declare class PlanningController {
     private readonly planningService;
     private readonly optimizationService;
@@ -15,58 +18,65 @@ export declare class PlanningController {
     private readonly shiftRepository;
     private readonly documentsService;
     constructor(planningService: PlanningService, optimizationService: OptimizationService, autoSchedulerService: AutoSchedulerService, agentRepository: Repository<Agent>, leaveRepository: Repository<Leave>, shiftRepository: Repository<Shift>, documentsService: DocumentsService);
-    createLeave(req: any, body: {
+    createLeave(req: AuthenticatedRequest, body: {
         agentId: number;
         start: string;
         end: string;
         type: LeaveType;
         reason?: string;
     }): Promise<Leave>;
-    getReplacements(req: any, start: string, end: string, competency: string): Promise<Agent[]>;
-    getLeaves(req: any, queryTenantId?: string): Promise<Leave[]>;
-    getShifts(req: any, start: string, end: string, facilityId?: string, serviceId?: string, queryTenantId?: string): Promise<Shift[]>;
-    validate(req: any, agentId: number, start: string, end: string): Promise<{
-        isValid: boolean;
-    }>;
-    optimize(req: any, shifts: {
+    getReplacements(req: AuthenticatedRequest, start: string, end: string, competency: string, queryTenantId?: string): Promise<Agent[]>;
+    getLeaves(req: AuthenticatedRequest, queryTenantId?: string): Promise<Leave[]>;
+    getShifts(req: AuthenticatedRequest, start: string, end: string, facilityId?: string, serviceId?: string, queryTenantId?: string): Promise<Shift[]>;
+    validate(req: AuthenticatedRequest, agentId: number, start: string, end: string): Promise<import("./compliance-validation.types").ShiftValidationResult>;
+    optimize(req: AuthenticatedRequest, shifts: {
         id: string;
         start: string;
         end: string;
         requiredSkill: string;
     }[]): Promise<import("./optimization.service").OptimizationResult>;
-    autoSchedule(req: any, body: {
+    autoSchedule(req: AuthenticatedRequest, body: {
         start: string;
         end: string;
         needs: ShiftNeed[];
     }): Promise<Shift[]>;
-    generate(req: any, body: {
+    generate(req: AuthenticatedRequest, body: {
         start: string;
         end: string;
     }): Promise<Shift[]>;
-    publish(req: any, body: {
-        start: string;
-        end: string;
-    }): Promise<{
-        message: string;
-    }>;
-    getShiftApplications(req: any): Promise<import("./entities/shift-application.entity").ShiftApplication[]>;
-    approveGhtApplication(req: any, id: string): Promise<import("./entities/shift-application.entity").ShiftApplication>;
-    getAvailableSwaps(req: any): Promise<Shift[]>;
-    requestSwap(req: any, id: number): Promise<Shift>;
-    applyForSwap(req: any, id: number): Promise<{
+    getManagerCockpit(req: AuthenticatedRequest, query: CompliancePeriodQueryDto): Promise<ManagerCockpitResponseDto>;
+    getProductionObservabilityHealth(req: AuthenticatedRequest, query: CompliancePeriodQueryDto): Promise<ProductionObservabilityHealthResponseDto>;
+    getServiceComplianceIndicators(req: AuthenticatedRequest, query: CompliancePeriodQueryDto): Promise<ServiceComplianceIndicatorsResponseDto>;
+    getManagerWorklist(req: AuthenticatedRequest, query: CompliancePeriodQueryDto): Promise<ManagerWorklistResponseDto>;
+    getDecisionRecommendations(req: AuthenticatedRequest, query: CompliancePeriodQueryDto): Promise<DecisionRecommendationsResponseDto>;
+    getComplianceSummary(req: AuthenticatedRequest, query: CompliancePeriodQueryDto): Promise<ComplianceSummaryResponseDto>;
+    getComplianceReports(req: AuthenticatedRequest, query: ComplianceReportsQueryDto): Promise<ComplianceReportResponseDto[]>;
+    getPlanningComplianceTimeline(req: AuthenticatedRequest, query: PlanningComplianceTimelineQueryDto): Promise<PlanningComplianceTimelineResponseDto>;
+    explainShiftCompliance(req: AuthenticatedRequest, id: number): Promise<ShiftComplianceResponseDto>;
+    getShiftCorrectionGuidance(req: AuthenticatedRequest, id: number): Promise<CorrectionGuidanceResponseDto>;
+    getShiftDecisionSuggestions(req: AuthenticatedRequest, id: number): Promise<ShiftDecisionSuggestionsResponseDto>;
+    revalidateShift(req: AuthenticatedRequest, id: number): Promise<RevalidateShiftResponseDto>;
+    reassignShift(req: AuthenticatedRequest, id: number, data: ReassignShiftDto): Promise<ReassignShiftResponseDto>;
+    requestReplacement(req: AuthenticatedRequest, id: number, data: RequestReplacementDto): Promise<RequestReplacementResponseDto>;
+    resolvePlanningAlert(req: AuthenticatedRequest, id: number, data: ResolvePlanningAlertDto): Promise<ResolvePlanningAlertResponseDto>;
+    getAlertCorrectionGuidance(req: AuthenticatedRequest, id: number): Promise<CorrectionGuidanceResponseDto>;
+    approveShiftException(req: AuthenticatedRequest, id: number, data: ApproveShiftExceptionDto): Promise<ApproveShiftExceptionResponseDto>;
+    previewPublish(req: AuthenticatedRequest, body: PublishPlanningDto): Promise<PublishPlanningPreviewResponseDto>;
+    publish(req: AuthenticatedRequest, body: PublishPlanningDto): Promise<PublishPlanningResponseDto>;
+    getShiftApplications(req: AuthenticatedRequest): Promise<import("./entities/shift-application.entity").ShiftApplication[]>;
+    approveGhtApplication(req: AuthenticatedRequest, id: string): Promise<import("./entities/shift-application.entity").ShiftApplication>;
+    getAvailableSwaps(req: AuthenticatedRequest): Promise<Shift[]>;
+    requestSwap(req: AuthenticatedRequest, id: number): Promise<Shift>;
+    applyForSwap(req: AuthenticatedRequest, id: number): Promise<{
         success: boolean;
         message: string;
     }>;
-    rejectGhtApplication(req: any, id: string): Promise<import("./entities/shift-application.entity").ShiftApplication>;
-    assignReplacement(req: any, data: {
-        agentId: number;
-        start: string;
-        end: string;
-        postId: string;
-    }): Promise<Shift>;
-    updateShift(req: any, id: string, data: {
-        start: string;
-        end: string;
-    }): Promise<Shift>;
-    generateContract(req: any, id: string): Promise<import("../documents/entities/document.entity").Document>;
+    rejectGhtApplication(req: AuthenticatedRequest, id: string): Promise<import("./entities/shift-application.entity").ShiftApplication>;
+    createShift(req: AuthenticatedRequest, data: CreateShiftDto): Promise<Shift>;
+    assignReplacement(req: AuthenticatedRequest, data: CreateShiftDto): Promise<Shift>;
+    updateShift(req: AuthenticatedRequest, id: string, data: UpdateShiftDto): Promise<Shift>;
+    generateContract(req: AuthenticatedRequest, id: string): Promise<import("../documents/entities/document.entity").Document>;
+    private toCompliancePeriodFilters;
+    private toOptionalDate;
+    private toOptionalLimit;
 }

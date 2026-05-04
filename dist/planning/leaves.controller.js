@@ -24,23 +24,32 @@ let LeavesController = class LeavesController {
         this.leavesService = leavesService;
     }
     async requestLeave(req, body) {
-        const tenantId = req.user.tenant;
-        const currentUserId = req.user.sub;
+        const tenantId = req.user.tenantId;
+        const currentUserId = req.user.id;
         const targetAgentId = body.agentId || currentUserId;
-        return this.leavesService.requestLeave(tenantId, targetAgentId, new Date(body.start), new Date(body.end), body.type, body.reason, targetAgentId !== currentUserId ? currentUserId : undefined);
+        return this.leavesService.requestLeave(tenantId, targetAgentId, new Date(body.start), new Date(body.end), body.type, body.reason, {
+            id: currentUserId,
+            canManageAll: req.user.role === 'SUPER_ADMIN' ||
+                req.user.role === 'ADMIN' ||
+                req.user.permissions.includes('*') ||
+                req.user.permissions.includes('leaves:manage'),
+        });
     }
     async getMyBalances(req, year) {
         const targetYear = year ? parseInt(year, 10) : new Date().getFullYear();
-        return this.leavesService.getMyBalances(req.user.tenant, req.user.sub, targetYear);
+        return this.leavesService.getMyBalances(req.user.tenantId, req.user.id, targetYear);
     }
     async getMyLeaves(req) {
-        return this.leavesService.getMyLeaves(req.user.tenant, req.user.sub);
+        return this.leavesService.getMyLeaves(req.user.tenantId, req.user.id);
     }
     async getTeamRequests(req) {
-        return this.leavesService.getTeamRequests(req.user.tenant, req.user.sub);
+        return this.leavesService.getTeamRequests(req.user.tenantId, req.user.id);
     }
     async validateLeave(req, id, body) {
-        return this.leavesService.validateLeave(req.user.tenant, req.user.sub, parseInt(id, 10), body.status, body.rejectionReason);
+        return this.leavesService.validateLeave(req.user.tenantId, req.user.id, parseInt(id, 10), body.status, body.rejectionReason, req.user.role === 'SUPER_ADMIN' ||
+            req.user.role === 'ADMIN' ||
+            req.user.permissions.includes('*') ||
+            req.user.permissions.includes('leaves:manage'));
     }
 };
 exports.LeavesController = LeavesController;

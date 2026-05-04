@@ -1,4 +1,4 @@
-import { Entity, PrimaryGeneratedColumn, Column, OneToMany, ManyToOne, JoinColumn, CreateDateColumn, UpdateDateColumn } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, OneToMany, ManyToOne, JoinColumn, CreateDateColumn, UpdateDateColumn, Index } from 'typeorm';
 import { Contract } from './contract.entity';
 import { AgentCompetency } from '../../competencies/entities/agent-competency.entity';
 import { Shift } from '../../planning/entities/shift.entity';
@@ -40,6 +40,8 @@ export enum MobileMoneyProvider {
 }
 
 @Entity()
+@Index(['tenantId', 'email'], { unique: true })
+@Index(['tenantId', 'matricule'], { unique: true })
 export class Agent {
     @PrimaryGeneratedColumn()
     id: number;
@@ -219,10 +221,10 @@ export class Agent {
     @Column({ nullable: true })
     emergencyContactPhone: string;
 
-    @Column({ unique: true })
+    @Column()
     email: string;
 
-    @Column({ unique: true })
+    @Column()
     matricule: string;
 
     @Column()
@@ -270,4 +272,3 @@ export class Agent {
     @OneToMany(() => HealthRecord, (record) => record.agent)
     healthRecords: HealthRecord[];
 }
-

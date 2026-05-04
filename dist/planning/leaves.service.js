@@ -35,9 +35,13 @@ let LeavesService = class LeavesService {
         this.notificationsService = notificationsService;
         this.auditService = auditService;
     }
-    async requestLeave(tenantId, agentId, start, end, type, reason, requesterId) {
-        if (end <= start) {
-            throw new common_1.BadRequestException('End date must be after start date');
+    async requestLeave(tenantId, agentId, start, end, type, reason, requester) {
+        const requesterContext = this.normalizeRequester(agentId, requester);
+        if (!this.isValidDate(start) || !this.isValidDate(end)) {
+            throw new common_1.BadRequestException('Invalid leave dates');
+        }
+        if (start > end) {
+            throw new common_1.BadRequestException('Start date must be before or equal to end date');
         }
         const agent = await this.agentRepository.findOne({
             where: { id: agentId, tenantId },
@@ -46,9 +50,12 @@ let LeavesService = class LeavesService {
         if (!agent) {
             throw new common_1.NotFoundException('Agent not found');
         }
-        if (requesterId && agent.id !== requesterId && agent.manager?.id !== requesterId) {
+        if (requesterContext.id !== agent.id &&
+            agent.manager?.id !== requesterContext.id &&
+            !requesterContext.canManageAll) {
             throw new common_1.BadRequestException('You do not have authority to request leave for this agent');
         }
+        await this.assertNoOverlappingLeave(tenantId, agentId, start, end);
         const leave = this.leavesRepository.create({
             tenantId,
             agent,
@@ -59,7 +66,16 @@ let LeavesService = class LeavesService {
             status: leave_entity_1.LeaveStatus.PENDING
         });
         const savedLeave = await this.leavesRepository.save(leave);
-        await this.auditService.log(tenantId, agent.id, audit_log_entity_1.AuditAction.CREATE, audit_log_entity_1.AuditEntityType.LEAVE, savedLeave.id, { type: savedLeave.type, start: savedLeave.start, end: savedLeave.end });
+        await this.auditService.log(tenantId, requesterContext.id, audit_log_entity_1.AuditAction.CREATE, audit_log_entity_1.AuditEntityType.LEAVE, savedLeave.id, {
+            action: 'REQUEST_LEAVE',
+            agentId: agent.id,
+            requestedBy: requesterContext.id,
+            type: savedLeave.type,
+            start: savedLeave.start,
+            end: savedLeave.end,
+            reason: savedLeave.reason,
+            status: savedLeave.status,
+        });
         if (agent.managerId) {
             await this.notificationsService.notifyLeaveRequested(agent.managerId, {
                 leaveId: savedLeave.id,
@@ -94,7 +110,7 @@ let LeavesService = class LeavesService {
             order: { start: 'ASC' }
         });
     }
-    async validateLeave(tenantId, managerId, leaveId, status, rejectionReason) {
+    async validateLeave(tenantId, managerId, leaveId, status, rejectionReason, requesterCanManageAll = false) {
         const leave = await this.leavesRepository.findOne({
             where: { id: leaveId, tenantId },
             relations: ['agent', 'agent.manager']
@@ -102,15 +118,20 @@ let LeavesService = class LeavesService {
         if (!leave) {
             throw new common_1.NotFoundException('Leave request not found');
         }
-        if (leave.agent.manager?.id !== managerId) {
+        if (leave.agent.manager?.id !== managerId && !requesterCanManageAll) {
+            throw new common_1.BadRequestException('You do not have authority to validate this leave');
+        }
+        if (leave.status !== leave_entity_1.LeaveStatus.PENDING) {
+            throw new common_1.BadRequestException('Only pending leave requests can be validated');
         }
         if (status === leave_entity_1.LeaveStatus.REJECTED && !rejectionReason) {
             throw new common_1.BadRequestException('Rejection reason is required');
         }
-        const manager = await this.agentRepository.findOneBy({ id: managerId });
+        const manager = await this.agentRepository.findOneBy({ id: managerId, tenantId });
         if (!manager) {
             throw new common_1.NotFoundException('Manager not found');
         }
+        const previousStatus = leave.status;
         leave.status = status;
         leave.approvedBy = manager;
         if (status === leave_entity_1.LeaveStatus.REJECTED) {
@@ -119,7 +140,7 @@ let LeavesService = class LeavesService {
         const savedLeave = await this.leavesRepository.save(leave);
         if (status === leave_entity_1.LeaveStatus.APPROVED) {
             const year = leave.start.getFullYear();
-            const daysToDebit = Math.ceil((leave.end.getTime() - leave.start.getTime()) / (1000 * 3600 * 24));
+            const daysToDebit = Math.floor((leave.end.getTime() - leave.start.getTime()) / (1000 * 3600 * 24)) + 1;
             let balance = await this.leaveBalanceRepository.findOne({
                 where: { agent: { id: leave.agent.id }, type: leave.type, year, tenantId }
             });
@@ -136,7 +157,13 @@ let LeavesService = class LeavesService {
             balance.consumed += daysToDebit;
             await this.leaveBalanceRepository.save(balance);
         }
-        await this.auditService.log(tenantId, managerId, status === leave_entity_1.LeaveStatus.APPROVED ? audit_log_entity_1.AuditAction.VALIDATE : audit_log_entity_1.AuditAction.REJECT, audit_log_entity_1.AuditEntityType.LEAVE, savedLeave.id, { status: savedLeave.status, reason: savedLeave.rejectionReason });
+        await this.auditService.log(tenantId, managerId, status === leave_entity_1.LeaveStatus.APPROVED ? audit_log_entity_1.AuditAction.VALIDATE : audit_log_entity_1.AuditAction.REJECT, audit_log_entity_1.AuditEntityType.LEAVE, savedLeave.id, {
+            previousStatus,
+            status: savedLeave.status,
+            reason: savedLeave.rejectionReason,
+            agentId: savedLeave.agent.id,
+            validatedBy: managerId,
+        });
         await this.notificationsService.notifyLeaveProcessed(savedLeave.agent.id, {
             leaveId: savedLeave.id,
             status: savedLeave.status,
@@ -175,6 +202,31 @@ let LeavesService = class LeavesService {
             balances.push(defaultBalance);
         }
         return balances;
+    }
+    normalizeRequester(agentId, requester) {
+        if (!requester) {
+            return { id: agentId };
+        }
+        if (typeof requester === 'number') {
+            return { id: requester };
+        }
+        return requester;
+    }
+    isValidDate(date) {
+        return date instanceof Date && !Number.isNaN(date.getTime());
+    }
+    async assertNoOverlappingLeave(tenantId, agentId, start, end) {
+        const count = await this.leavesRepository
+            .createQueryBuilder('leave')
+            .where('leave.tenantId = :tenantId', { tenantId })
+            .andWhere('leave.agentId = :agentId', { agentId })
+            .andWhere('leave.status IN (:...statuses)', { statuses: [leave_entity_1.LeaveStatus.PENDING, leave_entity_1.LeaveStatus.APPROVED] })
+            .andWhere('leave.start <= :end', { end })
+            .andWhere('leave.end >= :start', { start })
+            .getCount();
+        if (count > 0) {
+            throw new common_1.BadRequestException('Leave request overlaps an existing pending or approved leave');
+        }
     }
 };
 exports.LeavesService = LeavesService;

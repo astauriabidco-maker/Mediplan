@@ -272,6 +272,11 @@ __decorate([
     __metadata("design:type", String)
 ], CreateAgentDto.prototype, "mobileMoneyNumber", void 0);
 __decorate([
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.IsOptional)(),
+    __metadata("design:type", String)
+], CreateAgentDto.prototype, "password", void 0);
+__decorate([
     (0, class_validator_1.IsNumber)(),
     (0, class_validator_1.IsOptional)(),
     __metadata("design:type", Number)

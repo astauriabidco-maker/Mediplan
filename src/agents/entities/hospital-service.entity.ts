@@ -1,4 +1,4 @@
-import { Entity, PrimaryGeneratedColumn, Column, OneToMany, ManyToOne, JoinColumn, CreateDateColumn, UpdateDateColumn } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, OneToMany, ManyToOne, JoinColumn, CreateDateColumn, UpdateDateColumn, Index } from 'typeorm';
 import { Agent } from './agent.entity';
 import { Facility } from './facility.entity';
 
@@ -11,6 +11,8 @@ export enum RiskLevel {
 }
 
 @Entity()
+@Index(['tenantId', 'name'], { unique: true })
+@Index(['tenantId', 'code'], { unique: true })
 export class HospitalService {
     @PrimaryGeneratedColumn()
     id: number;

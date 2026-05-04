@@ -31,6 +31,8 @@ import { HealthRecord } from '../agents/entities/health-record.entity';
 import { AgentCompetency } from '../competencies/entities/agent-competency.entity';
 import { ComplianceWorkerService } from './compliance-worker.service';
 import { AgentAlert } from '../agents/entities/agent-alert.entity';
+import { ComplianceValidationService } from './compliance-validation.service';
+import { ComplianceAlertService } from './compliance-alert.service';
 
 @Module({
   imports: [
@@ -46,7 +48,7 @@ import { AgentAlert } from '../agents/entities/agent-alert.entity';
     SettingsModule
   ],
   providers: [
-    PlanningService, OptimizationService, AutoSchedulerService, 
+    PlanningService, OptimizationService, AutoSchedulerService, ComplianceValidationService, ComplianceAlertService,
     LeavesService, WorkPoliciesService, UnderstaffingService,
     ComplianceWorkerService
   ],

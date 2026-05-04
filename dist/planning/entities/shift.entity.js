@@ -27,6 +27,10 @@ let Shift = class Shift {
     type;
     status;
     isSwapRequested;
+    complianceExceptionApproved;
+    complianceExceptionReason;
+    complianceExceptionApprovedById;
+    complianceExceptionApprovedAt;
     tenantId;
     facilityId;
     facility;
@@ -65,6 +69,22 @@ __decorate([
     (0, typeorm_1.Column)({ default: false }),
     __metadata("design:type", Boolean)
 ], Shift.prototype, "isSwapRequested", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ default: false }),
+    __metadata("design:type", Boolean)
+], Shift.prototype, "complianceExceptionApproved", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ type: 'text', nullable: true }),
+    __metadata("design:type", Object)
+], Shift.prototype, "complianceExceptionReason", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ nullable: true }),
+    __metadata("design:type", Object)
+], Shift.prototype, "complianceExceptionApprovedById", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ type: 'timestamp', nullable: true }),
+    __metadata("design:type", Object)
+], Shift.prototype, "complianceExceptionApprovedAt", void 0);
 __decorate([
     (0, typeorm_1.Column)({ default: 'DEFAULT_TENANT' }),
     __metadata("design:type", String)

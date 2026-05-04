@@ -340,11 +340,11 @@ __decorate([
     __metadata("design:type", String)
 ], Agent.prototype, "emergencyContactPhone", void 0);
 __decorate([
-    (0, typeorm_1.Column)({ unique: true }),
+    (0, typeorm_1.Column)(),
     __metadata("design:type", String)
 ], Agent.prototype, "email", void 0);
 __decorate([
-    (0, typeorm_1.Column)({ unique: true }),
+    (0, typeorm_1.Column)(),
     __metadata("design:type", String)
 ], Agent.prototype, "matricule", void 0);
 __decorate([
@@ -406,6 +406,8 @@ __decorate([
     __metadata("design:type", Array)
 ], Agent.prototype, "healthRecords", void 0);
 exports.Agent = Agent = __decorate([
-    (0, typeorm_1.Entity)()
+    (0, typeorm_1.Entity)(),
+    (0, typeorm_1.Index)(['tenantId', 'email'], { unique: true }),
+    (0, typeorm_1.Index)(['tenantId', 'matricule'], { unique: true })
 ], Agent);
 //# sourceMappingURL=agent.entity.js.map

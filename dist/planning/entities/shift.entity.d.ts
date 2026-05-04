@@ -13,6 +13,10 @@ export declare class Shift {
     type: ShiftType;
     status: string;
     isSwapRequested: boolean;
+    complianceExceptionApproved: boolean;
+    complianceExceptionReason: string | null;
+    complianceExceptionApprovedById: number | null;
+    complianceExceptionApprovedAt: Date | null;
     tenantId: string;
     facilityId: number;
     facility: Facility;

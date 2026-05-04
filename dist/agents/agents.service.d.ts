@@ -1,5 +1,6 @@
 import { Repository } from 'typeorm';
 import { Agent } from './entities/agent.entity';
+import { HospitalService } from './entities/hospital-service.entity';
 import { HealthRecord } from './entities/health-record.entity';
 import { CreateAgentDto } from './dto/create-agent.dto';
 import { UpdateAgentDto } from './dto/update-agent.dto';
@@ -7,8 +8,9 @@ import { AuditService } from '../audit/audit.service';
 export declare class AgentsService {
     private readonly agentRepository;
     private readonly healthRecordRepository;
+    private readonly hospitalServiceRepository;
     private readonly auditService;
-    constructor(agentRepository: Repository<Agent>, healthRecordRepository: Repository<HealthRecord>, auditService: AuditService);
+    constructor(agentRepository: Repository<Agent>, healthRecordRepository: Repository<HealthRecord>, hospitalServiceRepository: Repository<HospitalService>, auditService: AuditService);
     create(createAgentDto: CreateAgentDto & {
         tenantId: string;
     }, actorId: number): Promise<Agent>;
@@ -22,4 +24,8 @@ export declare class AgentsService {
     deleteHealthRecord(id: number, tenantId: string, actorId: number): Promise<{
         success: boolean;
     }>;
+    private getAgentOrThrow;
+    private assertUniqueIdentity;
+    private assertRelationsBelongToTenant;
+    private getAuditSnapshot;
 }

@@ -1,50 +1,68 @@
-import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, JoinColumn } from 'typeorm';
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  ManyToOne,
+  JoinColumn,
+} from 'typeorm';
 import { Agent } from '../../agents/entities/agent.entity';
 import { Facility } from '../../agents/entities/facility.entity';
 
 export enum ShiftType {
-    NORMAL = 'NORMAL',
-    GARDE_SUR_PLACE = 'GARDE_SUR_PLACE',
-    ASTREINTE = 'ASTREINTE',
+  NORMAL = 'NORMAL',
+  GARDE_SUR_PLACE = 'GARDE_SUR_PLACE',
+  ASTREINTE = 'ASTREINTE',
 }
 
 @Entity()
 export class Shift {
-    @PrimaryGeneratedColumn()
-    id: number;
+  @PrimaryGeneratedColumn()
+  id: number;
 
-    @Column({ type: 'timestamp' })
-    start: Date;
+  @Column({ type: 'timestamp' })
+  start: Date;
 
-    @Column({ type: 'timestamp' })
-    end: Date;
+  @Column({ type: 'timestamp' })
+  end: Date;
 
-    @Column()
-    postId: string;
+  @Column()
+  postId: string;
 
-    @Column({
-        type: 'enum',
-        enum: ShiftType,
-        default: ShiftType.NORMAL,
-    })
-    type: ShiftType;
+  @Column({
+    type: 'enum',
+    enum: ShiftType,
+    default: ShiftType.NORMAL,
+  })
+  type: ShiftType;
 
-    @Column({ default: 'PLANNED' })
-    status: string;
+  @Column({ default: 'PLANNED' })
+  status: string;
 
-    @Column({ default: false })
-    isSwapRequested: boolean;
+  @Column({ default: false })
+  isSwapRequested: boolean;
 
-    @Column({ default: 'DEFAULT_TENANT' })
-    tenantId: string;
+  @Column({ default: false })
+  complianceExceptionApproved: boolean;
 
-    @Column({ nullable: true })
-    facilityId: number;
+  @Column({ type: 'text', nullable: true })
+  complianceExceptionReason: string | null;
 
-    @ManyToOne(() => Facility, { nullable: true })
-    @JoinColumn({ name: 'facilityId' })
-    facility: Facility;
+  @Column({ nullable: true })
+  complianceExceptionApprovedById: number | null;
 
-    @ManyToOne(() => Agent, (agent) => agent.shifts)
-    agent: Agent;
+  @Column({ type: 'timestamp', nullable: true })
+  complianceExceptionApprovedAt: Date | null;
+
+  @Column({ default: 'DEFAULT_TENANT' })
+  tenantId: string;
+
+  @Column({ nullable: true })
+  facilityId: number;
+
+  @ManyToOne(() => Facility, { nullable: true })
+  @JoinColumn({ name: 'facilityId' })
+  facility: Facility;
+
+  @ManyToOne(() => Agent, (agent) => agent.shifts)
+  agent: Agent;
 }

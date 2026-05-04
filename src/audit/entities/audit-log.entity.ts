@@ -19,6 +19,8 @@ export enum AuditEntityType {
     CONTRACT = 'CONTRACT',
     PAYROLL = 'PAYROLL',
     DOCUMENT = 'DOCUMENT',
+    HOSPITAL_SERVICE = 'HOSPITAL_SERVICE',
+    WORK_POLICY = 'WORK_POLICY',
 }
 
 @Entity()

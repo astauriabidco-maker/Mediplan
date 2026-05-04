@@ -43,7 +43,7 @@ export class RolesService implements OnModuleInit {
     async seedDefaults(tenantId: string) {
         const defaults = [
             { name: 'ADMIN', description: 'Administrateur avec accès total', permissions: ['*'], isSystem: true, tenantId },
-            { name: 'MANAGER', description: 'Gestionnaire d\'équipe', permissions: ['agents:read', 'planning:manage', 'leaves:validate'], isSystem: true, tenantId },
+            { name: 'MANAGER', description: 'Gestionnaire d\'équipe', permissions: ['agents:read', 'services:read', 'planning:manage', 'leaves:validate'], isSystem: true, tenantId },
             { name: 'AGENT', description: 'Personnel hospitalier', permissions: ['profile:read', 'planning:read', 'leaves:request'], isSystem: true, tenantId },
         ];
 

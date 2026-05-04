@@ -13,8 +13,11 @@ export declare class AuthService {
     validateUser(email: string, pass: string): Promise<any>;
     validate(payload: any): Promise<{
         id: any;
+        userId: any;
+        sub: any;
         email: any;
         tenantId: any;
+        tenant: any;
         role: any;
     }>;
     login(user: any): Promise<{

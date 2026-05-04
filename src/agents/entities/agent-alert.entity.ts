@@ -1,4 +1,4 @@
-import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, JoinColumn, CreateDateColumn, UpdateDateColumn } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, JoinColumn, CreateDateColumn, UpdateDateColumn, Index } from 'typeorm';
 import { Agent } from './agent.entity';
 
 export enum AlertSeverity {
@@ -13,6 +13,9 @@ export enum AlertType {
     GPEC = 'GPEC'
 }
 
+@Index('IDX_agent_alert_open_unique', ['tenantId', 'agentId', 'type', 'message'], { unique: true, where: '"isAcknowledged" = false AND "isResolved" = false' })
+@Index('IDX_agent_alert_open_by_tenant_agent', ['tenantId', 'agentId', 'type', 'severity'], { where: '"isAcknowledged" = false AND "isResolved" = false' })
+@Index('IDX_agent_alert_resolved_by_tenant', ['tenantId', 'isResolved', 'resolvedAt'])
 @Entity()
 export class AgentAlert {
     @PrimaryGeneratedColumn()
@@ -48,6 +51,15 @@ export class AgentAlert {
 
     @Column({ default: false })
     isAcknowledged: boolean;
+
+    @Column({ default: false })
+    isResolved: boolean;
+
+    @Column({ type: 'timestamp', nullable: true })
+    resolvedAt: Date | null;
+
+    @Column({ type: 'text', nullable: true })
+    resolutionReason: string | null;
 
     @CreateDateColumn()
     createdAt: Date;

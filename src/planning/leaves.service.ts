@@ -8,6 +8,11 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { AuditService } from '../audit/audit.service';
 import { AuditAction, AuditEntityType } from '../audit/entities/audit-log.entity';
 
+export interface LeaveRequesterContext {
+    id: number;
+    canManageAll?: boolean;
+}
+
 @Injectable()
 export class LeavesService {
     constructor(
@@ -28,11 +33,17 @@ export class LeavesService {
         end: Date,
         type: LeaveType,
         reason: string,
-        requesterId?: number
+        requester?: number | LeaveRequesterContext
     ): Promise<Leave> {
+        const requesterContext = this.normalizeRequester(agentId, requester);
+
         // Basic validation
-        if (end <= start) {
-            throw new BadRequestException('End date must be after start date');
+        if (!this.isValidDate(start) || !this.isValidDate(end)) {
+            throw new BadRequestException('Invalid leave dates');
+        }
+
+        if (start > end) {
+            throw new BadRequestException('Start date must be before or equal to end date');
         }
 
         const agent = await this.agentRepository.findOne({
@@ -44,10 +55,16 @@ export class LeavesService {
             throw new NotFoundException('Agent not found');
         }
 
-        // Authority check: if requester is not the agent, must be their manager
-        if (requesterId && agent.id !== requesterId && agent.manager?.id !== requesterId) {
+        // Authority check: if requester is not the agent, must be their manager or an HR/admin actor.
+        if (
+            requesterContext.id !== agent.id &&
+            agent.manager?.id !== requesterContext.id &&
+            !requesterContext.canManageAll
+        ) {
             throw new BadRequestException('You do not have authority to request leave for this agent');
         }
+
+        await this.assertNoOverlappingLeave(tenantId, agentId, start, end);
 
         const leave = this.leavesRepository.create({
             tenantId,
@@ -63,11 +80,20 @@ export class LeavesService {
 
         await this.auditService.log(
             tenantId,
-            agent.id,
+            requesterContext.id,
             AuditAction.CREATE,
             AuditEntityType.LEAVE,
             savedLeave.id,
-            { type: savedLeave.type, start: savedLeave.start, end: savedLeave.end }
+            {
+                action: 'REQUEST_LEAVE',
+                agentId: agent.id,
+                requestedBy: requesterContext.id,
+                type: savedLeave.type,
+                start: savedLeave.start,
+                end: savedLeave.end,
+                reason: savedLeave.reason,
+                status: savedLeave.status,
+            }
         );
 
         // Notify manager
@@ -117,7 +143,8 @@ export class LeavesService {
         managerId: number,
         leaveId: number,
         status: LeaveStatus.APPROVED | LeaveStatus.REJECTED,
-        rejectionReason?: string
+        rejectionReason?: string,
+        requesterCanManageAll = false,
     ): Promise<Leave> {
         const leave = await this.leavesRepository.findOne({
             where: { id: leaveId, tenantId },
@@ -128,26 +155,25 @@ export class LeavesService {
             throw new NotFoundException('Leave request not found');
         }
 
-        // Check authority (must be the manager of the agent)
-        if (leave.agent.manager?.id !== managerId) {
-            // Optional: Allow admin/HR override? For now strict hierarchical check.
-            // throw new UnauthorizedException('You are not the manager of this agent');
-            // Simplification: We assume the controller/guard checks tenant access, 
-            // but strictly enforcing manager ID match is good practice.
-            // However, for demo simplicity, we'll allow if tenant matches, 
-            // but ideally logic should be:
-            // if (leave.agent.managerId !== managerId) throw ...
+        // Check authority (must be the manager of the agent, unless HR/admin override).
+        if (leave.agent.manager?.id !== managerId && !requesterCanManageAll) {
+            throw new BadRequestException('You do not have authority to validate this leave');
+        }
+
+        if (leave.status !== LeaveStatus.PENDING) {
+            throw new BadRequestException('Only pending leave requests can be validated');
         }
 
         if (status === LeaveStatus.REJECTED && !rejectionReason) {
             throw new BadRequestException('Rejection reason is required');
         }
 
-        const manager = await this.agentRepository.findOneBy({ id: managerId });
+        const manager = await this.agentRepository.findOneBy({ id: managerId, tenantId });
         if (!manager) {
             throw new NotFoundException('Manager not found');
         }
 
+        const previousStatus = leave.status;
         leave.status = status;
         leave.approvedBy = manager;
         if (status === LeaveStatus.REJECTED) {
@@ -159,7 +185,7 @@ export class LeavesService {
         // Debit LeaveBalance if approved
         if (status === LeaveStatus.APPROVED) {
             const year = leave.start.getFullYear();
-            const daysToDebit = Math.ceil((leave.end.getTime() - leave.start.getTime()) / (1000 * 3600 * 24)); // Simplistic calculation
+            const daysToDebit = Math.floor((leave.end.getTime() - leave.start.getTime()) / (1000 * 3600 * 24)) + 1;
 
             let balance = await this.leaveBalanceRepository.findOne({
                 where: { agent: { id: leave.agent.id }, type: leave.type, year, tenantId }
@@ -187,7 +213,13 @@ export class LeavesService {
             status === LeaveStatus.APPROVED ? AuditAction.VALIDATE : AuditAction.REJECT,
             AuditEntityType.LEAVE,
             savedLeave.id,
-            { status: savedLeave.status, reason: savedLeave.rejectionReason }
+            {
+                previousStatus,
+                status: savedLeave.status,
+                reason: savedLeave.rejectionReason,
+                agentId: savedLeave.agent.id,
+                validatedBy: managerId,
+            }
         );
 
         // Notify agent
@@ -236,5 +268,36 @@ export class LeavesService {
         }
 
         return balances;
+    }
+
+    private normalizeRequester(agentId: number, requester?: number | LeaveRequesterContext): LeaveRequesterContext {
+        if (!requester) {
+            return { id: agentId };
+        }
+
+        if (typeof requester === 'number') {
+            return { id: requester };
+        }
+
+        return requester;
+    }
+
+    private isValidDate(date: Date): boolean {
+        return date instanceof Date && !Number.isNaN(date.getTime());
+    }
+
+    private async assertNoOverlappingLeave(tenantId: string, agentId: number, start: Date, end: Date) {
+        const count = await this.leavesRepository
+            .createQueryBuilder('leave')
+            .where('leave.tenantId = :tenantId', { tenantId })
+            .andWhere('leave.agentId = :agentId', { agentId })
+            .andWhere('leave.status IN (:...statuses)', { statuses: [LeaveStatus.PENDING, LeaveStatus.APPROVED] })
+            .andWhere('leave.start <= :end', { end })
+            .andWhere('leave.end >= :start', { start })
+            .getCount();
+
+        if (count > 0) {
+            throw new BadRequestException('Leave request overlaps an existing pending or approved leave');
+        }
     }
 }

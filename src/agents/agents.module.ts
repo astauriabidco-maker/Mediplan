@@ -19,12 +19,46 @@ import { BonusTemplate } from './entities/bonus-template.entity';
 import { ContractBonus } from './entities/contract-bonus.entity';
 import { HealthRecord } from './entities/health-record.entity';
 import { AgentAlert } from './entities/agent-alert.entity';
+import { AgentAlertsController } from './agent-alerts.controller';
+import { AgentAlertsService } from './agent-alerts.service';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Agent, Contract, HospitalService, Grade, Facility, AgentBeneficiary, BonusTemplate, ContractBonus, HealthRecord, AgentAlert]), AuditModule],
-  controllers: [AgentsController, HospitalServicesController, GradesController, BeneficiaryController],
-  providers: [AgentsService, HospitalServicesService, GradesService, BeneficiaryService],
-  exports: [AgentsService, HospitalServicesService, GradesService, BeneficiaryService, TypeOrmModule],
+  imports: [
+    TypeOrmModule.forFeature([
+      Agent,
+      Contract,
+      HospitalService,
+      Grade,
+      Facility,
+      AgentBeneficiary,
+      BonusTemplate,
+      ContractBonus,
+      HealthRecord,
+      AgentAlert,
+    ]),
+    AuditModule,
+  ],
+  controllers: [
+    AgentsController,
+    HospitalServicesController,
+    GradesController,
+    BeneficiaryController,
+    AgentAlertsController,
+  ],
+  providers: [
+    AgentsService,
+    HospitalServicesService,
+    GradesService,
+    BeneficiaryService,
+    AgentAlertsService,
+  ],
+  exports: [
+    AgentsService,
+    HospitalServicesService,
+    GradesService,
+    BeneficiaryService,
+    AgentAlertsService,
+    TypeOrmModule,
+  ],
 })
-export class AgentsModule { }
-
+export class AgentsModule {}

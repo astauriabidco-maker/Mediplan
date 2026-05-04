@@ -185,6 +185,8 @@ __decorate([
     __metadata("design:type", Date)
 ], HospitalService.prototype, "updatedAt", void 0);
 exports.HospitalService = HospitalService = __decorate([
-    (0, typeorm_1.Entity)()
+    (0, typeorm_1.Entity)(),
+    (0, typeorm_1.Index)(['tenantId', 'name'], { unique: true }),
+    (0, typeorm_1.Index)(['tenantId', 'code'], { unique: true })
 ], HospitalService);
 //# sourceMappingURL=hospital-service.entity.js.map

@@ -1,13 +1,20 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Not, Repository } from 'typeorm';
 import { HospitalService } from './entities/hospital-service.entity';
+import { Agent } from './entities/agent.entity';
+import { AuditService } from '../audit/audit.service';
+import { AuditAction, AuditEntityType } from '../audit/entities/audit-log.entity';
+import { CreateHospitalServiceDto, UpdateHospitalServiceDto } from './dto/hospital-service.dto';
 
 @Injectable()
 export class HospitalServicesService {
     constructor(
         @InjectRepository(HospitalService)
         private hospitalServiceRepository: Repository<HospitalService>,
+        @InjectRepository(Agent)
+        private agentRepository: Repository<Agent>,
+        private auditService: AuditService,
     ) { }
 
     async findAll(tenantId: string): Promise<HospitalService[]> {
@@ -17,47 +24,94 @@ export class HospitalServicesService {
         });
     }
 
-    async create(tenantId: string, data: Partial<HospitalService>): Promise<HospitalService> {
+    async create(tenantId: string, data: CreateHospitalServiceDto, actorId: number): Promise<HospitalService> {
+        await this.assertUniqueServiceIdentity(tenantId, data.name, data.code);
+        await this.assertResponsibleAgentsBelongToTenant(tenantId, data);
+
         const service = this.hospitalServiceRepository.create({
             ...data,
-            tenantId
+            tenantId,
+            level: data.level || 1,
         });
-        return this.hospitalServiceRepository.save(service);
+        const saved = await this.hospitalServiceRepository.save(service);
+
+        await this.auditService.log(
+            tenantId,
+            actorId,
+            AuditAction.CREATE,
+            AuditEntityType.HOSPITAL_SERVICE,
+            saved.id,
+            this.getAuditSnapshot(saved),
+        );
+
+        return saved;
     }
 
-    async findOne(tenantId: string, id: number): Promise<HospitalService | null> {
-        return this.hospitalServiceRepository.findOne({
-            where: { id, tenantId },
-            relations: ['agents', 'chief', 'deputyChief', 'major', 'nursingManager', 'parentService', 'subServices']
-        });
+    async findOne(tenantId: string, id: number): Promise<HospitalService> {
+        return this.getServiceOrThrow(tenantId, id, [
+            'agents',
+            'chief',
+            'deputyChief',
+            'major',
+            'nursingManager',
+            'parentService',
+            'subServices'
+        ]);
     }
 
-    async update(tenantId: string, id: number, data: Partial<HospitalService>): Promise<HospitalService> {
-        const service = await this.findOne(tenantId, id);
-        if (!service) {
-            throw new Error(`Service #${id} not found`);
-        }
+    async update(tenantId: string, id: number, data: UpdateHospitalServiceDto, actorId: number): Promise<HospitalService> {
+        const service = await this.getServiceOrThrow(tenantId, id, ['agents', 'subServices']);
+        await this.assertUniqueServiceIdentity(tenantId, data.name, data.code, id);
+        await this.assertResponsibleAgentsBelongToTenant(tenantId, data);
+
+        const before = this.getAuditSnapshot(service);
         Object.assign(service, data);
-        return this.hospitalServiceRepository.save(service);
+        service.tenantId = tenantId;
+
+        const updated = await this.hospitalServiceRepository.save(service);
+        await this.auditService.log(
+            tenantId,
+            actorId,
+            AuditAction.UPDATE,
+            AuditEntityType.HOSPITAL_SERVICE,
+            updated.id,
+            {
+                updatedFields: Object.keys(data),
+                before,
+                after: this.getAuditSnapshot(updated),
+            },
+        );
+
+        return updated;
     }
 
-    async remove(tenantId: string, id: number): Promise<void> {
-        const service = await this.findOne(tenantId, id);
-        if (!service) {
-            throw new Error(`Service #${id} not found`);
-        }
+    async remove(tenantId: string, id: number, actorId: number): Promise<void> {
+        const service = await this.getServiceOrThrow(tenantId, id, ['agents', 'subServices']);
 
-        // Check if service has agents
         if (service.agents && service.agents.length > 0) {
-            throw new Error(`Cannot delete service with ${service.agents.length} assigned agents`);
+            throw new BadRequestException(`Cannot disable service with ${service.agents.length} assigned agents`);
         }
 
-        // Check if service has sub-services
         if (service.subServices && service.subServices.length > 0) {
-            throw new Error(`Cannot delete service with ${service.subServices.length} sub-services`);
+            throw new BadRequestException(`Cannot disable service with ${service.subServices.length} sub-services`);
         }
 
-        await this.hospitalServiceRepository.remove(service);
+        const before = this.getAuditSnapshot(service);
+        service.isActive = false;
+        const updated = await this.hospitalServiceRepository.save(service);
+
+        await this.auditService.log(
+            tenantId,
+            actorId,
+            AuditAction.DELETE,
+            AuditEntityType.HOSPITAL_SERVICE,
+            updated.id,
+            {
+                action: 'DISABLE_HOSPITAL_SERVICE',
+                before,
+                after: this.getAuditSnapshot(updated),
+            },
+        );
     }
 
     async getStats(tenantId: string) {
@@ -101,7 +155,7 @@ export class HospitalServicesService {
     }
 
     async getServiceHierarchy(tenantId: string, serviceId: number) {
-        const service = await this.hospitalServiceRepository.findOne({
+        return this.hospitalServiceRepository.findOne({
             where: { id: serviceId, tenantId },
             relations: [
                 'parentService',
@@ -114,14 +168,12 @@ export class HospitalServicesService {
                 'subServices.agents'
             ]
         });
-        return service;
     }
 
-    async createSubService(tenantId: string, parentId: number, data: Partial<HospitalService>): Promise<HospitalService> {
-        const parent = await this.findOne(tenantId, parentId);
-        if (!parent) {
-            throw new Error(`Parent service #${parentId} not found`);
-        }
+    async createSubService(tenantId: string, parentId: number, data: CreateHospitalServiceDto, actorId: number): Promise<HospitalService> {
+        const parent = await this.getServiceOrThrow(tenantId, parentId);
+        await this.assertUniqueServiceIdentity(tenantId, data.name, data.code);
+        await this.assertResponsibleAgentsBelongToTenant(tenantId, data);
 
         const subService = this.hospitalServiceRepository.create({
             ...data,
@@ -130,22 +182,137 @@ export class HospitalServicesService {
             level: parent.level + 1
         });
 
-        return this.hospitalServiceRepository.save(subService);
+        const saved = await this.hospitalServiceRepository.save(subService);
+        await this.auditService.log(
+            tenantId,
+            actorId,
+            AuditAction.CREATE,
+            AuditEntityType.HOSPITAL_SERVICE,
+            saved.id,
+            {
+                ...this.getAuditSnapshot(saved),
+                parentServiceId: parentId,
+            },
+        );
+
+        return saved;
     }
 
     async assignResponsible(
         tenantId: string,
         serviceId: number,
         role: 'chief' | 'deputyChief' | 'major' | 'nursingManager',
-        agentId: number | null
+        agentId: number | null,
+        actorId: number,
     ): Promise<HospitalService> {
-        const service = await this.findOne(tenantId, serviceId);
-        if (!service) {
-            throw new Error(`Service #${serviceId} not found`);
+        const service = await this.getServiceOrThrow(tenantId, serviceId);
+
+        if (agentId !== null) {
+            await this.getAgentOrThrow(tenantId, agentId);
         }
 
-        // Update the responsible
+        const before = this.getAuditSnapshot(service);
         service[`${role}Id`] = agentId;
-        return this.hospitalServiceRepository.save(service);
+        const updated = await this.hospitalServiceRepository.save(service);
+
+        await this.auditService.log(
+            tenantId,
+            actorId,
+            AuditAction.UPDATE,
+            AuditEntityType.HOSPITAL_SERVICE,
+            updated.id,
+            {
+                action: 'ASSIGN_RESPONSIBLE',
+                role,
+                agentId,
+                before,
+                after: this.getAuditSnapshot(updated),
+            },
+        );
+
+        return updated;
+    }
+
+    private async getServiceOrThrow(tenantId: string, id: number, relations: string[] = []): Promise<HospitalService> {
+        const service = await this.hospitalServiceRepository.findOne({
+            where: { id, tenantId },
+            relations,
+        });
+
+        if (!service) {
+            throw new NotFoundException(`Service #${id} not found`);
+        }
+
+        return service;
+    }
+
+    private async getAgentOrThrow(tenantId: string, id: number): Promise<Agent> {
+        const agent = await this.agentRepository.findOne({
+            where: { id, tenantId },
+        });
+
+        if (!agent) {
+            throw new NotFoundException(`Agent #${id} not found`);
+        }
+
+        return agent;
+    }
+
+    private async assertUniqueServiceIdentity(tenantId: string, name?: string, code?: string | null, excludeServiceId?: number) {
+        if (name) {
+            const existingName = await this.hospitalServiceRepository.findOne({
+                where: {
+                    tenantId,
+                    name,
+                    ...(excludeServiceId ? { id: Not(excludeServiceId) } : {}),
+                },
+            });
+
+            if (existingName) {
+                throw new ConflictException('Hospital service name already exists for this tenant');
+            }
+        }
+
+        if (code) {
+            const existingCode = await this.hospitalServiceRepository.findOne({
+                where: {
+                    tenantId,
+                    code,
+                    ...(excludeServiceId ? { id: Not(excludeServiceId) } : {}),
+                },
+            });
+
+            if (existingCode) {
+                throw new ConflictException('Hospital service code already exists for this tenant');
+            }
+        }
+    }
+
+    private async assertResponsibleAgentsBelongToTenant(tenantId: string, data: Partial<Pick<HospitalService, 'chiefId' | 'deputyChiefId' | 'majorId' | 'nursingManagerId'>>) {
+        const responsibleIds = [
+            data.chiefId,
+            data.deputyChiefId,
+            data.majorId,
+            data.nursingManagerId,
+        ].filter((id): id is number => typeof id === 'number');
+
+        await Promise.all(responsibleIds.map((id) => this.getAgentOrThrow(tenantId, id)));
+    }
+
+    private getAuditSnapshot(service: HospitalService) {
+        return {
+            id: service.id,
+            name: service.name,
+            code: service.code,
+            tenantId: service.tenantId,
+            parentServiceId: service.parentServiceId,
+            level: service.level,
+            isActive: service.isActive,
+            chiefId: service.chiefId,
+            deputyChiefId: service.deputyChiefId,
+            majorId: service.majorId,
+            nursingManagerId: service.nursingManagerId,
+            facilityId: service.facilityId,
+        };
     }
 }

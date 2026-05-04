@@ -20,6 +20,7 @@ const update_agent_dto_1 = require("./dto/update-agent.dto");
 const jwt_auth_guard_1 = require("../auth/jwt-auth.guard");
 const permissions_decorator_1 = require("../auth/permissions.decorator");
 const roles_guard_1 = require("../auth/roles.guard");
+const tenant_context_1 = require("../auth/tenant-context");
 let AgentsController = class AgentsController {
     agentsService;
     constructor(agentsService) {
@@ -27,37 +28,30 @@ let AgentsController = class AgentsController {
     }
     create(req, createAgentDto) {
         const tenantId = req.user.tenantId;
-        const actorId = req.user.userId;
+        const actorId = req.user.id;
         return this.agentsService.create({ ...createAgentDto, tenantId }, actorId);
     }
     findAll(req, queryTenantId) {
-        const tenantId = (req.user.role === 'SUPER_ADMIN' && queryTenantId)
-            ? queryTenantId
-            : req.user.tenantId;
-        return this.agentsService.findAll(tenantId);
+        return this.agentsService.findAll((0, tenant_context_1.resolveTenantId)(req, queryTenantId));
     }
     getMyTeam(req) {
         const tenantId = req.user.tenantId;
-        const agentId = req.user.userId;
+        const agentId = req.user.id;
         return this.agentsService.getMyTeam(agentId, tenantId);
     }
     findOne(req, id, queryTenantId) {
-        const tenantId = (req.user.role === 'SUPER_ADMIN' && queryTenantId)
-            ? queryTenantId
-            : req.user.tenantId;
-        const actorId = req.user.userId;
+        const tenantId = (0, tenant_context_1.resolveTenantId)(req, queryTenantId);
+        const actorId = req.user.id;
         return this.agentsService.findOne(+id, tenantId, actorId);
     }
     update(req, id, updateAgentDto, queryTenantId) {
-        const tenantId = (req.user.role === 'SUPER_ADMIN' && queryTenantId)
-            ? queryTenantId
-            : req.user.tenantId;
-        const actorId = req.user.userId;
+        const tenantId = (0, tenant_context_1.resolveTenantId)(req, queryTenantId);
+        const actorId = req.user.id;
         return this.agentsService.update(+id, updateAgentDto, tenantId, actorId);
     }
     remove(req, id) {
         const tenantId = req.user.tenantId;
-        const actorId = req.user.userId;
+        const actorId = req.user.id;
         return this.agentsService.remove(+id, tenantId, actorId);
     }
     getHealthRecords(req, agentId) {
@@ -66,12 +60,12 @@ let AgentsController = class AgentsController {
     }
     addHealthRecord(req, agentId, data) {
         const tenantId = req.user.tenantId;
-        const actorId = req.user.userId;
+        const actorId = req.user.id;
         return this.agentsService.addHealthRecord(+agentId, tenantId, data, actorId);
     }
     deleteHealthRecord(req, recordId) {
         const tenantId = req.user.tenantId;
-        const actorId = req.user.userId;
+        const actorId = req.user.id;
         return this.agentsService.deleteHealthRecord(+recordId, tenantId, actorId);
     }
 };

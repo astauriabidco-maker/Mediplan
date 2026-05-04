@@ -173,6 +173,8 @@ export class CreateAgentDto {
     @IsOptional()
     mobileMoneyNumber?: string;
 
+    @IsString()
+    @IsOptional()
     password?: string;
 
     @IsNumber()

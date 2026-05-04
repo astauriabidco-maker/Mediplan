@@ -28,15 +28,50 @@ const bonus_template_entity_1 = require("./entities/bonus-template.entity");
 const contract_bonus_entity_1 = require("./entities/contract-bonus.entity");
 const health_record_entity_1 = require("./entities/health-record.entity");
 const agent_alert_entity_1 = require("./entities/agent-alert.entity");
+const agent_alerts_controller_1 = require("./agent-alerts.controller");
+const agent_alerts_service_1 = require("./agent-alerts.service");
 let AgentsModule = class AgentsModule {
 };
 exports.AgentsModule = AgentsModule;
 exports.AgentsModule = AgentsModule = __decorate([
     (0, common_1.Module)({
-        imports: [typeorm_1.TypeOrmModule.forFeature([agent_entity_1.Agent, contract_entity_1.Contract, hospital_service_entity_1.HospitalService, grade_entity_1.Grade, facility_entity_1.Facility, beneficiary_entity_1.AgentBeneficiary, bonus_template_entity_1.BonusTemplate, contract_bonus_entity_1.ContractBonus, health_record_entity_1.HealthRecord, agent_alert_entity_1.AgentAlert]), audit_module_1.AuditModule],
-        controllers: [agents_controller_1.AgentsController, hospital_services_controller_1.HospitalServicesController, grades_controller_1.GradesController, beneficiary_controller_1.BeneficiaryController],
-        providers: [agents_service_1.AgentsService, hospital_services_service_1.HospitalServicesService, grades_service_1.GradesService, beneficiary_service_1.BeneficiaryService],
-        exports: [agents_service_1.AgentsService, hospital_services_service_1.HospitalServicesService, grades_service_1.GradesService, beneficiary_service_1.BeneficiaryService, typeorm_1.TypeOrmModule],
+        imports: [
+            typeorm_1.TypeOrmModule.forFeature([
+                agent_entity_1.Agent,
+                contract_entity_1.Contract,
+                hospital_service_entity_1.HospitalService,
+                grade_entity_1.Grade,
+                facility_entity_1.Facility,
+                beneficiary_entity_1.AgentBeneficiary,
+                bonus_template_entity_1.BonusTemplate,
+                contract_bonus_entity_1.ContractBonus,
+                health_record_entity_1.HealthRecord,
+                agent_alert_entity_1.AgentAlert,
+            ]),
+            audit_module_1.AuditModule,
+        ],
+        controllers: [
+            agents_controller_1.AgentsController,
+            hospital_services_controller_1.HospitalServicesController,
+            grades_controller_1.GradesController,
+            beneficiary_controller_1.BeneficiaryController,
+            agent_alerts_controller_1.AgentAlertsController,
+        ],
+        providers: [
+            agents_service_1.AgentsService,
+            hospital_services_service_1.HospitalServicesService,
+            grades_service_1.GradesService,
+            beneficiary_service_1.BeneficiaryService,
+            agent_alerts_service_1.AgentAlertsService,
+        ],
+        exports: [
+            agents_service_1.AgentsService,
+            hospital_services_service_1.HospitalServicesService,
+            grades_service_1.GradesService,
+            beneficiary_service_1.BeneficiaryService,
+            agent_alerts_service_1.AgentAlertsService,
+            typeorm_1.TypeOrmModule,
+        ],
     })
 ], AgentsModule);
 //# sourceMappingURL=agents.module.js.map
