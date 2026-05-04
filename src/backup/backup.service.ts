@@ -5,6 +5,7 @@ import {
   Injectable,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import { createHash } from 'crypto';
 import { Repository } from 'typeorm';
 import { Agent } from '../agents/entities/agent.entity';
 import { Facility } from '../agents/entities/facility.entity';
@@ -153,9 +154,7 @@ export class BackupService {
       shifts: shifts.map((shift) => this.toShiftRow(shift)),
       leaves: leaves.map((leave) => this.toLeaveRow(leave)),
       attendance: attendance.map((entry) => this.toAttendanceRow(entry)),
-      auditLogs: auditLogs.map((log) =>
-        this.toBackupRow(log as unknown as Record<string, unknown>),
-      ),
+      auditLogs: auditLogs.map((log) => this.toAuditLogRow(log)),
     };
     const complianceAuditEvents = datasets.auditLogs.filter((log) =>
       this.isComplianceAuditEvent(log),
@@ -247,6 +246,7 @@ export class BackupService {
       shifts: 0,
       leaves: 0,
       attendance: 0,
+      auditLogs: 0,
     };
 
     const facilityMap = await this.restoreFacilities(
@@ -315,6 +315,14 @@ export class BackupService {
       )
     ).size;
 
+    imported.auditLogs = (
+      await this.restoreAuditLogs(
+        targetTenantId,
+        snapshot.datasets.auditLogs,
+        agentMap,
+      )
+    ).size;
+
     return { tenantId: targetTenantId, mode, imported };
   }
 
@@ -323,6 +331,7 @@ export class BackupService {
     await this.leaveRepository.delete({ tenantId } as any);
     await this.shiftRepository.delete({ tenantId } as any);
     await this.workPolicyRepository.delete({ tenantId } as any);
+    await this.auditLogRepository.delete({ tenantId } as any);
   }
 
   private assertSnapshot(snapshot: TenantBackupSnapshot) {
@@ -630,6 +639,56 @@ export class BackupService {
     return idMap;
   }
 
+  private async restoreAuditLogs(
+    tenantId: string,
+    rows: BackupRow[],
+    agentMap: Map<number, number>,
+  ) {
+    const idMap = new Map<number, number>();
+    let previousHash: string | null = null;
+    let chainSequence = 0;
+
+    const orderedRows = [...rows].sort((a, b) => {
+      const aSequence = Number(a.chainSequence ?? 0);
+      const bSequence = Number(b.chainSequence ?? 0);
+      if (aSequence !== bSequence) return aSequence - bSequence;
+      return (
+        this.toDate(a.timestamp).getTime() - this.toDate(b.timestamp).getTime()
+      );
+    });
+
+    for (const row of orderedRows) {
+      const sourceId = this.requiredSourceId(row);
+      const actorId = this.requiredMappedId(row.actorSourceId, agentMap);
+      chainSequence += 1;
+      const timestamp = this.toDate(row.timestamp);
+      const entity = this.auditLogRepository.create({
+        tenantId,
+        actorId,
+        action: row.action as AuditLog['action'],
+        entityType: row.entityType as AuditLog['entityType'],
+        entityId: row.entityId as string,
+        details: row.details,
+        timestamp,
+        chainSequence,
+        previousHash: previousHash ?? undefined,
+      } as any) as unknown as AuditLog;
+      entity.eventHash = this.computeAuditEventHash(entity);
+
+      const existing = await this.auditLogRepository.findOne({
+        where: { tenantId, chainSequence } as any,
+      });
+      const saved = (await this.auditLogRepository.save({
+        ...entity,
+        id: existing?.id,
+      } as any)) as unknown as AuditLog;
+      idMap.set(sourceId, saved.id);
+      previousHash = saved.eventHash;
+    }
+
+    return idMap;
+  }
+
   private toBackupRow(entity: Record<string, unknown>): BackupRow {
     const row: BackupRow = { ...entity, sourceId: entity.id as number };
     delete row.id;
@@ -691,6 +750,13 @@ export class BackupService {
     };
   }
 
+  private toAuditLogRow(log: AuditLog): BackupRow {
+    return {
+      ...this.toBackupRow(log as unknown as Record<string, unknown>),
+      actorSourceId: log.actorId,
+    };
+  }
+
   private importRow(row: BackupRow): BackupRow {
     const copy = { ...row };
     [
@@ -701,6 +767,7 @@ export class BackupService {
       'managerSourceId',
       'agentSourceId',
       'approvedBySourceId',
+      'actorSourceId',
       'parentServiceSourceId',
       'chiefSourceId',
       'deputyChiefSourceId',
@@ -776,5 +843,54 @@ export class BackupService {
       throw new BadRequestException('Invalid backup date value');
     }
     return date;
+  }
+
+  private computeAuditEventHash(log: Partial<AuditLog>): string {
+    return createHash('sha256')
+      .update(
+        this.stableStringify({
+          tenantId: log.tenantId,
+          chainSequence: log.chainSequence,
+          previousHash: log.previousHash || null,
+          timestamp: this.serializeAuditDate(log.timestamp),
+          actorId: log.actorId,
+          action: log.action,
+          entityType: log.entityType,
+          entityId: log.entityId || null,
+          details: log.details || null,
+        }),
+      )
+      .digest('hex');
+  }
+
+  private serializeAuditDate(value: Date | string | undefined): string | null {
+    if (!value) return null;
+    return value instanceof Date
+      ? value.toISOString()
+      : new Date(value).toISOString();
+  }
+
+  private stableStringify(value: unknown): string {
+    if (value === null || typeof value !== 'object') {
+      return JSON.stringify(value);
+    }
+
+    if (value instanceof Date) {
+      return JSON.stringify(value.toISOString());
+    }
+
+    if (Array.isArray(value)) {
+      return `[${value.map((item) => this.stableStringify(item)).join(',')}]`;
+    }
+
+    return `{${Object.keys(value)
+      .sort()
+      .map(
+        (key) =>
+          `${JSON.stringify(key)}:${this.stableStringify(
+            (value as Record<string, unknown>)[key],
+          )}`,
+      )
+      .join(',')}}`;
   }
 }

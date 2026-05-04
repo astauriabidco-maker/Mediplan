@@ -80,7 +80,18 @@ const createSnapshot = (): TenantBackupSnapshot =>
       ],
       leaves: [],
       attendance: [],
-      auditLogs: [],
+      auditLogs: [
+        {
+          sourceId: 30,
+          actorSourceId: 10,
+          timestamp: '2026-06-01T07:00:00.000Z',
+          action: 'UPDATE',
+          entityType: 'PLANNING',
+          entityId: '2026-06-01',
+          details: { action: 'PUBLISH_PLANNING', blocked: false },
+          chainSequence: 1,
+        },
+      ],
     },
     planningComplianceSnapshot: {
       generatedAt: '2026-05-04T10:00:00.000Z',
@@ -131,6 +142,9 @@ describe('BackupService', () => {
     expect(repos.workPolicies.delete).toHaveBeenCalledWith({
       tenantId: 'tenant-a',
     });
+    expect(repos.auditLogs.delete).toHaveBeenCalledWith({
+      tenantId: 'tenant-a',
+    });
     expect(repos.agents.save).toHaveBeenCalledWith(
       expect.objectContaining({
         tenantId: 'tenant-a',
@@ -147,7 +161,15 @@ describe('BackupService', () => {
       }),
     );
     expect(result.imported).toEqual(
-      expect.objectContaining({ agents: 1, shifts: 1 }),
+      expect.objectContaining({ agents: 1, shifts: 1, auditLogs: 1 }),
+    );
+    expect(repos.auditLogs.save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tenantId: 'tenant-a',
+        actorId: 101,
+        chainSequence: 1,
+        eventHash: expect.any(String),
+      }),
     );
   });
 

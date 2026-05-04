@@ -1,5 +1,6 @@
 import { NestFactory } from '@nestjs/core';
 import helmet from 'helmet';
+import { json, urlencoded } from 'express';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 
@@ -7,6 +8,14 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
   app.setGlobalPrefix('api');
+
+  app.use(json({ limit: process.env.JSON_BODY_LIMIT || '25mb' }));
+  app.use(
+    urlencoded({
+      extended: true,
+      limit: process.env.JSON_BODY_LIMIT || '25mb',
+    }),
+  );
 
   app.use(helmet());
 

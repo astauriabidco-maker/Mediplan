@@ -24,6 +24,71 @@ Le resultat attendu est explicite:
 | Frontend | budget bundle | budgets verts | chunk hors seuil |
 | Runbook | Sprint 11 disponible | equipe informee | procedure manquante |
 
+## Decision formelle Sprint 13 - 2026-05-04
+
+Decision: `GO PREPRODUCTION TECHNIQUE`
+
+Perimetre valide:
+
+- tenant preprod: `HGD-DOUALA`;
+- environnement: stack Docker preprod locale;
+- base: Postgres preprod avec migrations TypeORM;
+- mode DB: `DB_SYNCHRONIZE=false`;
+- compte smoke: `superadmin@mediplan.demo`;
+- branche: `main`;
+- base commit publiee avant Phase 3/4: `6081384f feat(preprod): validate sprint 13 readiness`.
+
+Note de version: la Phase 3 backup/restauration et cette decision Phase 4 sont
+dans le worktree courant au moment de cette decision et doivent etre commitees
+avant diffusion de la candidate.
+
+### Preuves Go/No-Go
+
+| Critere | Preuve | Resultat | Decision |
+| --- | --- | --- | --- |
+| Configuration env | `ENV_FILE=.env.preprod npm run preprod:env:check` | OK, aucun warning | GO |
+| Stack preprod | `npm run preprod:compose:up` | backend, Postgres, Redis healthy | GO |
+| Migrations | `npm run preprod:compose:migrate` | `No migrations are pending` | GO |
+| Seed hospitalier | `npm run preprod:compose:seed` | `HGD-DOUALA`, 3 etablissements, 21 services, 35 agents, 29 shifts apres correction | GO |
+| Smoke API | `npm run preprod:compose:smoke` | `PASSED` | GO |
+| Conformite | rapport smoke | `HEALTHY`, aucune raison critique | GO |
+| Alertes | rapport smoke + SQL | alertes ouvertes `0` | GO |
+| Planning | rapport smoke + SQL | shifts pending `0` | GO |
+| Audit | `GET /api/audit/verify` via smoke | chaine valide, anomalies `0`, evenements `8` | GO |
+| Backup exportable | `GET /api/tenant-backups/metrics` via smoke | `exportable: true` | GO |
+| Restauration | `npm run preprod:backup:restore` | `PASSED`, compteurs avant/snapshot/import/apres identiques | GO |
+
+### Compteurs de restauration
+
+| Dataset | Avant | Snapshot | Importe | Apres | Statut |
+| --- | ---: | ---: | ---: | ---: | --- |
+| facilities | 3 | 3 | 3 | 3 | OK |
+| hospitalServices | 21 | 21 | 21 | 21 | OK |
+| agents | 35 | 35 | 35 | 35 | OK |
+| shifts | 29 | 29 | 29 | 29 | OK |
+| leaves | 11 | 11 | 11 | 11 | OK |
+| auditLogs | 8 | 8 | 8 | 8 | OK |
+
+### Artefacts de preuve
+
+- `preprod-reports/preprod-smoke-2026-05-04.md`;
+- `preprod-reports/preprod-smoke-2026-05-04.json`;
+- `preprod-reports/preprod-backup-restore-2026-05-04.md`;
+- `preprod-reports/preprod-backup-restore-2026-05-04.json`;
+- `docs/SPRINT_13_PREPROD_EXECUTION.md`.
+
+### Risques et reserves
+
+| Risque | Niveau | Traitement |
+| --- | --- | --- |
+| Secrets `.env.preprod` locaux | Moyen | fichier ignore par Git, seuls les exemples sont versionnes |
+| Vulnerabilites npm backend signalees pendant build Docker | Moyen | a traiter dans lot securite dependances backend |
+| Rapport preprod local non historise en Git | Faible | rapports conserves dans `preprod-reports/`, dossier volontairement ignore |
+| Phase 3/4 non commitee au moment de la decision | Moyen | commit/push requis avant diffusion candidate |
+
+Conclusion: les criteres demandes pour la Phase 4 sont satisfaits. La candidate
+peut passer en preproduction technique apres commit/push de la Phase 3/4.
+
 ## Commandes bloquantes
 
 Ces commandes doivent passer sur la branche candidate:
@@ -212,6 +277,7 @@ Signataires:
 ## References
 
 - `docs/SPRINT_11_PRODUCTION_RUNBOOK.md`
+- `docs/SPRINT_13_PREPROD_EXECUTION.md`
 - `docs/SPRINT_10_FRONTEND_PERFORMANCE.md`
 - `docs/SPRINT_8_MANAGER_WORKFLOW.md`
 - `npm run ci:product`

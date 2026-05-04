@@ -42,6 +42,7 @@
     "preprod:compose:migrate": "docker compose --env-file .env.preprod -f docker-compose.preprod.yml run --rm backend npm run migration:run",
     "preprod:compose:seed": "docker compose --env-file .env.preprod -f docker-compose.preprod.yml run --rm backend npm run seed:demo",
     "preprod:compose:smoke": "ENV_FILE=.env.preprod npm run smoke:api:preprod",
+    "preprod:backup:restore": "ENV_FILE=.env.preprod node scripts/preprod-backup-restore.mjs",
     "ci:frontend": "npm run frontend:build && npm run frontend:budget:check && npm run frontend:lint && npm run frontend:test && npm run frontend:audit && npm run frontend:smoke:routes",
     "ci:product": "npm run ci:frontend && npm run ci:quality",
     "seed:hgd": "ts-node -r tsconfig-paths/register seed-hgd.ts",

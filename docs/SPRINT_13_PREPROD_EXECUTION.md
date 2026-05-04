@@ -164,3 +164,64 @@ Dernier smoke:
 - evenements audit: `7`;
 - backup exportable: `true`;
 - rapport: `preprod-reports/preprod-smoke-2026-05-04.md`.
+
+## Phase 3 - Backup/restauration preprod
+
+Commande de preuve:
+
+```bash
+npm run preprod:backup:restore
+```
+
+Parcours execute:
+
+1. connexion avec le compte smoke super-admin;
+2. lecture des metriques backup avant restauration;
+3. export complet du tenant `HGD-DOUALA`;
+4. import du snapshot sur `HGD-DOUALA` en mode `REPLACE_PLANNING_DATA`;
+5. lecture des metriques apres restauration;
+6. verification de la chaine audit;
+7. comparaison des compteurs metier.
+
+Resultat final du 2026-05-04:
+
+| Dataset | Avant | Snapshot | Importe | Apres | Statut |
+| --- | ---: | ---: | ---: | ---: | --- |
+| facilities | 3 | 3 | 3 | 3 | OK |
+| hospitalServices | 21 | 21 | 21 | 21 | OK |
+| agents | 35 | 35 | 35 | 35 | OK |
+| shifts | 29 | 29 | 29 | 29 | OK |
+| leaves | 11 | 11 | 11 | 11 | OK |
+| auditLogs | 8 | 8 | 8 | 8 | OK |
+
+Statut backup/restauration: `PASSED`.
+
+Controle post-restauration:
+
+- smoke API: `PASSED`;
+- observabilite planning: `HEALTHY`;
+- alertes ouvertes: `0`;
+- shifts pending: `0`;
+- chaine audit: valide;
+- evenements audit verifies: `8`;
+- rapport: `preprod-reports/preprod-backup-restore-2026-05-04.md`.
+
+## Phase 4 - Checklist Go/No-Go formelle
+
+Decision du 2026-05-04: `GO PREPRODUCTION TECHNIQUE`.
+
+Preuves retenues:
+
+- migrations: OK, aucune migration en attente;
+- seed: OK, tenant `HGD-DOUALA` restaure avec 3 etablissements, 21 services,
+  35 agents, 29 shifts et 11 conges;
+- smoke API: `PASSED`;
+- conformite: `HEALTHY`;
+- audit: chaine valide, 8 evenements verifies, 0 anomalie;
+- backup: exportable et restauration `PASSED`;
+- alertes ouvertes: `0`;
+- shifts pending: `0`.
+
+La matrice detaillee est tenue dans
+`docs/SPRINT_12_GO_NO_GO_CHECKLIST.md`, section
+`Decision formelle Sprint 13 - 2026-05-04`.
