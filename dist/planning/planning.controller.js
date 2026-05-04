@@ -15,6 +15,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.PlanningController = void 0;
 const common_1 = require("@nestjs/common");
 const swagger_1 = require("@nestjs/swagger");
+const throttler_1 = require("@nestjs/throttler");
 const planning_service_1 = require("./planning.service");
 const optimization_service_1 = require("./optimization.service");
 const typeorm_1 = require("@nestjs/typeorm");
@@ -79,12 +80,12 @@ let PlanningController = class PlanningController {
         const validation = await this.planningService.validateShift(req.user.tenantId, agentId, new Date(start), new Date(end));
         return validation;
     }
-    async optimize(req, shifts) {
+    async optimize(req, body) {
         const agents = await this.agentRepository.find({
             where: { tenantId: req.user.tenantId },
             relations: ['agentCompetencies', 'agentCompetencies.competency'],
         });
-        const parsedShifts = shifts.map((s) => ({
+        const parsedShifts = body.shifts.map((s) => ({
             ...s,
             start: new Date(s.start),
             end: new Date(s.end),
@@ -152,19 +153,34 @@ let PlanningController = class PlanningController {
         return this.planningService.revalidateShift(req.user.tenantId, req.user.id, id);
     }
     async reassignShift(req, id, data) {
-        return this.planningService.reassignShift(req.user.tenantId, req.user.id, id, data.agentId);
+        return this.planningService.reassignShift(req.user.tenantId, req.user.id, id, data.agentId, {
+            reason: data.reason,
+            recommendationId: data.recommendationId,
+            alertId: data.alertId,
+        });
     }
     async requestReplacement(req, id, data) {
-        return this.planningService.requestReplacement(req.user.tenantId, req.user.id, id, data.reason);
+        return this.planningService.requestReplacement(req.user.tenantId, req.user.id, id, {
+            reason: data.reason,
+            recommendationId: data.recommendationId,
+            alertId: data.alertId,
+        });
     }
     async resolvePlanningAlert(req, id, data) {
-        return this.planningService.resolvePlanningAlert(req.user.tenantId, req.user.id, id, data.reason);
+        return this.planningService.resolvePlanningAlert(req.user.tenantId, req.user.id, id, {
+            reason: data.reason,
+            recommendationId: data.recommendationId,
+        });
     }
     async getAlertCorrectionGuidance(req, id) {
         return this.planningService.getAlertCorrectionGuidance(req.user.tenantId, id);
     }
     async approveShiftException(req, id, data) {
-        return this.planningService.approveShiftException(req.user.tenantId, req.user.id, id, data.reason);
+        return this.planningService.approveShiftException(req.user.tenantId, req.user.id, id, {
+            reason: data.reason,
+            recommendationId: data.recommendationId,
+            alertId: data.alertId,
+        });
     }
     async previewPublish(req, body) {
         return this.planningService.previewPublishPlanning(req.user.tenantId, new Date(body.start), new Date(body.end));
@@ -306,30 +322,33 @@ __decorate([
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
     (0, common_1.Post)('optimize'),
     (0, permissions_decorator_1.Permissions)('planning:manage'),
+    (0, throttler_1.Throttle)({ default: { limit: 10, ttl: 60000 } }),
     __param(0, (0, common_1.Request)()),
-    __param(1, (0, common_1.Body)('shifts')),
+    __param(1, (0, common_1.Body)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Object, Array]),
+    __metadata("design:paramtypes", [Object, shift_mutation_dto_1.OptimizePlanningDto]),
     __metadata("design:returntype", Promise)
 ], PlanningController.prototype, "optimize", null);
 __decorate([
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
     (0, common_1.Post)('auto-schedule'),
     (0, permissions_decorator_1.Permissions)('planning:manage'),
+    (0, throttler_1.Throttle)({ default: { limit: 5, ttl: 60000 } }),
     __param(0, (0, common_1.Request)()),
     __param(1, (0, common_1.Body)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Object, Object]),
+    __metadata("design:paramtypes", [Object, shift_mutation_dto_1.AutoScheduleDto]),
     __metadata("design:returntype", Promise)
 ], PlanningController.prototype, "autoSchedule", null);
 __decorate([
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
     (0, common_1.Post)('generate'),
     (0, permissions_decorator_1.Permissions)('planning:manage'),
+    (0, throttler_1.Throttle)({ default: { limit: 5, ttl: 60000 } }),
     __param(0, (0, common_1.Request)()),
     __param(1, (0, common_1.Body)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Object, Object]),
+    __metadata("design:paramtypes", [Object, shift_mutation_dto_1.GeneratePlanningDto]),
     __metadata("design:returntype", Promise)
 ], PlanningController.prototype, "generate", null);
 __decorate([
@@ -509,7 +528,7 @@ __decorate([
 ], PlanningController.prototype, "getAlertCorrectionGuidance", null);
 __decorate([
     (0, common_1.Post)('shifts/:id/exception'),
-    (0, permissions_decorator_1.Permissions)('planning:exception'),
+    (0, permissions_decorator_1.Permissions)('planning:exceptions:approve'),
     (0, swagger_1.ApiOkResponse)({ type: compliance_api_dto_1.ApproveShiftExceptionResponseDto }),
     __param(0, (0, common_1.Request)()),
     __param(1, (0, common_1.Param)('id', common_1.ParseIntPipe)),
@@ -523,6 +542,7 @@ __decorate([
     (0, common_1.Post)('publish/preview'),
     (0, permissions_decorator_1.Permissions)('planning:read'),
     (0, swagger_1.ApiOkResponse)({ type: compliance_api_dto_1.PublishPlanningPreviewResponseDto }),
+    (0, throttler_1.Throttle)({ default: { limit: 20, ttl: 60000 } }),
     __param(0, (0, common_1.Request)()),
     __param(1, (0, common_1.Body)()),
     __metadata("design:type", Function),
@@ -532,7 +552,8 @@ __decorate([
 __decorate([
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
     (0, common_1.Post)('publish'),
-    (0, permissions_decorator_1.Permissions)('planning:manage'),
+    (0, permissions_decorator_1.Permissions)('planning:publish'),
+    (0, throttler_1.Throttle)({ default: { limit: 10, ttl: 60000 } }),
     __param(0, (0, common_1.Request)()),
     __param(1, (0, common_1.Body)()),
     __metadata("design:type", Function),
@@ -597,6 +618,7 @@ __decorate([
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
     (0, common_1.Post)('shifts'),
     (0, permissions_decorator_1.Permissions)('planning:write'),
+    (0, throttler_1.Throttle)({ default: { limit: 30, ttl: 60000 } }),
     __param(0, (0, common_1.Request)()),
     __param(1, (0, common_1.Body)()),
     __metadata("design:type", Function),
@@ -607,6 +629,7 @@ __decorate([
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
     (0, common_1.Post)('assign-replacement'),
     (0, permissions_decorator_1.Permissions)('planning:write'),
+    (0, throttler_1.Throttle)({ default: { limit: 20, ttl: 60000 } }),
     __param(0, (0, common_1.Request)()),
     __param(1, (0, common_1.Body)()),
     __metadata("design:type", Function),
@@ -627,6 +650,7 @@ __decorate([
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
     (0, common_1.Post)('shifts/:id/generate-contract'),
     (0, permissions_decorator_1.Permissions)('documents:write'),
+    (0, throttler_1.Throttle)({ default: { limit: 10, ttl: 60000 } }),
     __param(0, (0, common_1.Request)()),
     __param(1, (0, common_1.Param)('id')),
     __metadata("design:type", Function),

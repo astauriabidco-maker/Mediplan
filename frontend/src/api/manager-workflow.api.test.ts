@@ -79,8 +79,11 @@ describe('managerWorkflowApi', () => {
   });
 
   it('calls correction mutation endpoints with required payloads', async () => {
-    await managerWorkflowApi.reassignShift(90, 12);
-    await managerWorkflowApi.requestReplacement(90, 'Absence imprevue');
+    await managerWorkflowApi.reassignShift(90, 12, 'Reequilibrage');
+    await managerWorkflowApi.requestReplacement(90, 'Absence imprevue', {
+      recommendationId: 'recommendation:shift:90',
+      alertId: 44,
+    });
     await managerWorkflowApi.approveException(90, 'Continuite de service');
     await managerWorkflowApi.revalidateShift(90);
     await managerWorkflowApi.resolveAlert(44, 'Alerte corrigee');
@@ -88,12 +91,16 @@ describe('managerWorkflowApi', () => {
     expect(axiosMock.post).toHaveBeenNthCalledWith(
       1,
       '/api/planning/shifts/90/reassign',
-      { agentId: 12 },
+      { agentId: 12, reason: 'Reequilibrage' },
     );
     expect(axiosMock.post).toHaveBeenNthCalledWith(
       2,
       '/api/planning/shifts/90/request-replacement',
-      { reason: 'Absence imprevue' },
+      {
+        reason: 'Absence imprevue',
+        recommendationId: 'recommendation:shift:90',
+        alertId: 44,
+      },
     );
     expect(axiosMock.post).toHaveBeenNthCalledWith(
       3,

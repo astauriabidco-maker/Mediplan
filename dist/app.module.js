@@ -41,12 +41,15 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.AppModule = void 0;
 const common_1 = require("@nestjs/common");
+const core_1 = require("@nestjs/core");
 const config_1 = require("@nestjs/config");
 const typeorm_1 = require("@nestjs/typeorm");
 const serve_static_1 = require("@nestjs/serve-static");
 const path_1 = require("path");
 const Joi = __importStar(require("joi"));
 const throttler_1 = require("@nestjs/throttler");
+const api_exception_filter_1 = require("./common/filters/api-exception.filter");
+const api_validation_pipe_1 = require("./common/pipes/api-validation.pipe");
 const locale_module_1 = require("./core/config/locale.module");
 const app_controller_1 = require("./app.controller");
 const app_service_1 = require("./app.service");
@@ -78,6 +81,7 @@ const ght_module_1 = require("./ght/ght.module");
 const facility_module_1 = require("./facility/facility.module");
 const settings_module_1 = require("./settings/settings.module");
 const analytics_module_1 = require("./analytics/analytics.module");
+const backup_module_1 = require("./backup/backup.module");
 let AppModule = class AppModule {
 };
 exports.AppModule = AppModule;
@@ -88,10 +92,12 @@ exports.AppModule = AppModule = __decorate([
                 rootPath: (0, path_1.join)(process.cwd(), 'public'),
             }),
             schedule_1.ScheduleModule.forRoot(),
-            throttler_1.ThrottlerModule.forRoot([{
+            throttler_1.ThrottlerModule.forRoot([
+                {
                     ttl: 60000,
                     limit: 100,
-                }]),
+                },
+            ]),
             locale_module_1.LocaleConfigModule,
             config_1.ConfigModule.forRoot({
                 isGlobal: true,
@@ -120,7 +126,13 @@ exports.AppModule = AppModule = __decorate([
                     synchronize: process.env.NODE_ENV !== 'production',
                 }),
             }),
-            typeorm_1.TypeOrmModule.forFeature([agent_entity_1.Agent, shift_entity_1.Shift, audit_log_entity_1.AuditLog, competency_entity_1.Competency, agent_competency_entity_1.AgentCompetency]),
+            typeorm_1.TypeOrmModule.forFeature([
+                agent_entity_1.Agent,
+                shift_entity_1.Shift,
+                audit_log_entity_1.AuditLog,
+                competency_entity_1.Competency,
+                agent_competency_entity_1.AgentCompetency,
+            ]),
             agents_module_1.AgentsModule,
             competencies_module_1.CompetenciesModule,
             ui_module_1.UiModule,
@@ -142,9 +154,25 @@ exports.AppModule = AppModule = __decorate([
             facility_module_1.FacilityModule,
             settings_module_1.SettingsModule,
             analytics_module_1.AnalyticsModule,
+            backup_module_1.BackupModule,
         ],
         controllers: [app_controller_1.AppController],
-        providers: [app_service_1.AppService, seed_service_1.SeedService],
+        providers: [
+            app_service_1.AppService,
+            seed_service_1.SeedService,
+            {
+                provide: core_1.APP_GUARD,
+                useClass: throttler_1.ThrottlerGuard,
+            },
+            {
+                provide: core_1.APP_FILTER,
+                useClass: api_exception_filter_1.ApiExceptionFilter,
+            },
+            {
+                provide: core_1.APP_PIPE,
+                useFactory: api_validation_pipe_1.createApiValidationPipe,
+            },
+        ],
     })
 ], AppModule);
 //# sourceMappingURL=app.module.js.map

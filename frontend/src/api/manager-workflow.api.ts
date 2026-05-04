@@ -263,13 +263,16 @@ export interface PublishPlanningReport {
 export interface PlanningComplianceTimelineResponse {
   tenantId: string;
   period: CompliancePeriod;
+  total: number;
   items: Array<{
-    id: string;
+    id: string | number;
     timestamp: string;
     actorId?: number;
     action: string;
-    entity: string;
-    entityId?: string | number;
+    entity: {
+      type: string;
+      id?: string;
+    };
     label: string;
     status?: string;
     severity?: AlertSeverity;
@@ -441,7 +444,12 @@ export const managerWorkflowApi = {
     );
   },
 
-  reassignShift: async (shiftId: number, agentId: number) => {
+  reassignShift: async (
+    shiftId: number,
+    agentId: number,
+    reason: string,
+    trace?: { recommendationId?: string; alertId?: number },
+  ) => {
     return withManagerActionTrace(
       {
         actionCode: 'REASSIGN_SHIFT',
@@ -453,14 +461,18 @@ export const managerWorkflowApi = {
       async () => {
         const response = await axios.post(
           `/api/planning/shifts/${shiftId}/reassign`,
-          { agentId },
+          { agentId, reason, ...trace },
         );
         return response.data;
       },
     );
   },
 
-  requestReplacement: async (shiftId: number, reason?: string) => {
+  requestReplacement: async (
+    shiftId: number,
+    reason: string,
+    trace?: { recommendationId?: string; alertId?: number },
+  ) => {
     return withManagerActionTrace(
       {
         actionCode: 'REQUEST_REPLACEMENT',
@@ -474,6 +486,7 @@ export const managerWorkflowApi = {
           `/api/planning/shifts/${shiftId}/request-replacement`,
           {
             reason,
+            ...trace,
           },
         );
         return response.data;
@@ -481,7 +494,11 @@ export const managerWorkflowApi = {
     );
   },
 
-  approveException: async (shiftId: number, reason: string) => {
+  approveException: async (
+    shiftId: number,
+    reason: string,
+    trace?: { recommendationId?: string; alertId?: number },
+  ) => {
     return withManagerActionTrace(
       {
         actionCode: 'APPROVE_EXCEPTION',
@@ -493,7 +510,7 @@ export const managerWorkflowApi = {
       async () => {
         const response = await axios.post(
           `/api/planning/shifts/${shiftId}/exception`,
-          { reason },
+          { reason, ...trace },
         );
         return response.data;
       },
@@ -518,7 +535,11 @@ export const managerWorkflowApi = {
     );
   },
 
-  resolveAlert: async (alertId: number, reason?: string) => {
+  resolveAlert: async (
+    alertId: number,
+    reason: string,
+    trace?: { recommendationId?: string },
+  ) => {
     return withManagerActionTrace(
       {
         actionCode: 'RESOLVE_ALERT',
@@ -530,7 +551,7 @@ export const managerWorkflowApi = {
       async () => {
         const response = await axios.patch(
           `/api/planning/alerts/${alertId}/resolve`,
-          { reason },
+          { reason, ...trace },
         );
         return response.data;
       },

@@ -12,13 +12,14 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { ApiOkResponse } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { PlanningService } from './planning.service';
 import { OptimizationService } from './optimization.service';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Agent } from '../agents/entities/agent.entity';
 import { Repository } from 'typeorm';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
-import { AutoSchedulerService, ShiftNeed } from './auto-scheduler.service';
+import { AutoSchedulerService } from './auto-scheduler.service';
 import { DocumentsService } from '../documents/documents.service';
 import { Shift } from './entities/shift.entity';
 import { Leave, LeaveType, LeaveStatus } from './entities/leave.entity';
@@ -51,7 +52,10 @@ import {
 } from './dto/compliance-api.dto';
 import {
   ApproveShiftExceptionDto,
+  AutoScheduleDto,
   CreateShiftDto,
+  GeneratePlanningDto,
+  OptimizePlanningDto,
   PublishPlanningDto,
   ReassignShiftDto,
   RequestReplacementDto,
@@ -177,10 +181,10 @@ export class PlanningController {
   @UseGuards(JwtAuthGuard)
   @Post('optimize')
   @Permissions('planning:manage')
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
   async optimize(
     @Request() req: AuthenticatedRequest,
-    @Body('shifts')
-    shifts: { id: string; start: string; end: string; requiredSkill: string }[],
+    @Body() body: OptimizePlanningDto,
   ) {
     // Fetch agents belonging to the tenant
     const agents = await this.agentRepository.find({
@@ -188,7 +192,7 @@ export class PlanningController {
       relations: ['agentCompetencies', 'agentCompetencies.competency'],
     });
 
-    const parsedShifts = shifts.map((s) => ({
+    const parsedShifts = body.shifts.map((s) => ({
       ...s,
       start: new Date(s.start),
       end: new Date(s.end),
@@ -205,9 +209,10 @@ export class PlanningController {
   @UseGuards(JwtAuthGuard)
   @Post('auto-schedule')
   @Permissions('planning:manage')
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
   async autoSchedule(
     @Request() req: AuthenticatedRequest,
-    @Body() body: { start: string; end: string; needs: ShiftNeed[] },
+    @Body() body: AutoScheduleDto,
   ) {
     const tenantId = req.user.tenantId;
     return this.autoSchedulerService.generateSchedule(
@@ -226,9 +231,10 @@ export class PlanningController {
   @UseGuards(JwtAuthGuard)
   @Post('generate')
   @Permissions('planning:manage')
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
   async generate(
     @Request() req: AuthenticatedRequest,
-    @Body() body: { start: string; end: string },
+    @Body() body: GeneratePlanningDto,
   ) {
     const tenantId = req.user.tenantId;
     const startDate = new Date(body.start);
@@ -440,6 +446,11 @@ export class PlanningController {
       req.user.id,
       id,
       data.agentId,
+      {
+        reason: data.reason,
+        recommendationId: data.recommendationId,
+        alertId: data.alertId,
+      },
     );
   }
 
@@ -455,7 +466,11 @@ export class PlanningController {
       req.user.tenantId,
       req.user.id,
       id,
-      data.reason,
+      {
+        reason: data.reason,
+        recommendationId: data.recommendationId,
+        alertId: data.alertId,
+      },
     );
   }
 
@@ -471,7 +486,10 @@ export class PlanningController {
       req.user.tenantId,
       req.user.id,
       id,
-      data.reason,
+      {
+        reason: data.reason,
+        recommendationId: data.recommendationId,
+      },
     );
   }
 
@@ -490,7 +508,7 @@ export class PlanningController {
   }
 
   @Post('shifts/:id/exception')
-  @Permissions('planning:exception')
+  @Permissions('planning:exceptions:approve')
   @ApiOkResponse({ type: ApproveShiftExceptionResponseDto })
   async approveShiftException(
     @Request() req: AuthenticatedRequest,
@@ -501,7 +519,11 @@ export class PlanningController {
       req.user.tenantId,
       req.user.id,
       id,
-      data.reason,
+      {
+        reason: data.reason,
+        recommendationId: data.recommendationId,
+        alertId: data.alertId,
+      },
     );
   }
 
@@ -509,6 +531,7 @@ export class PlanningController {
   @Post('publish/preview')
   @Permissions('planning:read')
   @ApiOkResponse({ type: PublishPlanningPreviewResponseDto })
+  @Throttle({ default: { limit: 20, ttl: 60000 } })
   async previewPublish(
     @Request() req: AuthenticatedRequest,
     @Body() body: PublishPlanningDto,
@@ -522,7 +545,8 @@ export class PlanningController {
 
   @UseGuards(JwtAuthGuard)
   @Post('publish')
-  @Permissions('planning:manage')
+  @Permissions('planning:publish')
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
   async publish(
     @Request() req: AuthenticatedRequest,
     @Body() body: PublishPlanningDto,
@@ -605,6 +629,7 @@ export class PlanningController {
   @UseGuards(JwtAuthGuard)
   @Post('shifts')
   @Permissions('planning:write')
+  @Throttle({ default: { limit: 30, ttl: 60000 } })
   async createShift(
     @Request() req: AuthenticatedRequest,
     @Body() data: CreateShiftDto,
@@ -622,6 +647,7 @@ export class PlanningController {
   @UseGuards(JwtAuthGuard)
   @Post('assign-replacement')
   @Permissions('planning:write')
+  @Throttle({ default: { limit: 20, ttl: 60000 } })
   async assignReplacement(
     @Request() req: AuthenticatedRequest,
     @Body() data: CreateShiftDto,
@@ -655,6 +681,7 @@ export class PlanningController {
   @UseGuards(JwtAuthGuard)
   @Post('shifts/:id/generate-contract')
   @Permissions('documents:write')
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
   async generateContract(
     @Request() req: AuthenticatedRequest,
     @Param('id') id: string,

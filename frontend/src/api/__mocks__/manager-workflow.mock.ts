@@ -180,6 +180,7 @@ export const managerWorkflowMockCockpit: ManagerCockpitResponse = {
       requiredPermissions: ['planning:write'],
       bodyTemplate: {
         agentId: 12,
+        reason: 'Reequilibrage apres alerte manager',
       },
     },
   ],
@@ -307,14 +308,14 @@ export const managerWorkflowMockPublishSuccess: PublishPlanningResponse = {
 export const managerWorkflowMockTimeline: PlanningComplianceTimelineResponse = {
   tenantId: 'tenant-a',
   period,
+  total: 3,
   items: [
     {
       id: 'audit:1',
       timestamp: '2026-06-04T08:00:00.000Z',
       actorId: 99,
       action: 'COMPLIANCE_SCAN',
-      entity: 'SHIFT',
-      entityId: 90,
+      entity: { type: 'SHIFT', id: '90' },
       label: 'Shift bloque par surcharge hebdomadaire',
       status: 'BLOCKED',
       severity: 'HIGH',
@@ -324,8 +325,7 @@ export const managerWorkflowMockTimeline: PlanningComplianceTimelineResponse = {
       timestamp: '2026-06-04T10:30:00.000Z',
       actorId: 99,
       action: 'REASSIGN_SHIFT',
-      entity: 'SHIFT',
-      entityId: 90,
+      entity: { type: 'SHIFT', id: '90' },
       label: 'Shift reattribue a Nadia Martin',
       status: 'RESOLVED',
     },
@@ -334,7 +334,7 @@ export const managerWorkflowMockTimeline: PlanningComplianceTimelineResponse = {
       timestamp: '2026-06-04T11:15:00.000Z',
       actorId: 99,
       action: 'PUBLISH_PLANNING',
-      entity: 'PLANNING',
+      entity: { type: 'PLANNING' },
       label: 'Planning publie avec 35 shifts',
       status: 'PUBLISHED',
     },

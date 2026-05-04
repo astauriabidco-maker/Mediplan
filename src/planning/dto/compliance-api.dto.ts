@@ -453,14 +453,14 @@ export class PlanningTimelineEntityDto {
 }
 
 export class PlanningTimelineItemDto {
-  @ApiProperty({ example: 15 })
-  id: number;
+  @ApiProperty({ example: 'alert:15' })
+  id: number | string;
 
   @ApiProperty()
   timestamp: Date;
 
-  @ApiProperty({ example: 99 })
-  actorId: number;
+  @ApiPropertyOptional({ example: 99 })
+  actorId?: number;
 
   @ApiProperty({ example: 'REASSIGN_SHIFT' })
   action: string;

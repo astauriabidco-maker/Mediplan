@@ -496,13 +496,23 @@ describe('PlanningController shift mutations', () => {
   it('reassigns a shift from the manager action path', async () => {
     planningService.reassignShift.mockResolvedValue({ id: 12 });
 
-    await controller.reassignShift(req, 12, { agentId: 77 });
+    await controller.reassignShift(req, 12, {
+      agentId: 77,
+      reason: 'Rééquilibrage charge',
+      recommendationId: 'recommendation:shift:12',
+      alertId: 8,
+    });
 
     expect(planningService.reassignShift).toHaveBeenCalledWith(
       'tenant-a',
       99,
       12,
       77,
+      {
+        reason: 'Rééquilibrage charge',
+        recommendationId: 'recommendation:shift:12',
+        alertId: 8,
+      },
     );
   });
 
@@ -511,26 +521,38 @@ describe('PlanningController shift mutations', () => {
 
     await controller.requestReplacement(req, 12, {
       reason: 'Repos insuffisant',
+      recommendationId: 'recommendation:shift:12',
+      alertId: 8,
     });
 
     expect(planningService.requestReplacement).toHaveBeenCalledWith(
       'tenant-a',
       99,
       12,
-      'Repos insuffisant',
+      {
+        reason: 'Repos insuffisant',
+        recommendationId: 'recommendation:shift:12',
+        alertId: 8,
+      },
     );
   });
 
   it('resolves a planning alert from the manager action path', async () => {
     planningService.resolvePlanningAlert.mockResolvedValue({ id: 5 });
 
-    await controller.resolvePlanningAlert(req, 5, { reason: 'Corrigé' });
+    await controller.resolvePlanningAlert(req, 5, {
+      reason: 'Corrigé',
+      recommendationId: 'recommendation:alert:5',
+    });
 
     expect(planningService.resolvePlanningAlert).toHaveBeenCalledWith(
       'tenant-a',
       99,
       5,
-      'Corrigé',
+      {
+        reason: 'Corrigé',
+        recommendationId: 'recommendation:alert:5',
+      },
     );
   });
 
@@ -539,13 +561,19 @@ describe('PlanningController shift mutations', () => {
 
     await controller.approveShiftException(req, 12, {
       reason: 'Continuité de service critique',
+      recommendationId: 'recommendation:shift:12',
+      alertId: 8,
     });
 
     expect(planningService.approveShiftException).toHaveBeenCalledWith(
       'tenant-a',
       99,
       12,
-      'Continuité de service critique',
+      {
+        reason: 'Continuité de service critique',
+        recommendationId: 'recommendation:shift:12',
+        alertId: 8,
+      },
     );
   });
 });

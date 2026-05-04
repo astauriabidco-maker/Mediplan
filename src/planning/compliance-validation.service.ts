@@ -267,6 +267,7 @@ export class ComplianceValidationService {
         tenantId,
         agentId,
         result,
+        { shiftId: options.excludeShiftId },
       );
     }
 

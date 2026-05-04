@@ -66,7 +66,7 @@ describe('AgentsService', () => {
       AuditAction.CREATE,
       AuditEntityType.AGENT,
       '1',
-      expect.objectContaining({ email: 'nurse.one@example.test', matricule: 'MAT-001' }),
+      expect.not.objectContaining({ email: 'nurse.one@example.test', matricule: 'MAT-001' }),
     );
   });
 

@@ -58,4 +58,13 @@ export class AuditLog {
 
     @Column()
     tenantId: string;
+
+    @Column({ nullable: true })
+    chainSequence: number;
+
+    @Column({ nullable: true })
+    previousHash: string;
+
+    @Column({ nullable: true })
+    eventHash: string;
 }

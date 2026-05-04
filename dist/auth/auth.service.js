@@ -54,6 +54,7 @@ const agent_entity_1 = require("../agents/entities/agent.entity");
 const bcrypt = __importStar(require("bcrypt"));
 const mail_service_1 = require("../mail/mail.service");
 const crypto = __importStar(require("crypto"));
+const permissions_1 = require("./permissions");
 let AuthService = class AuthService {
     agentRepository;
     jwtService;
@@ -151,7 +152,9 @@ let AuthService = class AuthService {
     }
     async login(user) {
         const roleName = user.dbRole?.name || user.role;
-        const permissions = user.dbRole?.permissions || [];
+        const permissions = user.dbRole?.permissions?.length
+            ? user.dbRole.permissions
+            : (0, permissions_1.getDefaultPermissionsForRole)(roleName);
         const payload = {
             username: user.email,
             sub: user.id,

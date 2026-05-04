@@ -63,6 +63,7 @@ export class ComplianceAlertService {
     tenantId: string,
     agentId: number,
     validation: ShiftValidationResult,
+    context: { shiftId?: number } = {},
   ): Promise<void> {
     const activeRules = new Set(
       validation.blockingReasons.filter(
@@ -76,6 +77,7 @@ export class ComplianceAlertService {
         agentId,
         ruleCode,
         validation.metadata[ruleCode],
+        context,
       );
     }
 
@@ -87,6 +89,7 @@ export class ComplianceAlertService {
     agentId: number,
     ruleCode: ManagedAlertRuleCode,
     details: unknown,
+    context: { shiftId?: number },
   ): Promise<void> {
     const definition = ALERT_DEFINITIONS[ruleCode];
     const message = this.getMessage(ruleCode);
@@ -104,6 +107,7 @@ export class ComplianceAlertService {
     const metadata = {
       ruleCode,
       details,
+      shiftId: context.shiftId,
       lastDetectedAt: new Date(),
     };
 

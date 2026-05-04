@@ -234,7 +234,7 @@ const TimelineRow = ({ item }: { item: PlanningTimelineItem }) => (
         <div className="break-words font-semibold text-white">{item.label}</div>
         <div className="mt-1 text-xs text-slate-500">
           {item.entity.type} {item.entity.id ? `#${item.entity.id}` : ''} ·
-          acteur #{item.actorId}
+          {item.actorId ? `acteur #${item.actorId}` : 'systeme compliance'}
         </div>
       </div>
     </div>

@@ -2,13 +2,13 @@ import { PlanningService } from './planning.service';
 import { OptimizationService } from './optimization.service';
 import { Agent } from '../agents/entities/agent.entity';
 import { Repository } from 'typeorm';
-import { AutoSchedulerService, ShiftNeed } from './auto-scheduler.service';
+import { AutoSchedulerService } from './auto-scheduler.service';
 import { DocumentsService } from '../documents/documents.service';
 import { Shift } from './entities/shift.entity';
 import { Leave, LeaveType } from './entities/leave.entity';
 import type { AuthenticatedRequest } from '../auth/authenticated-request';
 import { CompliancePeriodQueryDto, ComplianceReportResponseDto, ComplianceReportsQueryDto, ComplianceSummaryResponseDto, CorrectionGuidanceResponseDto, DecisionRecommendationsResponseDto, ApproveShiftExceptionResponseDto, ManagerCockpitResponseDto, ManagerWorklistResponseDto, PlanningComplianceTimelineQueryDto, PlanningComplianceTimelineResponseDto, ProductionObservabilityHealthResponseDto, PublishPlanningPreviewResponseDto, PublishPlanningResponseDto, ReassignShiftResponseDto, RevalidateShiftResponseDto, RequestReplacementResponseDto, ResolvePlanningAlertResponseDto, ServiceComplianceIndicatorsResponseDto, ShiftDecisionSuggestionsResponseDto, ShiftComplianceResponseDto } from './dto/compliance-api.dto';
-import { ApproveShiftExceptionDto, CreateShiftDto, PublishPlanningDto, ReassignShiftDto, RequestReplacementDto, ResolvePlanningAlertDto, UpdateShiftDto } from './dto/shift-mutation.dto';
+import { ApproveShiftExceptionDto, AutoScheduleDto, CreateShiftDto, GeneratePlanningDto, OptimizePlanningDto, PublishPlanningDto, ReassignShiftDto, RequestReplacementDto, ResolvePlanningAlertDto, UpdateShiftDto } from './dto/shift-mutation.dto';
 export declare class PlanningController {
     private readonly planningService;
     private readonly optimizationService;
@@ -29,21 +29,9 @@ export declare class PlanningController {
     getLeaves(req: AuthenticatedRequest, queryTenantId?: string): Promise<Leave[]>;
     getShifts(req: AuthenticatedRequest, start: string, end: string, facilityId?: string, serviceId?: string, queryTenantId?: string): Promise<Shift[]>;
     validate(req: AuthenticatedRequest, agentId: number, start: string, end: string): Promise<import("./compliance-validation.types").ShiftValidationResult>;
-    optimize(req: AuthenticatedRequest, shifts: {
-        id: string;
-        start: string;
-        end: string;
-        requiredSkill: string;
-    }[]): Promise<import("./optimization.service").OptimizationResult>;
-    autoSchedule(req: AuthenticatedRequest, body: {
-        start: string;
-        end: string;
-        needs: ShiftNeed[];
-    }): Promise<Shift[]>;
-    generate(req: AuthenticatedRequest, body: {
-        start: string;
-        end: string;
-    }): Promise<Shift[]>;
+    optimize(req: AuthenticatedRequest, body: OptimizePlanningDto): Promise<import("./optimization.service").OptimizationResult>;
+    autoSchedule(req: AuthenticatedRequest, body: AutoScheduleDto): Promise<Shift[]>;
+    generate(req: AuthenticatedRequest, body: GeneratePlanningDto): Promise<Shift[]>;
     getManagerCockpit(req: AuthenticatedRequest, query: CompliancePeriodQueryDto): Promise<ManagerCockpitResponseDto>;
     getProductionObservabilityHealth(req: AuthenticatedRequest, query: CompliancePeriodQueryDto): Promise<ProductionObservabilityHealthResponseDto>;
     getServiceComplianceIndicators(req: AuthenticatedRequest, query: CompliancePeriodQueryDto): Promise<ServiceComplianceIndicatorsResponseDto>;

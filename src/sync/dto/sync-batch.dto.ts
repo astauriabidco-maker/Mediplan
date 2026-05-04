@@ -1,19 +1,26 @@
-import { IsArray, IsNumber, IsString, ValidateNested } from 'class-validator';
+import {
+  IsArray,
+  IsNumber,
+  IsObject,
+  IsString,
+  ValidateNested,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class SyncActionDto {
-    @IsString()
-    type: string;
+  @IsString()
+  type: string;
 
-    @IsNumber()
-    timestamp: number;
+  @IsNumber()
+  timestamp: number;
 
-    payload: any;
+  @IsObject()
+  payload: Record<string, unknown>;
 }
 
 export class SyncBatchDto {
-    @IsArray()
-    @ValidateNested({ each: true })
-    @Type(() => SyncActionDto)
-    actions: SyncActionDto[];
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => SyncActionDto)
+  actions: SyncActionDto[];
 }

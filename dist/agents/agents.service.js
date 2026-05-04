@@ -76,8 +76,6 @@ let AgentsService = class AgentsService {
         });
         const savedAgent = await this.agentRepository.save(agent);
         await this.auditService.log(createAgentDto.tenantId, actorId, audit_log_entity_1.AuditAction.CREATE, audit_log_entity_1.AuditEntityType.AGENT, savedAgent.id.toString(), {
-            email: savedAgent.email,
-            matricule: savedAgent.matricule,
             hospitalServiceId: savedAgent.hospitalServiceId,
             managerId: savedAgent.managerId,
             role: savedAgent.role,
@@ -254,9 +252,6 @@ let AgentsService = class AgentsService {
     getAuditSnapshot(agent) {
         return {
             id: agent.id,
-            email: agent.email,
-            matricule: agent.matricule,
-            nom: agent.nom,
             role: agent.role,
             roleId: agent.roleId,
             status: agent.status,

@@ -44,11 +44,12 @@ describe('MANAGER_WORKFLOW_API_CONTRACT', () => {
       (endpoint) => endpoint.step === 'fix',
     );
 
-    expect(fixEndpoints).toHaveLength(4);
+    expect(fixEndpoints).toHaveLength(5);
     expect(fixEndpoints.every((endpoint) => endpoint.actionCode)).toBe(true);
     expect(
       fixEndpoints.map((endpoint) => endpoint.permission).sort(),
     ).toEqual([
+      'alerts:manage',
       'planning:exception',
       'planning:write',
       'planning:write',

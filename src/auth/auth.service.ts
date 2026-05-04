@@ -6,6 +6,7 @@ import { Agent, UserRole, UserStatus } from '../agents/entities/agent.entity';
 import * as bcrypt from 'bcrypt';
 import { MailService } from '../mail/mail.service';
 import * as crypto from 'crypto';
+import { getDefaultPermissionsForRole } from './permissions';
 
 @Injectable()
 export class AuthService {
@@ -127,7 +128,9 @@ export class AuthService {
 
     async login(user: any) {
         const roleName = user.dbRole?.name || user.role;
-        const permissions = user.dbRole?.permissions || [];
+        const permissions = user.dbRole?.permissions?.length
+            ? user.dbRole.permissions
+            : getDefaultPermissionsForRole(roleName);
 
         const payload = {
             username: user.email,

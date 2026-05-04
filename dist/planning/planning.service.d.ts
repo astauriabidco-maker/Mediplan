@@ -62,12 +62,12 @@ export interface PlanningComplianceTimelineFilters extends ComplianceReportFilte
     shiftId?: number;
 }
 export interface PlanningComplianceTimelineItem {
-    id: number;
+    id: number | string;
     timestamp: Date;
-    actorId: number;
+    actorId?: number;
     action: string;
     entity: {
-        type: AuditEntityType;
+        type: AuditEntityType | 'ALERT' | 'RECOMMENDATION';
         id?: string;
     };
     label: string;
@@ -162,6 +162,11 @@ export interface DecisionRecommendations {
     };
     total: number;
     recommendations: DecisionRecommendation[];
+}
+export interface ManagerDecisionTrace {
+    reason: string;
+    recommendationId?: string;
+    alertId?: number;
 }
 export interface ShiftReplacementSuggestion {
     agentId: number;
@@ -366,7 +371,7 @@ export declare class PlanningService {
         shift: Record<string, unknown>;
         validation: ShiftValidationResult;
     }>;
-    approveShiftException(tenantId: string, actorId: number, shiftId: string | number, reason: string): Promise<Shift>;
+    approveShiftException(tenantId: string, actorId: number, shiftId: string | number, trace: ManagerDecisionTrace | string): Promise<Shift>;
     revalidateShift(tenantId: string, actorId: number, shiftId: string | number): Promise<{
         shift: Record<string, unknown>;
         validation: ShiftValidationResult | {
@@ -378,9 +383,9 @@ export declare class PlanningService {
             };
         };
     }>;
-    reassignShift(tenantId: string, actorId: number, shiftId: string | number, agentId: number): Promise<Shift>;
-    requestReplacement(tenantId: string, actorId: number, shiftId: string | number, reason?: string): Promise<Shift>;
-    resolvePlanningAlert(tenantId: string, actorId: number, alertId: string | number, reason?: string): Promise<AgentAlert>;
+    reassignShift(tenantId: string, actorId: number, shiftId: string | number, agentId: number, trace: ManagerDecisionTrace): Promise<Shift>;
+    requestReplacement(tenantId: string, actorId: number, shiftId: string | number, trace: ManagerDecisionTrace): Promise<Shift>;
+    resolvePlanningAlert(tenantId: string, actorId: number, alertId: string | number, trace: Omit<ManagerDecisionTrace, 'alertId'>): Promise<AgentAlert>;
     getShiftApplications(tenantId: string): Promise<ShiftApplication[]>;
     approveGhtApplication(tenantId: string, applicationId: string | number, actorId: number): Promise<ShiftApplication>;
     rejectGhtApplication(tenantId: string, applicationId: string | number, actorId: number): Promise<ShiftApplication>;
@@ -391,15 +396,20 @@ export declare class PlanningService {
         message: string;
     }>;
     private getAuditBusinessAction;
+    private normalizeDecisionTrace;
+    private getActionManagerAuditContext;
     private matchesTimelineFilters;
+    private matchesTimelineAlertFilters;
     private auditLogInvolvesAgent;
     private auditLogInvolvesShift;
     private toPlanningTimelineItem;
+    private toPlanningAlertTimelineItem;
     private getTimelineLabel;
     private getTimelineStatus;
     private getTimelineSeverity;
     private summarizeTimelineDetails;
     private summarizeValidation;
+    private omitUndefined;
     private assertShiftCanEnterSwap;
     private assertValidShiftDates;
     private formatValidationFailure;
@@ -414,6 +424,7 @@ export declare class PlanningService {
     private addPublishPlanningRecommendations;
     private getPublishPlanningRecommendation;
     private toDecisionRecommendation;
+    private getRecommendationId;
     private getCategoryPriority;
     private getRecommendationRationale;
     private getRecommendedActionsForRules;

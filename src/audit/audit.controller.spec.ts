@@ -15,11 +15,13 @@ const createRequest = (overrides: Partial<any> = {}) => ({
 
 describe('AuditController', () => {
   let controller: AuditController;
-  let auditService: jest.Mocked<Pick<AuditService, 'getLogs'>>;
+  let auditService: jest.Mocked<Pick<AuditService, 'getLogs' | 'verifyChain' | 'exportLogs'>>;
 
   beforeEach(() => {
     auditService = {
       getLogs: jest.fn(),
+      verifyChain: jest.fn(),
+      exportLogs: jest.fn(),
     };
 
     controller = new AuditController(auditService as unknown as AuditService);
@@ -66,6 +68,44 @@ describe('AuditController', () => {
       from: new Date('2026-01-01T00:00:00.000Z'),
       to: new Date('2026-01-31T23:59:59.000Z'),
       limit: 25,
+    });
+  });
+
+  it('verifies the authenticated tenant chain', async () => {
+    await controller.verifyChain(createRequest(), 'tenant-b');
+
+    expect(auditService.verifyChain).toHaveBeenCalledWith('tenant-a');
+  });
+
+  it('allows SUPER_ADMIN users to verify an explicit tenant chain', async () => {
+    await controller.verifyChain(createRequest({ role: 'SUPER_ADMIN' }), 'tenant-b');
+
+    expect(auditService.verifyChain).toHaveBeenCalledWith('tenant-b');
+  });
+
+  it('exports audit logs with period and action filters', async () => {
+    await controller.exportLogs(
+      createRequest({ role: 'SUPER_ADMIN' }),
+      'tenant-b',
+      undefined,
+      AuditAction.DELETE,
+      undefined,
+      undefined,
+      undefined,
+      '2026-02-01T00:00:00.000Z',
+      '2026-02-28T23:59:59.000Z',
+      '50',
+    );
+
+    expect(auditService.exportLogs).toHaveBeenCalledWith('tenant-b', {
+      actorId: undefined,
+      action: AuditAction.DELETE,
+      entityType: undefined,
+      entityId: undefined,
+      detailAction: undefined,
+      from: new Date('2026-02-01T00:00:00.000Z'),
+      to: new Date('2026-02-28T23:59:59.000Z'),
+      limit: 50,
     });
   });
 });

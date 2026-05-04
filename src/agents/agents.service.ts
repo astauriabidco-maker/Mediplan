@@ -41,8 +41,6 @@ export class AgentsService {
             AuditEntityType.AGENT,
             savedAgent.id.toString(),
             {
-                email: savedAgent.email,
-                matricule: savedAgent.matricule,
                 hospitalServiceId: savedAgent.hospitalServiceId,
                 managerId: savedAgent.managerId,
                 role: savedAgent.role,
@@ -291,9 +289,6 @@ export class AgentsService {
     private getAuditSnapshot(agent: Agent) {
         return {
             id: agent.id,
-            email: agent.email,
-            matricule: agent.matricule,
-            nom: agent.nom,
             role: agent.role,
             roleId: agent.roleId,
             status: agent.status,

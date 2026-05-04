@@ -26,6 +26,10 @@ __decorate([
     (0, class_validator_1.IsNumber)(),
     __metadata("design:type", Number)
 ], SyncActionDto.prototype, "timestamp", void 0);
+__decorate([
+    (0, class_validator_1.IsObject)(),
+    __metadata("design:type", Object)
+], SyncActionDto.prototype, "payload", void 0);
 class SyncBatchDto {
     actions;
 }

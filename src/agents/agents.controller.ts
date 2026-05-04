@@ -7,6 +7,7 @@ import { Permissions } from '../auth/permissions.decorator';
 import { RolesGuard } from '../auth/roles.guard';
 import type { AuthenticatedRequest } from '../auth/authenticated-request';
 import { resolveTenantId } from '../auth/tenant-context';
+import { serializeAgentForViewer, serializeAgentsForViewer } from './dto/agent-response.dto';
 
 @Controller('agents')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -15,49 +16,55 @@ export class AgentsController {
 
     @Post()
     @Permissions('agents:write')
-    create(@Request() req: AuthenticatedRequest, @Body() createAgentDto: CreateAgentDto) {
+    async create(@Request() req: AuthenticatedRequest, @Body() createAgentDto: CreateAgentDto) {
         // Force tenantId from authenticated user
         const tenantId = req.user.tenantId;
         const actorId = req.user.id;
-        return this.agentsService.create({ ...createAgentDto, tenantId }, actorId);
+        const agent = await this.agentsService.create({ ...createAgentDto, tenantId }, actorId);
+        return serializeAgentForViewer(agent, req.user);
     }
 
     @Get()
     @Permissions('agents:read')
-    findAll(@Request() req: AuthenticatedRequest, @Query('tenantId') queryTenantId?: string) {
-        return this.agentsService.findAll(resolveTenantId(req, queryTenantId));
+    async findAll(@Request() req: AuthenticatedRequest, @Query('tenantId') queryTenantId?: string) {
+        const agents = await this.agentsService.findAll(resolveTenantId(req, queryTenantId));
+        return serializeAgentsForViewer(agents, req.user);
     }
 
     @Get('my-team')
     @Permissions('agents:read') // Or a specific 'team:read'? Sticking to agents:read for simple hierarchy view
-    getMyTeam(@Request() req: AuthenticatedRequest) {
+    async getMyTeam(@Request() req: AuthenticatedRequest) {
         const tenantId = req.user.tenantId;
         const agentId = req.user.id;
-        return this.agentsService.getMyTeam(agentId, tenantId);
+        const agents = await this.agentsService.getMyTeam(agentId, tenantId);
+        return serializeAgentsForViewer(agents, req.user);
     }
 
     @Get(':id')
     @Permissions('agents:read')
-    findOne(@Request() req: AuthenticatedRequest, @Param('id') id: string, @Query('tenantId') queryTenantId?: string) {
+    async findOne(@Request() req: AuthenticatedRequest, @Param('id') id: string, @Query('tenantId') queryTenantId?: string) {
         const tenantId = resolveTenantId(req, queryTenantId);
         const actorId = req.user.id;
-        return this.agentsService.findOne(+id, tenantId, actorId);
+        const agent = await this.agentsService.findOne(+id, tenantId, actorId);
+        return serializeAgentForViewer(agent, req.user);
     }
 
     @Patch(':id')
     @Permissions('agents:write', 'services:manage_staff') // Allow both as updateAgent is used for service assignment
-    update(@Request() req: AuthenticatedRequest, @Param('id') id: string, @Body() updateAgentDto: UpdateAgentDto, @Query('tenantId') queryTenantId?: string) {
+    async update(@Request() req: AuthenticatedRequest, @Param('id') id: string, @Body() updateAgentDto: UpdateAgentDto, @Query('tenantId') queryTenantId?: string) {
         const tenantId = resolveTenantId(req, queryTenantId);
         const actorId = req.user.id;
-        return this.agentsService.update(+id, updateAgentDto, tenantId, actorId);
+        const agent = await this.agentsService.update(+id, updateAgentDto, tenantId, actorId);
+        return serializeAgentForViewer(agent, req.user);
     }
 
     @Delete(':id')
     @Permissions('agents:write')
-    remove(@Request() req: AuthenticatedRequest, @Param('id') id: string) {
+    async remove(@Request() req: AuthenticatedRequest, @Param('id') id: string) {
         const tenantId = req.user.tenantId;
         const actorId = req.user.id;
-        return this.agentsService.remove(+id, tenantId, actorId);
+        const agent = await this.agentsService.remove(+id, tenantId, actorId);
+        return serializeAgentForViewer(agent, req.user);
     }
 
     // --- HEALTH RECORDS --- //

@@ -77,7 +77,7 @@ export const MANAGER_WORKFLOW_API_CONTRACT = [
     path: '/api/planning/shifts/:id/reassign',
     permission: 'planning:write',
     actionCode: 'REASSIGN_SHIFT',
-    expectedStates: ['success', 'validationError'],
+    expectedStates: ['justificationRequired', 'success', 'validationError'],
     recoverableErrors: [400, 401, 403, 404, 409],
   },
   {
@@ -87,7 +87,7 @@ export const MANAGER_WORKFLOW_API_CONTRACT = [
     path: '/api/planning/shifts/:id/request-replacement',
     permission: 'planning:write',
     actionCode: 'REQUEST_REPLACEMENT',
-    expectedStates: ['success'],
+    expectedStates: ['justificationRequired', 'success'],
     recoverableErrors: [400, 401, 403, 404, 409],
   },
   {
@@ -108,6 +108,16 @@ export const MANAGER_WORKFLOW_API_CONTRACT = [
     permission: 'planning:write',
     actionCode: 'REVALIDATE_SHIFT',
     expectedStates: ['valid', 'stillBlocked'],
+    recoverableErrors: [400, 401, 403, 404, 409],
+  },
+  {
+    step: 'fix',
+    label: 'Resoudre une alerte',
+    method: 'PATCH',
+    path: '/api/planning/alerts/:id/resolve',
+    permission: 'alerts:manage',
+    actionCode: 'RESOLVE_ALERT',
+    expectedStates: ['justificationRequired', 'resolved'],
     recoverableErrors: [400, 401, 403, 404, 409],
   },
   {

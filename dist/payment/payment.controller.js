@@ -14,8 +14,10 @@ var __param = (this && this.__param) || function (paramIndex, decorator) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.PaymentController = void 0;
 const common_1 = require("@nestjs/common");
+const throttler_1 = require("@nestjs/throttler");
 const payment_service_1 = require("./payment.service");
 const jwt_auth_guard_1 = require("../auth/jwt-auth.guard");
+const payment_dto_1 = require("./dto/payment.dto");
 let PaymentController = class PaymentController {
     paymentService;
     constructor(paymentService) {
@@ -28,9 +30,10 @@ let PaymentController = class PaymentController {
 exports.PaymentController = PaymentController;
 __decorate([
     (0, common_1.Post)('trigger'),
+    (0, throttler_1.Throttle)({ default: { limit: 10, ttl: 60000 } }),
     __param(0, (0, common_1.Body)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Object]),
+    __metadata("design:paramtypes", [payment_dto_1.TriggerPaymentDto]),
     __metadata("design:returntype", void 0)
 ], PaymentController.prototype, "trigger", null);
 exports.PaymentController = PaymentController = __decorate([

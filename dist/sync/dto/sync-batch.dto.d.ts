@@ -1,7 +1,7 @@
 export declare class SyncActionDto {
     type: string;
     timestamp: number;
-    payload: any;
+    payload: Record<string, unknown>;
 }
 export declare class SyncBatchDto {
     actions: SyncActionDto[];

@@ -33,7 +33,7 @@ export const useNotifications = () => {
         });
 
         socket.on('notification', (payload: any) => {
-            console.log('New notification received:', payload);
+            console.log('New notification received');
 
             addNotification({
                 type: payload.type,

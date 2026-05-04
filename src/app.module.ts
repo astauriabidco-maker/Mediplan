@@ -1,10 +1,13 @@
 import { Module } from '@nestjs/common';
+import { APP_FILTER, APP_GUARD, APP_PIPE } from '@nestjs/core';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ServeStaticModule } from '@nestjs/serve-static';
 import { join } from 'path';
 import * as Joi from 'joi';
-import { ThrottlerModule } from '@nestjs/throttler';
+import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { ApiExceptionFilter } from './common/filters/api-exception.filter';
+import { createApiValidationPipe } from './common/pipes/api-validation.pipe';
 import { LocaleConfigModule } from './core/config/locale.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
@@ -36,6 +39,7 @@ import { GhtModule } from './ght/ght.module';
 import { FacilityModule } from './facility/facility.module';
 import { SettingsModule } from './settings/settings.module';
 import { AnalyticsModule } from './analytics/analytics.module';
+import { BackupModule } from './backup/backup.module';
 
 @Module({
   imports: [
@@ -43,10 +47,12 @@ import { AnalyticsModule } from './analytics/analytics.module';
       rootPath: join(process.cwd(), 'public'),
     }),
     ScheduleModule.forRoot(),
-    ThrottlerModule.forRoot([{
-      ttl: 60000,
-      limit: 100,
-    }]),
+    ThrottlerModule.forRoot([
+      {
+        ttl: 60000,
+        limit: 100,
+      },
+    ]),
     LocaleConfigModule,
     ConfigModule.forRoot({
       isGlobal: true,
@@ -75,7 +81,13 @@ import { AnalyticsModule } from './analytics/analytics.module';
         synchronize: process.env.NODE_ENV !== 'production', // Auto-create tables (dev only)
       }),
     }),
-    TypeOrmModule.forFeature([Agent, Shift, AuditLog, Competency, AgentCompetency]),
+    TypeOrmModule.forFeature([
+      Agent,
+      Shift,
+      AuditLog,
+      Competency,
+      AgentCompetency,
+    ]),
     AgentsModule,
     CompetenciesModule,
     UiModule,
@@ -97,8 +109,24 @@ import { AnalyticsModule } from './analytics/analytics.module';
     FacilityModule,
     SettingsModule,
     AnalyticsModule,
+    BackupModule,
   ],
   controllers: [AppController],
-  providers: [AppService, SeedService],
+  providers: [
+    AppService,
+    SeedService,
+    {
+      provide: APP_GUARD,
+      useClass: ThrottlerGuard,
+    },
+    {
+      provide: APP_FILTER,
+      useClass: ApiExceptionFilter,
+    },
+    {
+      provide: APP_PIPE,
+      useFactory: createApiValidationPipe,
+    },
+  ],
 })
-export class AppModule { }
+export class AppModule {}

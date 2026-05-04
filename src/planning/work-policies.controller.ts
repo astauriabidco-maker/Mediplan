@@ -12,25 +12,25 @@ export class WorkPoliciesController {
     constructor(private readonly workPoliciesService: WorkPoliciesService) { }
 
     @Get()
-    @Permissions('planning:read')
+    @Permissions('hr-policies:read')
     findAll(@Request() req: AuthenticatedRequest) {
         return this.workPoliciesService.findAll(req.user.tenantId);
     }
 
     @Post()
-    @Permissions('planning:manage')
+    @Permissions('hr-policies:write')
     create(@Request() req: AuthenticatedRequest, @Body() data: CreateWorkPolicyDto) {
         return this.workPoliciesService.create(req.user.tenantId, data, req.user.id);
     }
 
     @Put(':id')
-    @Permissions('planning:manage')
+    @Permissions('hr-policies:write')
     update(@Request() req: AuthenticatedRequest, @Param('id', ParseIntPipe) id: number, @Body() data: UpdateWorkPolicyDto) {
         return this.workPoliciesService.update(req.user.tenantId, id, data, req.user.id);
     }
 
     @Delete(':id')
-    @Permissions('planning:manage')
+    @Permissions('hr-policies:manage')
     remove(@Request() req: AuthenticatedRequest, @Param('id', ParseIntPipe) id: number) {
         return this.workPoliciesService.remove(req.user.tenantId, id, req.user.id);
     }

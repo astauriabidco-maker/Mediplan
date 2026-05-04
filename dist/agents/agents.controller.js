@@ -21,38 +21,45 @@ const jwt_auth_guard_1 = require("../auth/jwt-auth.guard");
 const permissions_decorator_1 = require("../auth/permissions.decorator");
 const roles_guard_1 = require("../auth/roles.guard");
 const tenant_context_1 = require("../auth/tenant-context");
+const agent_response_dto_1 = require("./dto/agent-response.dto");
 let AgentsController = class AgentsController {
     agentsService;
     constructor(agentsService) {
         this.agentsService = agentsService;
     }
-    create(req, createAgentDto) {
+    async create(req, createAgentDto) {
         const tenantId = req.user.tenantId;
         const actorId = req.user.id;
-        return this.agentsService.create({ ...createAgentDto, tenantId }, actorId);
+        const agent = await this.agentsService.create({ ...createAgentDto, tenantId }, actorId);
+        return (0, agent_response_dto_1.serializeAgentForViewer)(agent, req.user);
     }
-    findAll(req, queryTenantId) {
-        return this.agentsService.findAll((0, tenant_context_1.resolveTenantId)(req, queryTenantId));
+    async findAll(req, queryTenantId) {
+        const agents = await this.agentsService.findAll((0, tenant_context_1.resolveTenantId)(req, queryTenantId));
+        return (0, agent_response_dto_1.serializeAgentsForViewer)(agents, req.user);
     }
-    getMyTeam(req) {
+    async getMyTeam(req) {
         const tenantId = req.user.tenantId;
         const agentId = req.user.id;
-        return this.agentsService.getMyTeam(agentId, tenantId);
+        const agents = await this.agentsService.getMyTeam(agentId, tenantId);
+        return (0, agent_response_dto_1.serializeAgentsForViewer)(agents, req.user);
     }
-    findOne(req, id, queryTenantId) {
+    async findOne(req, id, queryTenantId) {
         const tenantId = (0, tenant_context_1.resolveTenantId)(req, queryTenantId);
         const actorId = req.user.id;
-        return this.agentsService.findOne(+id, tenantId, actorId);
+        const agent = await this.agentsService.findOne(+id, tenantId, actorId);
+        return (0, agent_response_dto_1.serializeAgentForViewer)(agent, req.user);
     }
-    update(req, id, updateAgentDto, queryTenantId) {
+    async update(req, id, updateAgentDto, queryTenantId) {
         const tenantId = (0, tenant_context_1.resolveTenantId)(req, queryTenantId);
         const actorId = req.user.id;
-        return this.agentsService.update(+id, updateAgentDto, tenantId, actorId);
+        const agent = await this.agentsService.update(+id, updateAgentDto, tenantId, actorId);
+        return (0, agent_response_dto_1.serializeAgentForViewer)(agent, req.user);
     }
-    remove(req, id) {
+    async remove(req, id) {
         const tenantId = req.user.tenantId;
         const actorId = req.user.id;
-        return this.agentsService.remove(+id, tenantId, actorId);
+        const agent = await this.agentsService.remove(+id, tenantId, actorId);
+        return (0, agent_response_dto_1.serializeAgentForViewer)(agent, req.user);
     }
     getHealthRecords(req, agentId) {
         const tenantId = req.user.tenantId;
@@ -77,7 +84,7 @@ __decorate([
     __param(1, (0, common_1.Body)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [Object, create_agent_dto_1.CreateAgentDto]),
-    __metadata("design:returntype", void 0)
+    __metadata("design:returntype", Promise)
 ], AgentsController.prototype, "create", null);
 __decorate([
     (0, common_1.Get)(),
@@ -86,7 +93,7 @@ __decorate([
     __param(1, (0, common_1.Query)('tenantId')),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [Object, String]),
-    __metadata("design:returntype", void 0)
+    __metadata("design:returntype", Promise)
 ], AgentsController.prototype, "findAll", null);
 __decorate([
     (0, common_1.Get)('my-team'),
@@ -94,7 +101,7 @@ __decorate([
     __param(0, (0, common_1.Request)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [Object]),
-    __metadata("design:returntype", void 0)
+    __metadata("design:returntype", Promise)
 ], AgentsController.prototype, "getMyTeam", null);
 __decorate([
     (0, common_1.Get)(':id'),
@@ -104,7 +111,7 @@ __decorate([
     __param(2, (0, common_1.Query)('tenantId')),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [Object, String, String]),
-    __metadata("design:returntype", void 0)
+    __metadata("design:returntype", Promise)
 ], AgentsController.prototype, "findOne", null);
 __decorate([
     (0, common_1.Patch)(':id'),
@@ -115,7 +122,7 @@ __decorate([
     __param(3, (0, common_1.Query)('tenantId')),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [Object, String, update_agent_dto_1.UpdateAgentDto, String]),
-    __metadata("design:returntype", void 0)
+    __metadata("design:returntype", Promise)
 ], AgentsController.prototype, "update", null);
 __decorate([
     (0, common_1.Delete)(':id'),
@@ -124,7 +131,7 @@ __decorate([
     __param(1, (0, common_1.Param)('id')),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [Object, String]),
-    __metadata("design:returntype", void 0)
+    __metadata("design:returntype", Promise)
 ], AgentsController.prototype, "remove", null);
 __decorate([
     (0, common_1.Get)(':id/health-records'),

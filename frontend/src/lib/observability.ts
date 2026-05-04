@@ -47,6 +47,19 @@ const sensitiveKeys = new Set([
   'token',
   'accesstoken',
   'refreshtoken',
+  'email',
+  'personalemail',
+  'telephone',
+  'phone',
+  'agentname',
+  'matricule',
+  'nir',
+  'niu',
+  'cnpsnumber',
+  'idnumber',
+  'iban',
+  'bic',
+  'mobilemoneynumber',
 ]);
 
 export const createTraceId = (): string => {

@@ -33,6 +33,16 @@ describe('Audit tenant isolation (e2e)', () => {
     getLogs: jest.fn(async (tenantId, filters) => [
       { id: 1, tenantId, filters },
     ]),
+    verifyChain: jest.fn(async (tenantId) => ({
+      tenantId,
+      valid: true,
+      issues: [],
+    })),
+    exportLogs: jest.fn(async (tenantId, filters) => ({
+      tenantId,
+      filters,
+      logs: [],
+    })),
   };
 
   beforeEach(async () => {
@@ -107,6 +117,39 @@ describe('Audit tenant isolation (e2e)', () => {
         entityType: AuditEntityType.AGENT,
         entityId: '12',
         limit: 20,
+      }),
+    );
+  });
+
+  it('verifies the authenticated tenant chain for regular admins', async () => {
+    await request(app.getHttpServer())
+      .get('/audit/verify?tenantId=tenant-b')
+      .set('x-test-user', 'admin')
+      .expect(200);
+
+    expect(auditService.verifyChain).toHaveBeenCalledWith('tenant-a');
+  });
+
+  it('exports audit logs with period, tenant and action filters for super admins', async () => {
+    await request(app.getHttpServer())
+      .get('/audit/export')
+      .query({
+        tenantId: 'tenant-b',
+        action: AuditAction.DELETE,
+        from: '2026-02-01T00:00:00.000Z',
+        to: '2026-02-28T23:59:59.000Z',
+        limit: '50',
+      })
+      .set('x-test-user', 'superadmin')
+      .expect(200);
+
+    expect(auditService.exportLogs).toHaveBeenCalledWith(
+      'tenant-b',
+      expect.objectContaining({
+        action: AuditAction.DELETE,
+        from: new Date('2026-02-01T00:00:00.000Z'),
+        to: new Date('2026-02-28T23:59:59.000Z'),
+        limit: 50,
       }),
     );
   });

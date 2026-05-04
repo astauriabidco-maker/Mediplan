@@ -12,6 +12,41 @@ import { resolveTenantId } from '../auth/tenant-context';
 export class AuditController {
     constructor(private readonly auditService: AuditService) { }
 
+    @Get('verify')
+    @Permissions('audit:read')
+    async verifyChain(
+        @Request() req: AuthenticatedRequest,
+        @Query('tenantId') queryTenantId?: string,
+    ) {
+        return this.auditService.verifyChain(resolveTenantId(req, queryTenantId));
+    }
+
+    @Get('export')
+    @Permissions('audit:read')
+    async exportLogs(
+        @Request() req: AuthenticatedRequest,
+        @Query('tenantId') queryTenantId?: string,
+        @Query('actorId') actorId?: string,
+        @Query('action') action?: AuditAction,
+        @Query('entityType') entityType?: AuditEntityType,
+        @Query('entityId') entityId?: string,
+        @Query('detailAction') detailAction?: string,
+        @Query('from') from?: string,
+        @Query('to') to?: string,
+        @Query('limit') limit?: string,
+    ) {
+        return this.auditService.exportLogs(resolveTenantId(req, queryTenantId), {
+            actorId: actorId ? parseInt(actorId, 10) : undefined,
+            action,
+            entityType,
+            entityId,
+            detailAction,
+            from: from ? new Date(from) : undefined,
+            to: to ? new Date(to) : undefined,
+            limit: limit ? parseInt(limit, 10) : undefined,
+        });
+    }
+
     @Get()
     @Permissions('audit:read')
     async getLogs(

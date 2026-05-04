@@ -713,7 +713,12 @@ describe('Planning compliance API (e2e)', () => {
     await request(app.getHttpServer())
       .post('/planning/shifts/90/reassign')
       .set('x-test-user', 'admin')
-      .send({ agentId: 20 })
+      .send({
+        agentId: 20,
+        reason: 'Rééquilibrage de charge après recommandation manager',
+        recommendationId:
+          'recommendation:shift_validation:shift:90:WEEKLY_HOURS_LIMIT_EXCEEDED',
+      })
       .expect(201)
       .expect(({ body }) => {
         expect(body.agent).toEqual(expect.objectContaining({ id: 20 }));

@@ -3,6 +3,7 @@ import { Reflector } from '@nestjs/core';
 import { UserRole } from '../agents/entities/agent.entity';
 import { ROLES_KEY } from './roles.decorator';
 import { PERMISSIONS_KEY } from './permissions.decorator';
+import { hasAnyPermission } from './permissions';
 
 @Injectable()
 export class RolesGuard implements CanActivate {
@@ -34,10 +35,8 @@ export class RolesGuard implements CanActivate {
             return true;
         }
 
-        // Check Permissions (support wildcard '*')
         if (requiredPermissions) {
-            if (userPermissions.includes('*')) return true;
-            return requiredPermissions.some((permission) => userPermissions.includes(permission));
+            return hasAnyPermission(userPermissions, requiredPermissions);
         }
 
         return false;

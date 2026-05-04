@@ -97,12 +97,12 @@ export interface PlanningComplianceTimelineFilters extends ComplianceReportFilte
 }
 
 export interface PlanningComplianceTimelineItem {
-  id: number;
+  id: number | string;
   timestamp: Date;
-  actorId: number;
+  actorId?: number;
   action: string;
   entity: {
-    type: AuditEntityType;
+    type: AuditEntityType | 'ALERT' | 'RECOMMENDATION';
     id?: string;
   };
   label: string;
@@ -216,6 +216,12 @@ export interface DecisionRecommendations {
   };
   total: number;
   recommendations: DecisionRecommendation[];
+}
+
+export interface ManagerDecisionTrace {
+  reason: string;
+  recommendationId?: string;
+  alertId?: number;
 }
 
 export interface ShiftReplacementSuggestion {
@@ -813,19 +819,33 @@ export class PlanningService {
     tenantId: string,
     filters: PlanningComplianceTimelineFilters = {},
   ): Promise<PlanningComplianceTimeline> {
-    const logs = await this.auditService.getLogs(tenantId, {
-      from: filters.from,
-      to: filters.to,
-      limit: filters.limit || 100,
-    });
+    const limit = filters.limit || 100;
+    const [logs, alerts] = await Promise.all([
+      this.auditService.getLogs(tenantId, {
+        from: filters.from,
+        to: filters.to,
+        limit,
+      }),
+      this.alertRepository.find({
+        where: { tenantId },
+        order: { createdAt: 'DESC', id: 'DESC' },
+        take: Math.min(limit, 500),
+      }),
+    ]);
 
-    const items = logs
+    const auditItems = logs
       .filter((log) => {
         const action = this.getAuditBusinessAction(log);
         return action && PLANNING_TIMELINE_ACTIONS.has(action);
       })
       .filter((log) => this.matchesTimelineFilters(log, filters))
       .map((log) => this.toPlanningTimelineItem(log));
+    const alertItems = alerts
+      .filter((alert) => this.matchesTimelineAlertFilters(alert, filters))
+      .map((alert) => this.toPlanningAlertTimelineItem(alert));
+    const items = [...auditItems, ...alertItems]
+      .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())
+      .slice(0, limit);
 
     return {
       tenantId,
@@ -1216,6 +1236,10 @@ export class PlanningService {
               endpoint: `/planning/alerts/${alert.id}/resolve`,
               body: {
                 reason: {
+                  type: 'string',
+                  required: true,
+                },
+                recommendationId: {
                   type: 'string',
                   required: false,
                 },
@@ -1621,9 +1645,10 @@ export class PlanningService {
     tenantId: string,
     actorId: number,
     shiftId: string | number,
-    reason: string,
+    trace: ManagerDecisionTrace | string,
   ): Promise<Shift> {
-    const justification = reason?.trim();
+    const decisionTrace = this.normalizeDecisionTrace(trace);
+    const justification = decisionTrace.reason;
     if (!justification) {
       throw new BadRequestException('Compliance exception reason is required');
     }
@@ -1677,6 +1702,7 @@ export class PlanningService {
       {
         action: 'APPROVE_COMPLIANCE_EXCEPTION',
         reason: justification,
+        actionManager: this.getActionManagerAuditContext(decisionTrace),
         validation,
         before,
         after: this.getShiftAuditSnapshot(savedShift),
@@ -1741,7 +1767,9 @@ export class PlanningService {
     actorId: number,
     shiftId: string | number,
     agentId: number,
+    trace: ManagerDecisionTrace,
   ): Promise<Shift> {
+    const decisionTrace = this.normalizeDecisionTrace(trace);
     const shift = await this.shiftRepository.findOne({
       where: { id: Number(shiftId), tenantId },
       relations: ['agent'],
@@ -1786,6 +1814,8 @@ export class PlanningService {
       savedShift.id,
       {
         action: 'REASSIGN_SHIFT',
+        reason: decisionTrace.reason,
+        actionManager: this.getActionManagerAuditContext(decisionTrace),
         previousAgentId: before.agentId,
         newAgentId: agent.id,
         validation,
@@ -1802,8 +1832,9 @@ export class PlanningService {
     tenantId: string,
     actorId: number,
     shiftId: string | number,
-    reason?: string,
+    trace: ManagerDecisionTrace,
   ): Promise<Shift> {
+    const decisionTrace = this.normalizeDecisionTrace(trace);
     const shift = await this.shiftRepository.findOne({
       where: { id: Number(shiftId), tenantId },
       relations: ['agent'],
@@ -1837,7 +1868,8 @@ export class PlanningService {
       savedShift.id,
       {
         action: 'REQUEST_REPLACEMENT',
-        reason: reason?.trim() || undefined,
+        reason: decisionTrace.reason,
+        actionManager: this.getActionManagerAuditContext(decisionTrace),
         before,
         after: this.getShiftAuditSnapshot(savedShift),
       },
@@ -1851,8 +1883,12 @@ export class PlanningService {
     tenantId: string,
     actorId: number,
     alertId: string | number,
-    reason?: string,
+    trace: Omit<ManagerDecisionTrace, 'alertId'>,
   ): Promise<AgentAlert> {
+    const decisionTrace = this.normalizeDecisionTrace({
+      ...trace,
+      alertId: Number(alertId),
+    });
     const alert = await this.alertRepository.findOne({
       where: { id: Number(alertId), tenantId },
     });
@@ -1864,8 +1900,7 @@ export class PlanningService {
     alert.isResolved = true;
     alert.isAcknowledged = true;
     alert.resolvedAt = new Date();
-    alert.resolutionReason =
-      reason?.trim() || 'Resolved from planning worklist';
+    alert.resolutionReason = decisionTrace.reason;
 
     const savedAlert = await this.alertRepository.save(alert);
 
@@ -1881,6 +1916,7 @@ export class PlanningService {
         type: alert.type,
         severity: alert.severity,
         resolutionReason: alert.resolutionReason,
+        actionManager: this.getActionManagerAuditContext(decisionTrace),
       },
     );
 
@@ -2171,6 +2207,35 @@ export class PlanningService {
     return log.details?.action || log.action || 'UNKNOWN';
   }
 
+  private normalizeDecisionTrace(
+    trace: ManagerDecisionTrace | string,
+  ): ManagerDecisionTrace {
+    const normalized =
+      typeof trace === 'string' ? { reason: trace } : { ...trace };
+    const reason = normalized.reason?.trim();
+    if (!reason) {
+      throw new BadRequestException(
+        'Decision justification is required for this manager action',
+      );
+    }
+
+    return {
+      reason,
+      recommendationId: normalized.recommendationId?.trim() || undefined,
+      alertId: normalized.alertId,
+    };
+  }
+
+  private getActionManagerAuditContext(
+    trace: ManagerDecisionTrace,
+  ): Record<string, unknown> {
+    return {
+      recommendationId: trace.recommendationId,
+      alertId: trace.alertId,
+      justification: trace.reason,
+    };
+  }
+
   private matchesTimelineFilters(
     log: {
       actorId?: number;
@@ -2190,6 +2255,28 @@ export class PlanningService {
     if (
       filters.shiftId !== undefined &&
       !this.auditLogInvolvesShift(log, filters.shiftId)
+    ) {
+      return false;
+    }
+
+    return true;
+  }
+
+  private matchesTimelineAlertFilters(
+    alert: AgentAlert,
+    filters: PlanningComplianceTimelineFilters,
+  ): boolean {
+    if (filters.from && alert.createdAt < filters.from) return false;
+    if (filters.to && alert.createdAt > filters.to) return false;
+    if (
+      filters.agentId !== undefined &&
+      Number(alert.agentId) !== filters.agentId
+    ) {
+      return false;
+    }
+    if (
+      filters.shiftId !== undefined &&
+      Number(alert.metadata?.shiftId) !== filters.shiftId
     ) {
       return false;
     }
@@ -2301,6 +2388,39 @@ export class PlanningService {
     };
   }
 
+  private toPlanningAlertTimelineItem(
+    alert: AgentAlert,
+  ): PlanningComplianceTimelineItem {
+    const ruleCode = this.extractAlertRuleCode(alert);
+
+    return {
+      id: `alert:${alert.id}`,
+      timestamp: alert.createdAt,
+      action: 'ALERT_CREATED',
+      entity: {
+        type: 'ALERT',
+        id: alert.id.toString(),
+      },
+      label: alert.message,
+      status: alert.isResolved ? 'RESOLVED' : 'OPEN',
+      severity: alert.severity,
+      details: {
+        alertId: alert.id,
+        agentId: alert.agentId,
+        shiftId: alert.metadata?.shiftId,
+        ruleCode,
+        recommendationId: ruleCode
+          ? this.getRecommendationId({
+              source: 'ALERT',
+              alertId: alert.id,
+              agentId: alert.agentId,
+              ruleCode,
+            })
+          : undefined,
+      },
+    };
+  }
+
   private getTimelineLabel(
     action: string,
     details?: Record<string, any>,
@@ -2398,11 +2518,13 @@ export class PlanningService {
     }
 
     if (action === 'REASSIGN_SHIFT' || action === 'APPLY_SWAP') {
-      return {
+      return this.omitUndefined({
         previousAgentId: details.previousAgentId || details.formerAgentId,
         newAgentId: details.newAgentId,
+        reason: details.reason,
+        actionManager: details.actionManager,
         validation: this.summarizeValidation(details.validation),
-      };
+      });
     }
 
     if (action === 'REVALIDATE_SHIFT') {
@@ -2413,26 +2535,29 @@ export class PlanningService {
     }
 
     if (action === 'APPROVE_COMPLIANCE_EXCEPTION') {
-      return {
+      return this.omitUndefined({
         reason: details.reason,
+        actionManager: details.actionManager,
         validation: this.summarizeValidation(details.validation),
-      };
+      });
     }
 
     if (action === 'REQUEST_REPLACEMENT') {
-      return {
+      return this.omitUndefined({
         reason: details.reason,
+        actionManager: details.actionManager,
         previousAgentId: details.before?.agentId,
-      };
+      });
     }
 
     if (action === 'RESOLVE_PLANNING_ALERT') {
-      return {
+      return this.omitUndefined({
         alertId: details.alertId,
         type: details.type,
         severity: details.severity,
         resolutionReason: details.resolutionReason,
-      };
+        actionManager: details.actionManager,
+      });
     }
 
     if (action === 'COMPLIANCE_SCAN') {
@@ -2458,6 +2583,14 @@ export class PlanningService {
       blockingReasons: validation.blockingReasons,
       warnings: validation.warnings,
     };
+  }
+
+  private omitUndefined(
+    details: Record<string, unknown>,
+  ): Record<string, unknown> {
+    return Object.fromEntries(
+      Object.entries(details).filter(([, value]) => value !== undefined),
+    );
   }
 
   private assertShiftCanEnterSwap(shift: Shift): void {
@@ -2522,6 +2655,18 @@ export class PlanningService {
             type: 'number',
             required: true,
           },
+          reason: {
+            type: 'string',
+            required: true,
+          },
+          recommendationId: {
+            type: 'string',
+            required: false,
+          },
+          alertId: {
+            type: 'number',
+            required: false,
+          },
         },
       });
     }
@@ -2542,6 +2687,14 @@ export class PlanningService {
         body: {
           reason: {
             type: 'string',
+            required: true,
+          },
+          recommendationId: {
+            type: 'string',
+            required: false,
+          },
+          alertId: {
+            type: 'number',
             required: false,
           },
         },
@@ -2565,6 +2718,14 @@ export class PlanningService {
             reason: {
               type: 'string',
               required: true,
+            },
+            recommendationId: {
+              type: 'string',
+              required: false,
+            },
+            alertId: {
+              type: 'number',
+              required: false,
             },
           },
         });
@@ -2866,7 +3027,7 @@ export class PlanningService {
       this.getCategoryPriority(item.category);
 
     return {
-      id: `recommendation:${item.id}`,
+      id: this.getRecommendationId(item),
       priority,
       category: item.category,
       severity: item.severity,
@@ -2883,6 +3044,21 @@ export class PlanningService {
       ),
       metadata: item.metadata,
     };
+  }
+
+  private getRecommendationId(item: {
+    source: ManagerWorklistSource;
+    alertId?: number;
+    shiftId?: number;
+    agentId?: number;
+    ruleCode: ComplianceRuleCode;
+  }): string {
+    const target = item.alertId
+      ? `alert:${item.alertId}`
+      : item.shiftId
+        ? `shift:${item.shiftId}`
+        : `agent:${item.agentId || 'unknown'}`;
+    return `recommendation:${item.source.toLowerCase()}:${target}:${item.ruleCode}`;
   }
 
   private getCategoryPriority(category: ManagerWorklistCategory): number {

@@ -8,6 +8,7 @@ import { Leave } from '../src/planning/entities/leave.entity';
 import { Shift } from '../src/planning/entities/shift.entity';
 import { JwtAuthGuard } from '../src/auth/jwt-auth.guard';
 import { PERMISSIONS_KEY } from '../src/auth/permissions.decorator';
+import { hasAnyPermission } from '../src/auth/permissions';
 import { RolesGuard } from '../src/auth/roles.guard';
 import { AutoSchedulerService } from '../src/planning/auto-scheduler.service';
 import { DocumentsService } from '../src/documents/documents.service';
@@ -42,11 +43,18 @@ const userByScenario: Record<string, any> = {
     userId: 13,
     tenantId: 'tenant-a',
     role: UserRole.MANAGER,
-    permissions: ['planning:manage'],
+    permissions: ['planning:publish'],
   },
   exceptionApprover: {
     id: 14,
     userId: 14,
+    tenantId: 'tenant-a',
+    role: UserRole.MANAGER,
+    permissions: ['planning:exceptions:approve'],
+  },
+  legacyExceptionApprover: {
+    id: 16,
+    userId: 16,
     tenantId: 'tenant-a',
     role: UserRole.MANAGER,
     permissions: ['planning:exception'],
@@ -89,17 +97,11 @@ const createPermissionGuard = () => {
       const { user } = context.switchToHttp().getRequest();
       const userPermissions = user.permissions || [];
 
-      if (
-        user.role === UserRole.SUPER_ADMIN ||
-        user.role === UserRole.ADMIN ||
-        userPermissions.includes('*')
-      ) {
+      if (user.role === UserRole.SUPER_ADMIN || user.role === UserRole.ADMIN) {
         return true;
       }
 
-      return requiredPermissions.some((permission) =>
-        userPermissions.includes(permission),
-      );
+      return hasAnyPermission(userPermissions, requiredPermissions);
     },
   };
 };
@@ -297,7 +299,7 @@ describe('Planning security isolation (e2e)', () => {
     await request(app.getHttpServer())
       .post('/planning/shifts/90/reassign')
       .set('x-test-user', 'reader')
-      .send({ agentId: 20 })
+      .send({ agentId: 20, reason: 'Rééquilibrage' })
       .expect(403);
     await request(app.getHttpServer())
       .post('/planning/shifts/90/revalidate')
@@ -317,7 +319,7 @@ describe('Planning security isolation (e2e)', () => {
     await request(app.getHttpServer())
       .post('/planning/shifts/90/reassign')
       .set('x-test-user', 'writer')
-      .send({ agentId: 20 })
+      .send({ agentId: 20, reason: 'Rééquilibrage' })
       .expect(201);
 
     expect(planningService.reassignShift).toHaveBeenCalledWith(
@@ -325,6 +327,11 @@ describe('Planning security isolation (e2e)', () => {
       12,
       90,
       20,
+      {
+        reason: 'Rééquilibrage',
+        recommendationId: undefined,
+        alertId: undefined,
+      },
     );
   });
 
@@ -345,7 +352,30 @@ describe('Planning security isolation (e2e)', () => {
       'tenant-a',
       14,
       90,
-      'Nécessité de continuité de soins',
+      {
+        reason: 'Nécessité de continuité de soins',
+        recommendationId: undefined,
+        alertId: undefined,
+      },
+    );
+  });
+
+  it('keeps the legacy planning:exception permission compatible', async () => {
+    await request(app.getHttpServer())
+      .post('/planning/shifts/90/exception')
+      .set('x-test-user', 'legacyExceptionApprover')
+      .send({ reason: 'Autorisation héritée déjà attribuée' })
+      .expect(201);
+
+    expect(planningService.approveShiftException).toHaveBeenCalledWith(
+      'tenant-a',
+      16,
+      90,
+      {
+        reason: 'Autorisation héritée déjà attribuée',
+        recommendationId: undefined,
+        alertId: undefined,
+      },
     );
   });
 
@@ -384,7 +414,7 @@ describe('Planning security isolation (e2e)', () => {
     await request(app.getHttpServer())
       .post('/planning/shifts/90/reassign')
       .set('x-test-user', 'writer')
-      .send({ agentId: 20, tenantId: 'tenant-b' })
+      .send({ agentId: 20, reason: 'Rééquilibrage', tenantId: 'tenant-b' })
       .expect(400);
     await request(app.getHttpServer())
       .post('/planning/shifts/90/exception')

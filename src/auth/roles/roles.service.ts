@@ -2,6 +2,7 @@ import { Injectable, OnModuleInit } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Role } from '../entities/role.entity';
+import { HOSPITAL_ROLE_PERMISSIONS } from '../permissions';
 
 @Injectable()
 export class RolesService implements OnModuleInit {
@@ -41,16 +42,24 @@ export class RolesService implements OnModuleInit {
     }
 
     async seedDefaults(tenantId: string) {
-        const defaults = [
-            { name: 'ADMIN', description: 'Administrateur avec accès total', permissions: ['*'], isSystem: true, tenantId },
-            { name: 'MANAGER', description: 'Gestionnaire d\'équipe', permissions: ['agents:read', 'services:read', 'planning:manage', 'leaves:validate'], isSystem: true, tenantId },
-            { name: 'AGENT', description: 'Personnel hospitalier', permissions: ['profile:read', 'planning:read', 'leaves:request'], isSystem: true, tenantId },
-        ];
+        const defaults = Object.values(HOSPITAL_ROLE_PERMISSIONS).map((role) => ({
+            ...role,
+            isSystem: true,
+            tenantId,
+        }));
 
         for (const d of defaults) {
             const existing = await this.roleRepository.findOne({ where: { name: d.name, tenantId } });
             if (!existing) {
                 await this.create(d);
+            } else if (existing.isSystem) {
+                await this.roleRepository.update(
+                    { id: existing.id, tenantId },
+                    {
+                        description: d.description,
+                        permissions: d.permissions,
+                    },
+                );
             }
         }
     }

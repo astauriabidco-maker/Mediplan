@@ -440,7 +440,11 @@ describe('PlanningService.validateShift', () => {
     agentRepository.findOne.mockResolvedValueOnce(newAgent);
     shiftRepository.save.mockImplementation(async (shift) => shift);
 
-    await service.reassignShift('tenant-a', 99, 15, 77);
+    await service.reassignShift('tenant-a', 99, 15, 77, {
+      reason: 'Rééquilibrage charge critique',
+      recommendationId: 'recommendation:shift:15',
+      alertId: 8,
+    });
 
     expect(shiftRepository.save).toHaveBeenCalledWith(
       expect.objectContaining({ agent: newAgent }),
@@ -453,6 +457,12 @@ describe('PlanningService.validateShift', () => {
       15,
       expect.objectContaining({
         action: 'REASSIGN_SHIFT',
+        reason: 'Rééquilibrage charge critique',
+        actionManager: {
+          justification: 'Rééquilibrage charge critique',
+          recommendationId: 'recommendation:shift:15',
+          alertId: 8,
+        },
         previousAgentId: 10,
         newAgentId: 77,
       }),
@@ -478,7 +488,11 @@ describe('PlanningService.validateShift', () => {
       'tenant-a',
       99,
       16,
-      'Repos insuffisant',
+      {
+        reason: 'Repos insuffisant',
+        recommendationId: 'recommendation:shift:16',
+        alertId: 8,
+      },
     );
 
     expect(result.isSwapRequested).toBe(true);
@@ -491,6 +505,11 @@ describe('PlanningService.validateShift', () => {
       expect.objectContaining({
         action: 'REQUEST_REPLACEMENT',
         reason: 'Repos insuffisant',
+        actionManager: {
+          justification: 'Repos insuffisant',
+          recommendationId: 'recommendation:shift:16',
+          alertId: 8,
+        },
       }),
     );
   });
@@ -514,7 +533,10 @@ describe('PlanningService.validateShift', () => {
       'tenant-a',
       99,
       8,
-      'Réassigné',
+      {
+        reason: 'Réassigné',
+        recommendationId: 'recommendation:alert:8',
+      },
     );
 
     expect(result.isResolved).toBe(true);
@@ -530,6 +552,11 @@ describe('PlanningService.validateShift', () => {
         action: 'RESOLVE_PLANNING_ALERT',
         alertId: 8,
         resolutionReason: 'Réassigné',
+        actionManager: {
+          justification: 'Réassigné',
+          recommendationId: 'recommendation:alert:8',
+          alertId: 8,
+        },
       }),
     );
   });
@@ -1766,7 +1793,8 @@ describe('PlanningService.validateShift', () => {
           method: 'PATCH',
           endpoint: '/planning/alerts/7/resolve',
           body: expect.objectContaining({
-            reason: expect.objectContaining({ required: false }),
+            reason: expect.objectContaining({ required: true }),
+            recommendationId: expect.objectContaining({ required: false }),
           }),
         }),
       ],
