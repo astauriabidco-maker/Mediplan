@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { format, startOfWeek } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import {
@@ -6,6 +7,7 @@ import {
   CalendarCheck,
   CheckCircle2,
   Clock,
+  ExternalLink,
   Filter,
   History,
   Loader2,
@@ -90,6 +92,15 @@ const formatRule = (rule: string) =>
 const formatDateTime = (value?: string) => {
   if (!value) return 'Non renseigné';
   return format(new Date(value), 'dd MMM yyyy HH:mm', { locale: fr });
+};
+
+const buildReportsUrl = (from: string, to: string) => {
+  const params = new URLSearchParams({
+    from,
+    to,
+    limit: '20',
+  });
+  return `/api/planning/compliance/reports?${params.toString()}`;
 };
 
 const getApiError = (error: unknown) => {
@@ -318,6 +329,7 @@ export const PlanningPrepublicationPage = () => {
 
   const report = publishedReport || preview.data?.report;
   const canPublish = Boolean(preview.data?.publishable && !publish.isPending);
+  const reportsUrl = buildReportsUrl(period.start, period.end);
 
   const handlePublish = async () => {
     if (!preview.data?.publishable) return;
@@ -350,6 +362,40 @@ export const PlanningPrepublicationPage = () => {
           <p className="mt-2 text-sm text-slate-400">
             Validation globale avant publication et timeline métier associée.
           </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <a
+              href={reportsUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={cn(
+                'inline-flex items-center gap-2 rounded-md border border-slate-700 px-3 py-2 text-xs font-bold text-slate-300 hover:bg-slate-900',
+                focusRing,
+              )}
+            >
+              <ExternalLink size={14} />
+              Rapports existants
+            </a>
+            <Link
+              to="/audit"
+              className={cn(
+                'inline-flex items-center gap-2 rounded-md border border-slate-700 px-3 py-2 text-xs font-bold text-slate-300 hover:bg-slate-900',
+                focusRing,
+              )}
+            >
+              <ExternalLink size={14} />
+              Journal audit
+            </Link>
+            <Link
+              to="/manager/worklist"
+              className={cn(
+                'inline-flex items-center gap-2 rounded-md border border-slate-700 px-3 py-2 text-xs font-bold text-slate-300 hover:bg-slate-900',
+                focusRing,
+              )}
+            >
+              <ExternalLink size={14} />
+              Corrections manager
+            </Link>
+          </div>
         </div>
 
         <div className="grid grid-cols-2 gap-3 rounded-lg border border-slate-800 bg-slate-900 p-3 md:flex">
@@ -573,6 +619,33 @@ export const PlanningPrepublicationPage = () => {
           </div>
 
           <aside className="space-y-4">
+            <section className="rounded-lg border border-slate-800 bg-slate-900 p-5">
+              <div className="mb-4 flex items-center gap-2">
+                <ShieldCheck size={18} className="text-emerald-300" />
+                <h2 className="text-sm font-bold uppercase tracking-wide text-slate-300">
+                  Preuves publication
+                </h2>
+              </div>
+              <div className="space-y-3 text-sm text-slate-400">
+                <p>
+                  Les rapports conserves exposent les violations, warnings et
+                  exceptions deja calculees pour la periode selectionnee.
+                </p>
+                <a
+                  href={reportsUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={cn(
+                    'inline-flex w-full items-center justify-center gap-2 rounded-md bg-slate-800 px-3 py-2 text-xs font-bold text-slate-200 hover:bg-slate-700',
+                    focusRing,
+                  )}
+                >
+                  <ExternalLink size={14} />
+                  Ouvrir les rapports JSON
+                </a>
+              </div>
+            </section>
+
             <section className="rounded-lg border border-slate-800 bg-slate-900 p-5">
               <div className="mb-4 flex items-center gap-2">
                 <Filter size={18} className="text-slate-400" />

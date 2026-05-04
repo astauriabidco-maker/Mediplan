@@ -18,6 +18,7 @@ const PlanningPage = lazy(() => import('./pages/Planning').then((module) => ({ d
 const PlanningPrepublicationPage = lazy(() => import('./pages/PlanningPrepublicationPage').then((module) => ({ default: module.PlanningPrepublicationPage })))
 const ManagerCockpitPage = lazy(() => import('./pages/ManagerCockpitPage').then((module) => ({ default: module.ManagerCockpitPage })))
 const ManagerWorklistPage = lazy(() => import('./pages/ManagerWorklistPage').then((module) => ({ default: module.ManagerWorklistPage })))
+const AuditLogPage = lazy(() => import('./pages/AuditLogPage').then((module) => ({ default: module.AuditLogPage })))
 const AttendancePage = lazy(() => import('./pages/AttendancePage').then((module) => ({ default: module.AttendancePage })))
 const LeavesPage = lazy(() => import('./pages/LeavesPage').then((module) => ({ default: module.LeavesPage })))
 const LoginPage = lazy(() => import('./pages/LoginPage').then((module) => ({ default: module.LoginPage })))
@@ -81,6 +82,7 @@ function App() {
                                 <Route path="manager" element={<ManagerCockpitPage />} />
                                 <Route path="manager/cockpit" element={<ManagerCockpitPage />} />
                                 <Route path="manager/worklist" element={<ManagerWorklistPage />} />
+                                <Route path="audit" element={<AuditLogPage />} />
                                 <Route path="planning" element={<PlanningPage />} />
                                 <Route path="planning/prepublication" element={<PlanningPrepublicationPage />} />
                                 <Route path="attendance" element={<AttendancePage />} />

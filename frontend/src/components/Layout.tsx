@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
-import { LayoutDashboard, Calendar, Settings, Bell, User, LogOut, Award, Smartphone, HeartPulse, Wifi, ChevronRight, ChevronDown, List, Layers, Network, MessageSquare, Clock, ShieldCheck, ClipboardCheck, AlertTriangle } from 'lucide-react'
+import { LayoutDashboard, Calendar, Settings, Bell, User, LogOut, Award, Smartphone, HeartPulse, Wifi, ChevronRight, ChevronDown, List, Layers, Network, MessageSquare, Clock, ShieldCheck, ClipboardCheck, AlertTriangle, FileText } from 'lucide-react'
 import { useAppConfig } from '../store/useAppConfig'
 import { useAuth } from '../store/useAuth'
 import { clsx, type ClassValue } from 'clsx'
@@ -102,6 +102,7 @@ export const Layout = () => {
                     {!isAgent && <SidebarItem to="/dashboard" icon={LayoutDashboard} label="Tableau de bord" themeColor={themeColor} />}
                     {!isAgent && hasPermission('planning:read') && <SidebarItem to="/manager/cockpit" icon={ClipboardCheck} label="Cockpit manager" themeColor={themeColor} />}
                     {!isAgent && hasPermission('planning:read') && <SidebarItem to="/manager/worklist" icon={AlertTriangle} label="Corrections" themeColor={themeColor} />}
+                    {!isAgent && hasPermission('audit:read') && <SidebarItem to="/audit" icon={FileText} label="Journal audit" themeColor={themeColor} />}
                     
                     <SidebarItem to="/planning" icon={Calendar} label="Planning" themeColor={themeColor} />
                     {!isAgent && hasPermission('planning:read') && <SidebarItem to="/planning/prepublication" icon={ShieldCheck} label="Pré-publication" themeColor={themeColor} />}

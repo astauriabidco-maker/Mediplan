@@ -1,5 +1,6 @@
 import React from 'react';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -124,6 +125,13 @@ const timelineState = (refetch = vi.fn()) => ({
     refetch,
 });
 
+const renderPage = () =>
+    render(
+        <MemoryRouter>
+            <PlanningPrepublicationPage />
+        </MemoryRouter>,
+    );
+
 describe('PlanningPrepublicationPage', () => {
     afterEach(() => {
         cleanup();
@@ -138,7 +146,7 @@ describe('PlanningPrepublicationPage', () => {
     });
 
     it('shows a non-publishable report with violations, warnings, recommendations and timeline', () => {
-        render(<PlanningPrepublicationPage />);
+        renderPage();
 
         expect(screen.getByText('Publication bloquée')).toBeTruthy();
         expect(screen.getByText('Violations bloquantes')).toBeTruthy();
@@ -171,7 +179,7 @@ describe('PlanningPrepublicationPage', () => {
         mockedUseTimeline.mockReturnValue(timelineState(refetchTimeline) as any);
 
         const user = userEvent.setup();
-        render(<PlanningPrepublicationPage />);
+        renderPage();
 
         expect(screen.getByText('Planning publiable')).toBeTruthy();
         const publishButton = screen
@@ -202,7 +210,7 @@ describe('PlanningPrepublicationPage', () => {
         } as any);
 
         const user = userEvent.setup();
-        render(<PlanningPrepublicationPage />);
+        renderPage();
 
         expect(screen.getByText('Impossible de calculer la pré-publication')).toBeTruthy();
         expect(screen.getByText('Calcul conformité indisponible')).toBeTruthy();
@@ -212,7 +220,7 @@ describe('PlanningPrepublicationPage', () => {
     });
 
     it('annonce les erreurs de période et marque les champs invalides', () => {
-        render(<PlanningPrepublicationPage />);
+        renderPage();
 
         const startInput = screen.getByLabelText(/début/i);
         const endInput = screen.getByLabelText(/fin/i);

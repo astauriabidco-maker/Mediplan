@@ -1,10 +1,12 @@
 import React, { useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
   AlertTriangle,
   CalendarDays,
   CheckCircle2,
   Clock3,
+  ExternalLink,
   FileWarning,
   RefreshCw,
   ShieldCheck,
@@ -97,6 +99,9 @@ const severityClass = {
 
 const focusRing =
   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950';
+
+const linkButtonClass =
+  'inline-flex items-center justify-center gap-2 rounded-xl border border-slate-700 px-3 py-2 text-xs font-bold text-slate-300 hover:bg-slate-900';
 
 const reasonLabels: Record<string, string> = {
   HIGH_ALERTS_OPEN: 'Alertes critiques ouvertes',
@@ -281,6 +286,26 @@ export const ManagerCockpitPage = () => {
             Tenant {data.tenantId} - Donnees generees le{' '}
             {formatDateTime(data.generatedAt)}
           </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Link
+              to="/manager/worklist"
+              className={cn(linkButtonClass, focusRing)}
+            >
+              <ExternalLink size={14} />
+              File manager
+            </Link>
+            <Link
+              to="/planning/prepublication"
+              className={cn(linkButtonClass, focusRing)}
+            >
+              <ExternalLink size={14} />
+              Rapports publication
+            </Link>
+            <Link to="/audit" className={cn(linkButtonClass, focusRing)}>
+              <ExternalLink size={14} />
+              Preuves audit
+            </Link>
+          </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">

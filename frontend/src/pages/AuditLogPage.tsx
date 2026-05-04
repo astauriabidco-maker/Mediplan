@@ -1,19 +1,18 @@
 import React from 'react'
+import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { fetchAuditLogs, AuditLog } from '../api/audit.api'
 import {
     Clock,
     User,
-    Activity,
-    FileText,
     ChevronRight,
     Search,
-    Filter,
     ArrowDownToLine,
     CheckCircle2,
     XCircle,
     RotateCw,
-    PlusCircle
+    PlusCircle,
+    ExternalLink
 } from 'lucide-react'
 
 const ActionBadge = ({ action }: { action: AuditLog['action'] }) => {
@@ -31,8 +30,43 @@ const ActionBadge = ({ action }: { action: AuditLog['action'] }) => {
     }
 }
 
+const stringifyDetails = (details: AuditLog['details']) => {
+    try {
+        return JSON.stringify(details ?? {})
+    } catch {
+        return String(details ?? '')
+    }
+}
+
+const csvValue = (value: string | number | undefined) => {
+    const text = String(value ?? '')
+    return `"${text.replaceAll('"', '""')}"`
+}
+
+const exportLogsCsv = (logs: AuditLog[]) => {
+    const rows = [
+        ['timestamp', 'acteur', 'fonction', 'action', 'cible', 'details'],
+        ...logs.map((log) => [
+            log.timestamp,
+            `${log.actor?.nom ?? ''} ${log.actor?.prenom ?? ''}`.trim() || 'Systeme',
+            log.actor?.jobTitle || 'Systeme',
+            log.action,
+            `${log.entityType} #${log.entityId}`,
+            stringifyDetails(log.details),
+        ]),
+    ]
+    const csv = rows.map((row) => row.map(csvValue).join(',')).join('\n')
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `audit-mediplan-${new Date().toISOString().slice(0, 10)}.csv`
+    link.click()
+    URL.revokeObjectURL(url)
+}
+
 export const AuditLogPage = () => {
-    const { data: logs, isLoading, refetch } = useQuery({
+    const { data: logs, isLoading, isFetching, refetch } = useQuery({
         queryKey: ['audit-logs'],
         queryFn: fetchAuditLogs,
         refetchInterval: 60000,
@@ -41,9 +75,11 @@ export const AuditLogPage = () => {
     const [searchTerm, setSearchTerm] = React.useState('')
 
     const filteredLogs = logs?.filter(log => {
-        const searchStr = `${log.actor?.nom} ${log.actor?.prenom} ${log.action} ${log.entityType}`.toLowerCase()
+        const searchStr = `${log.actor?.nom} ${log.actor?.prenom} ${log.actor?.jobTitle} ${log.action} ${log.entityType} ${log.entityId} ${stringifyDetails(log.details)}`.toLowerCase()
         return searchStr.includes(searchTerm.toLowerCase())
-    })
+    }) || []
+
+    const hasLogs = Boolean(logs?.length)
 
     return (
         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -51,9 +87,17 @@ export const AuditLogPage = () => {
                 <div>
                     <h2 className="text-2xl font-bold text-white tracking-tight flex items-center gap-2">
                         <Clock className="text-blue-500" />
-                        Historique des Modifications
+                        Journal audit
                     </h2>
-                    <p className="text-sm text-slate-400 font-medium">Trace complète de toutes les activités de planning.</p>
+                    <p className="text-sm text-slate-400 font-medium">Preuves métier manager, RH et planning sans accès SQL.</p>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                        <Link to="/manager/cockpit" className="inline-flex items-center gap-2 rounded-lg border border-slate-800 bg-slate-900 px-3 py-1.5 text-[11px] font-bold uppercase tracking-widest text-slate-400 hover:text-white">
+                            <ExternalLink size={12} /> Cockpit manager
+                        </Link>
+                        <Link to="/planning/prepublication" className="inline-flex items-center gap-2 rounded-lg border border-slate-800 bg-slate-900 px-3 py-1.5 text-[11px] font-bold uppercase tracking-widest text-slate-400 hover:text-white">
+                            <ExternalLink size={12} /> Rapports publication
+                        </Link>
+                    </div>
                 </div>
 
                 <div className="flex items-center gap-2">
@@ -62,6 +106,7 @@ export const AuditLogPage = () => {
                         <input
                             type="text"
                             placeholder="Rechercher un acteur, une action..."
+                            aria-label="Rechercher dans le journal audit"
                             value={searchTerm}
                             onChange={(e) => setSearchTerm(e.target.value)}
                             className="bg-slate-900/50 border border-slate-800 rounded-xl pl-10 pr-4 py-2 text-sm text-white placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all w-full md:w-64"
@@ -91,13 +136,15 @@ export const AuditLogPage = () => {
                                         </td>
                                     </tr>
                                 ))
-                            ) : filteredLogs?.length === 0 ? (
+                            ) : filteredLogs.length === 0 ? (
                                 <tr>
                                     <td colSpan={5} className="py-12 text-center text-slate-500 italic font-medium">
-                                        Aucune modification trouvée pour cette recherche.
+                                        {hasLogs
+                                            ? 'Aucune preuve audit ne correspond à cette recherche.'
+                                            : 'Aucune preuve audit disponible pour le moment.'}
                                     </td>
                                 </tr>
-                            ) : filteredLogs?.map((log) => (
+                            ) : filteredLogs.map((log) => (
                                 <tr key={log.id} className="group hover:bg-white/[0.02] transition-colors">
                                     <td className="py-4 px-6 whitespace-nowrap">
                                         <div className="flex flex-col">
@@ -135,7 +182,7 @@ export const AuditLogPage = () => {
                                     <td className="py-4 px-6">
                                         <div className="flex items-center gap-2 group/details">
                                             <pre className="text-[10px] text-slate-400 truncate max-w-[200px] font-mono bg-black/20 p-2 rounded border border-white/5 opacity-60 group-hover/details:opacity-100 transition-opacity">
-                                                {JSON.stringify(log.details)}
+                                                {stringifyDetails(log.details)}
                                             </pre>
                                             <button className="p-1.5 rounded-lg bg-slate-800 text-slate-500 hover:bg-slate-700 hover:text-white transition-all opacity-0 group-hover:opacity-100">
                                                 <ChevronRight size={14} />
@@ -150,12 +197,16 @@ export const AuditLogPage = () => {
             </div>
 
             <div className="flex items-center justify-between py-2 text-slate-500 font-medium">
-                <p className="text-[11px] font-bold uppercase tracking-widest">Affichage de {filteredLogs?.length || 0} modifications</p>
+                <p className="text-[11px] font-bold uppercase tracking-widest">Affichage de {filteredLogs.length} preuve(s) audit</p>
                 <div className="flex gap-2">
-                    <button onClick={() => refetch()} className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-[10px] font-black uppercase tracking-widest text-slate-400 hover:text-white hover:border-slate-700 transition-all">
-                        <RotateCw size={12} /> Actualiser
+                    <button onClick={() => refetch()} disabled={isFetching} className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-[10px] font-black uppercase tracking-widest text-slate-400 hover:text-white hover:border-slate-700 transition-all disabled:cursor-wait disabled:opacity-60">
+                        <RotateCw size={12} className={isFetching ? 'animate-spin' : undefined} /> Actualiser
                     </button>
-                    <button className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-[10px] font-black uppercase tracking-widest text-slate-400 hover:text-white hover:border-slate-700 transition-all disabled:opacity-50">
+                    <button
+                        onClick={() => exportLogsCsv(filteredLogs)}
+                        disabled={filteredLogs.length === 0}
+                        className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-[10px] font-black uppercase tracking-widest text-slate-400 hover:text-white hover:border-slate-700 transition-all disabled:cursor-not-allowed disabled:opacity-50"
+                    >
                         <ArrowDownToLine size={12} /> Exporter CSV
                     </button>
                 </div>
