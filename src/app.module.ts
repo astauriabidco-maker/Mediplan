@@ -56,6 +56,7 @@ import { BackupModule } from './backup/backup.module';
     LocaleConfigModule,
     ConfigModule.forRoot({
       isGlobal: true,
+      envFilePath: process.env.ENV_FILE || '.env',
       validationSchema: Joi.object({
         COUNTRY_CODE: Joi.string().valid('FR', 'CM').required(),
         POSTGRES_HOST: Joi.string().required(),
@@ -78,7 +79,9 @@ import { BackupModule } from './backup/backup.module';
         password: configService.get<string>('POSTGRES_PASSWORD'),
         database: configService.get<string>('POSTGRES_DB'),
         autoLoadEntities: true,
-        synchronize: process.env.NODE_ENV !== 'production', // Auto-create tables (dev only)
+        synchronize:
+          process.env.DB_SYNCHRONIZE === 'true' ||
+          process.env.NODE_ENV === 'development',
       }),
     }),
     TypeOrmModule.forFeature([

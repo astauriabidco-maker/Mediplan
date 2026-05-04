@@ -8,9 +8,9 @@ quotidien genere localement.
 
 Endpoints publics:
 
-| Endpoint | Usage | Attendu |
-| --- | --- | --- |
-| `GET /api/health/live` | Liveness process | `200`, `status: UP` |
+| Endpoint                | Usage                | Attendu                                                  |
+| ----------------------- | -------------------- | -------------------------------------------------------- |
+| `GET /api/health/live`  | Liveness process     | `200`, `status: UP`                                      |
 | `GET /api/health/ready` | Readiness API + base | `200`, `database: UP`; `503` si la base est indisponible |
 
 Ces endpoints ne lisent pas de donnees metier et ne necessitent pas de JWT.
@@ -68,14 +68,14 @@ npm run smoke:api:preprod
 
 Variables utiles:
 
-| Variable | Defaut | Description |
-| --- | --- | --- |
-| `BASE_URL` | `http://localhost:3005` | URL API sans `/api` final |
-| `API_TOKEN` | vide | JWT pour les endpoints proteges |
-| `TENANT_ID` | vide | Tenant cible, respecte les regles super-admin existantes |
-| `FROM` / `TO` | dernieres 24h | Periode ISO du rapport |
-| `REPORT_DIR` | `preprod-reports` | Dossier local ignore par git |
-| `SMOKE_REQUIRE_AUTH` | `false` | Passe le smoke en echec si `API_TOKEN` manque |
+| Variable             | Defaut                  | Description                                              |
+| -------------------- | ----------------------- | -------------------------------------------------------- |
+| `BASE_URL`           | `http://localhost:3005` | URL API sans `/api` final                                |
+| `API_TOKEN`          | vide                    | JWT pour les endpoints proteges                          |
+| `TENANT_ID`          | vide                    | Tenant cible, respecte les regles super-admin existantes |
+| `FROM` / `TO`        | dernieres 24h           | Periode ISO du rapport                                   |
+| `REPORT_DIR`         | `preprod-reports`       | Dossier local ignore par git                             |
+| `SMOKE_REQUIRE_AUTH` | `false`                 | Passe le smoke en echec si `API_TOKEN` manque            |
 
 Le script verifie:
 
@@ -101,3 +101,6 @@ Il genere deux artefacts locaux:
    raisons dans cet ordre: audit chain, scan conformite, publication bloquee,
    alertes hautes.
 6. Conserver le Markdown dans le ticket de suivi preprod du jour.
+
+Voir aussi `docs/SPRINT_13_PREPROD_EXECUTION.md` pour le parcours executable
+complet: configuration, compose preprod, migrations, seed et smoke authentifie.

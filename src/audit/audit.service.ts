@@ -261,6 +261,10 @@ export class AuditService {
             return value.map((entry) => this.redactDetails(entry, seen));
         }
 
+        if (value instanceof Date) {
+            return value.toISOString();
+        }
+
         if (!value || typeof value !== 'object') {
             return value;
         }

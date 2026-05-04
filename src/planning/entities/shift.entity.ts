@@ -47,7 +47,7 @@ export class Shift {
   @Column({ type: 'text', nullable: true })
   complianceExceptionReason: string | null;
 
-  @Column({ nullable: true })
+  @Column({ type: 'integer', nullable: true })
   complianceExceptionApprovedById: number | null;
 
   @Column({ type: 'timestamp', nullable: true })

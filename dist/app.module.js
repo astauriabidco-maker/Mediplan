@@ -101,6 +101,7 @@ exports.AppModule = AppModule = __decorate([
             locale_module_1.LocaleConfigModule,
             config_1.ConfigModule.forRoot({
                 isGlobal: true,
+                envFilePath: process.env.ENV_FILE || '.env',
                 validationSchema: Joi.object({
                     COUNTRY_CODE: Joi.string().valid('FR', 'CM').required(),
                     POSTGRES_HOST: Joi.string().required(),
@@ -123,7 +124,8 @@ exports.AppModule = AppModule = __decorate([
                     password: configService.get('POSTGRES_PASSWORD'),
                     database: configService.get('POSTGRES_DB'),
                     autoLoadEntities: true,
-                    synchronize: process.env.NODE_ENV !== 'production',
+                    synchronize: process.env.DB_SYNCHRONIZE === 'true' ||
+                        process.env.NODE_ENV === 'development',
                 }),
             }),
             typeorm_1.TypeOrmModule.forFeature([

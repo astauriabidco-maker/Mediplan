@@ -81,6 +81,21 @@ Demo accounts:
 
 More details: [SEED_README.md](./SEED_README.md).
 
+## Preprod execution
+
+Run the Sprint 13 preprod stack and checks:
+
+```bash
+$ cp .env.preprod.example .env.preprod
+$ ENV_FILE=.env.preprod npm run preprod:env:check
+$ npm run preprod:compose:up
+$ npm run preprod:compose:migrate
+$ npm run preprod:compose:seed
+$ npm run preprod:compose:smoke
+```
+
+Runbook: [docs/SPRINT_13_PREPROD_EXECUTION.md](./docs/SPRINT_13_PREPROD_EXECUTION.md).
+
 ## Deployment
 
 When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.

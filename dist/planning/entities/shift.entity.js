@@ -78,7 +78,7 @@ __decorate([
     __metadata("design:type", Object)
 ], Shift.prototype, "complianceExceptionReason", void 0);
 __decorate([
-    (0, typeorm_1.Column)({ nullable: true }),
+    (0, typeorm_1.Column)({ type: 'integer', nullable: true }),
     __metadata("design:type", Object)
 ], Shift.prototype, "complianceExceptionApprovedById", void 0);
 __decorate([

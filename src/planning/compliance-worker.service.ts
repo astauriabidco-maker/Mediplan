@@ -168,6 +168,16 @@ export class ComplianceWorkerService {
       );
     }
 
+    if (rule.competencyName) {
+      matchingShifts = matchingShifts.filter((s) =>
+        s.agent?.agentCompetencies?.some(
+          (ac) =>
+            ac.competency?.name === rule.competencyName &&
+            (!ac.expirationDate || ac.expirationDate > new Date()),
+        ),
+      );
+    }
+
     return matchingShifts.length >= (rule.minCount || 0);
   }
 
