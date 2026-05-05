@@ -40,6 +40,7 @@ import { FacilityModule } from './facility/facility.module';
 import { SettingsModule } from './settings/settings.module';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { BackupModule } from './backup/backup.module';
+import { ProductionReadinessModule } from './production-readiness/production-readiness.module';
 
 @Module({
   imports: [
@@ -113,6 +114,7 @@ import { BackupModule } from './backup/backup.module';
     SettingsModule,
     AnalyticsModule,
     BackupModule,
+    ProductionReadinessModule,
   ],
   controllers: [AppController],
   providers: [

@@ -4,6 +4,7 @@ import type {
   PublishPlanningPeriod,
 } from './planning.api';
 import type { CompliancePeriodParams } from './manager.api';
+import type { ProductionReadinessTenantParams } from './production-readiness.api';
 
 const MINUTE = 60 * 1000;
 
@@ -24,6 +25,10 @@ const timelineFilters = (filters: PlanningTimelineFilters) => ({
   limit: filters.limit,
   agentId: filters.agentId,
   shiftId: filters.shiftId,
+});
+
+const tenantParams = (params?: ProductionReadinessTenantParams) => ({
+  tenantId: params?.tenantId,
 });
 
 export const queryCacheProfiles = {
@@ -98,6 +103,26 @@ export const planningQueryKeys = {
         ...planningQueryKeys.compliance.all(),
         'timeline',
         timelineFilters(filters),
+      ] as const,
+  },
+};
+
+export const productionReadinessQueryKeys = {
+  all: ['production-readiness'] as const,
+  signoffs: {
+    all: () => [...productionReadinessQueryKeys.all, 'signoffs'] as const,
+    list: (params?: ProductionReadinessTenantParams) =>
+      [
+        ...productionReadinessQueryKeys.signoffs.all(),
+        tenantParams(params),
+      ] as const,
+  },
+  decision: {
+    all: () => [...productionReadinessQueryKeys.all, 'decision'] as const,
+    detail: (params?: ProductionReadinessTenantParams) =>
+      [
+        ...productionReadinessQueryKeys.decision.all(),
+        tenantParams(params),
       ] as const,
   },
 };

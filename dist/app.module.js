@@ -82,6 +82,7 @@ const facility_module_1 = require("./facility/facility.module");
 const settings_module_1 = require("./settings/settings.module");
 const analytics_module_1 = require("./analytics/analytics.module");
 const backup_module_1 = require("./backup/backup.module");
+const production_readiness_module_1 = require("./production-readiness/production-readiness.module");
 let AppModule = class AppModule {
 };
 exports.AppModule = AppModule;
@@ -157,6 +158,7 @@ exports.AppModule = AppModule = __decorate([
             settings_module_1.SettingsModule,
             analytics_module_1.AnalyticsModule,
             backup_module_1.BackupModule,
+            production_readiness_module_1.ProductionReadinessModule,
         ],
         controllers: [app_controller_1.AppController],
         providers: [

@@ -4,6 +4,7 @@ import {
   invalidatePlanningResolutionQueries,
   managerQueryKeys,
   planningQueryKeys,
+  productionReadinessQueryKeys,
   queryCacheProfiles,
 } from './queryKeys';
 
@@ -89,6 +90,21 @@ describe('queryKeys', () => {
     expect(queryCacheProfiles.reference.gcTime).toBeGreaterThan(
       queryCacheProfiles.live.gcTime,
     );
+  });
+
+  it('groups production readiness signoffs and decision by tenant', () => {
+    const params = { tenantId: 'tenant-a' };
+
+    expect(productionReadinessQueryKeys.signoffs.list(params)).toEqual([
+      'production-readiness',
+      'signoffs',
+      params,
+    ]);
+    expect(productionReadinessQueryKeys.decision.detail(params)).toEqual([
+      'production-readiness',
+      'decision',
+      params,
+    ]);
   });
 
   it('invalidates resolution-sensitive manager and planning domains', async () => {
