@@ -49,7 +49,7 @@ const thresholds = {
   agents: Number(process.env.MIN_DEMO_AGENTS || 35),
   shifts: Number(process.env.MIN_DEMO_SHIFTS || 28),
   leaves: Number(process.env.MIN_DEMO_LEAVES || 11),
-  openAlerts: Number(process.env.MIN_DEMO_OPEN_ALERTS || 1),
+  maxOpenAlerts: Number(process.env.MAX_DEMO_OPEN_ALERTS || 0),
   auditLogs: Number(process.env.MIN_DEMO_AUDIT_LOGS || 1),
 };
 
@@ -202,6 +202,17 @@ const minCheck = (name, actual, expected) => ({
     actual >= expected
       ? `${name}: ${actual} >= ${expected}`
       : `${name}: expected at least ${expected}, got ${actual}`,
+});
+
+const maxCheck = (name, actual, expected) => ({
+  name,
+  ok: actual <= expected,
+  expected: `<= ${expected}`,
+  actual,
+  message:
+    actual <= expected
+      ? `${name}: ${actual} <= ${expected}`
+      : `${name}: expected at most ${expected}, got ${actual}`,
 });
 
 const containsAllCheck = (name, actual, expected) => {
@@ -363,10 +374,10 @@ const checks = [
   minCheck('Agents seeded', evidence.agents.backup, thresholds.agents),
   minCheck('Shifts seeded', evidence.shifts.backup, thresholds.shifts),
   minCheck('Leaves seeded', evidence.leaves.backup, thresholds.leaves),
-  minCheck(
-    'Open alerts available',
+  maxCheck(
+    'Open alerts clean',
     evidence.openAlerts.api,
-    thresholds.openAlerts,
+    thresholds.maxOpenAlerts,
   ),
   minCheck('Audit events available', evidence.audit.total, thresholds.auditLogs),
   {

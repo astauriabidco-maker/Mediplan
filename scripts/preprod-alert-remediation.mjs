@@ -47,14 +47,17 @@ const tenantId = process.env.TENANT_ID || 'HGD-DOUALA';
 const email = process.env.SMOKE_EMAIL || 'superadmin@mediplan.demo';
 const password = process.env.SMOKE_PASSWORD || 'password123';
 const reportDir = process.env.REPORT_DIR || 'preprod-reports';
-const expectedHighCount = Number(
-  process.env.PREPROD_ALERT_REMEDIATION_EXPECTED_COUNT || 4,
+const severity = process.env.PREPROD_ALERT_REMEDIATION_SEVERITY || 'HIGH';
+const expectedCount = Number(
+  process.env.PREPROD_ALERT_REMEDIATION_EXPECTED_COUNT ||
+    process.env.PREPROD_ALERT_REMEDIATION_EXPECTED_COUNT_BY_SEVERITY ||
+    4,
 );
 const reason =
   process.env.PREPROD_ALERT_REMEDIATION_REASON ||
   [
     `Sprint 15 Phase 4 remediation ${runDate}`,
-    'HGD-DOUALA preprod HIGH QVT alerts reviewed and closed as targeted non-destructive remediation.',
+    `HGD-DOUALA preprod ${severity} QVT alerts reviewed and closed as targeted non-destructive remediation.`,
     'No DB reset, no bulk delete, no planning publish, no restore import.',
   ].join(' - ');
 
@@ -121,11 +124,11 @@ const query = (params) => {
   return search.toString();
 };
 
-const listOpenHighAlerts = async () => {
+const listOpenTargetAlerts = async () => {
   const alerts = await requestJson(
     `/api/agent-alerts?${query({
       tenantId,
-      severity: 'HIGH',
+      severity,
       isResolved: 'false',
     })}`,
     { headers },
@@ -160,14 +163,14 @@ const escapeMarkdownCell = (value) =>
     .replace(/\r?\n/g, ' ')
     .replace(/\|/g, '\\|');
 
-const beforeAlerts = await listOpenHighAlerts();
+const beforeAlerts = await listOpenTargetAlerts();
 const summariesBefore = beforeAlerts.map(summarizeAlert);
 const guard = apply
   ? 'PREPROD_ALERT_REMEDIATION_APPLY=true or --apply provided'
   : 'dry-run default: no alert mutation executed';
 
-if (beforeAlerts.length !== expectedHighCount) {
-  const message = `Expected ${expectedHighCount} open HIGH alerts for targeted HGD-DOUALA remediation, observed ${beforeAlerts.length}.`;
+if (beforeAlerts.length !== expectedCount) {
+  const message = `Expected ${expectedCount} open ${severity} alerts for targeted HGD-DOUALA remediation, observed ${beforeAlerts.length}.`;
   if (apply) {
     throw new Error(`${message} Refusing to apply targeted resolution.`);
   }
@@ -194,12 +197,12 @@ if (apply) {
   }
 }
 
-const afterAlerts = await listOpenHighAlerts();
+const afterAlerts = await listOpenTargetAlerts();
 const status = apply
   ? afterAlerts.length === 0
     ? 'PASSED'
     : 'FAILED'
-  : beforeAlerts.length === expectedHighCount
+  : beforeAlerts.length === expectedCount
     ? 'READY'
     : 'REVIEW';
 const generatedAt = new Date().toISOString();
@@ -212,10 +215,11 @@ const report = {
   },
   apply,
   guard,
-  expectedHighCount,
+  severity,
+  expectedCount,
   reason,
   safety: {
-    scope: 'PATCH /api/agent-alerts/:id/resolve for currently open HIGH alerts only',
+    scope: `PATCH /api/agent-alerts/:id/resolve for currently open ${severity} alerts only`,
     noBulkDelete: true,
     noDatabaseReset: true,
     noDestructiveMigration: true,
@@ -223,18 +227,18 @@ const report = {
     noBackupRestore: true,
   },
   before: {
-    highOpenCount: beforeAlerts.length,
-    highOpen: summariesBefore,
+    openCount: beforeAlerts.length,
+    open: summariesBefore,
   },
   resolutions,
   after: {
-    highOpenCount: afterAlerts.length,
-    highOpen: afterAlerts.map(summarizeAlert),
+    openCount: afterAlerts.length,
+    open: afterAlerts.map(summarizeAlert),
   },
 };
 
 const markdown = [
-  `# Remediation alertes HIGH preprod - ${runDate}`,
+  `# Remediation alertes ${severity} preprod - ${runDate}`,
   '',
   `- Statut: ${status}`,
   `- Tenant: ${tenantId}`,
@@ -242,8 +246,9 @@ const markdown = [
   `- Genere: ${generatedAt}`,
   `- Mode: ${apply ? 'apply' : 'dry-run'}`,
   `- Garde: ${guard}`,
-  `- Alertes HIGH avant: ${beforeAlerts.length}`,
-  `- Alertes HIGH apres: ${afterAlerts.length}`,
+  `- Severite cible: ${severity}`,
+  `- Alertes ${severity} avant: ${beforeAlerts.length}`,
+  `- Alertes ${severity} apres: ${afterAlerts.length}`,
   `- Raison resolution: ${reason}`,
   '',
   '## Securite',
@@ -305,7 +310,7 @@ const markdown = [
           summary.message,
         )} |`;
       })
-    : ['| - | - | - | aucune alerte HIGH ouverte |']),
+    : [`| - | - | - | aucune alerte ${severity} ouverte |`]),
   '',
 ].join('\n');
 

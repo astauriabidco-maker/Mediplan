@@ -1,11 +1,11 @@
-# Sprint 15 Phase 4 - Remediation alertes HIGH HGD-DOUALA
+# Sprint 15 Phase 4 - Remediation alertes HGD-DOUALA
 
 Date: 2026-05-05
 
 ## Objectif
 
-Corriger ou documenter les 4 alertes `HIGH` ouvertes en preprod sur le tenant
-`HGD-DOUALA`, sans action destructive:
+Corriger ou documenter les alertes ouvertes en preprod sur le tenant
+`HGD-DOUALA`, en commencant par les 4 alertes `HIGH`, sans action destructive:
 
 - pas de suppression massive;
 - pas de reset DB;
@@ -59,6 +59,8 @@ node scripts/preprod-alert-remediation.mjs --apply
 Gardes:
 
 - `TENANT_ID=HGD-DOUALA` par defaut;
+- `PREPROD_ALERT_REMEDIATION_SEVERITY=HIGH` par defaut, ajustable a `MEDIUM`
+  ou `LOW` pour un nettoyage metier cible;
 - `PREPROD_ALERT_REMEDIATION_EXPECTED_COUNT=4` par defaut;
 - en mode `apply`, le script refuse d'agir si le nombre d'alertes ouvertes ne
   correspond pas au nombre attendu;
@@ -74,7 +76,7 @@ Le script produit:
 
 Les preuves doivent contenir:
 
-- le nombre d'alertes `HIGH` avant/apres;
+- la severite ciblee et le nombre d'alertes avant/apres;
 - la liste des alertes traitees;
 - la raison de resolution;
 - le rappel des gardes de securite;
@@ -109,3 +111,18 @@ Execution du 2026-05-05:
 - observability finale: `HEALTHY`;
 - audit chain: `valid=true`;
 - backup: exportable.
+
+## Mini-lot nettoyage metier
+
+Execution complementaire du 2026-05-05:
+
+- severite ciblee: `MEDIUM`;
+- alerte traitee: ID 10, Paul MBARGA ATANGANA, `QVT_FATIGUE`, score fatigue
+  `56/100`, `48h` hebdomadaires;
+- remediation ciblee: `PASSED`;
+- alertes `MEDIUM` avant: 1;
+- alertes `MEDIUM` apres: 0;
+- resolution: 1 appel `PATCH /api/agent-alerts/:id/resolve` retourne `200`;
+- health-check demo relance apres ajustement du critere sain: `PASSED`;
+- synthese operationnelle relancee: `GO`, observability `HEALTHY`, alertes
+  ouvertes `0`.

@@ -8,7 +8,7 @@ Valider non destructivement que le tenant demo `HGD-DOUALA` expose un jeu de don
 - services hospitaliers rattaches aux etablissements;
 - agents demo rattaches aux services;
 - shifts et conges presents sur la periode de demonstration;
-- alertes ouvertes consultables;
+- absence d'alerte ouverte non resolue en preprod saine;
 - chaine audit verifiable;
 - backup tenant exportable et aligne avec les compteurs API.
 
@@ -63,7 +63,7 @@ Seuils ajustables si une recette veut accepter un dataset partiel:
 | `MIN_DEMO_AGENTS` | 35 |
 | `MIN_DEMO_SHIFTS` | 28 |
 | `MIN_DEMO_LEAVES` | 11 |
-| `MIN_DEMO_OPEN_ALERTS` | 1 |
+| `MAX_DEMO_OPEN_ALERTS` | 0 |
 | `MIN_DEMO_AUDIT_LOGS` | 1 |
 
 ## Controles realises
@@ -83,7 +83,8 @@ Le script authentifie le compte demo, puis effectue uniquement des lectures:
 
 Les controles bloquants couvrent:
 
-- seuils minimums sur etablissements, services, agents, shifts, conges, alertes ouvertes et evenements audit;
+- seuils minimums sur etablissements, services, agents, shifts, conges et evenements audit;
+- plafond d'alertes ouvertes non resolues, `0` par defaut pour une preprod saine;
 - presence des codes etablissements `HGD`, `HGD-BNJ`, `HGD-LOG`;
 - presence des principaux codes services (`URG`, `CHIR`, `REA`, `MAT`, `PED`, `RAD`, `LAB`, `PHARMA`, `ADM`);
 - rattachement de tous les agents visibles a un service;
@@ -97,5 +98,6 @@ La recette Sprint 15 Phase 4 est acceptee si:
 
 - `node --check scripts/preprod-demo-health-check.mjs` reussit;
 - le health-check local ou preprod termine avec `Statut: PASSED`;
+- `Alertes ouvertes` vaut `0`, sauf reserve metier explicite via `MAX_DEMO_OPEN_ALERTS`;
 - les rapports `preprod-demo-health-check-YYYY-MM-DD.json` et `.md` sont generes;
 - aucun seed, import backup, migration, modification frontend ou modification `package.json` n'est necessaire pour obtenir le resultat.
