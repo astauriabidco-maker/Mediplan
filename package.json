@@ -57,6 +57,7 @@
     "ops:routines": "node scripts/ops-routine-scheduler.mjs --dry-run",
     "release:candidate:check": "node scripts/release-candidate-check.mjs --dry-run",
     "release:candidate:finalize": "node scripts/release-candidate-finalize.mjs --dry-run",
+    "production:readiness": "node scripts/production-readiness-review.mjs --dry-run",
     "ci:product:verify": "node scripts/ci-product-verify.mjs",
     "ci:frontend": "npm run frontend:build && npm run frontend:budget:check && npm run frontend:lint && npm run frontend:test && npm run frontend:audit && npm run frontend:smoke:routes",
     "ci:product": "npm run ci:frontend && npm run ci:quality",
