@@ -5,8 +5,17 @@ import { AuditService } from '../audit/audit.service';
 import {
   AuditAction,
   AuditEntityType,
+  AuditLog,
 } from '../audit/entities/audit-log.entity';
-import { UpsertProductionSignoffDto } from './dto/production-readiness.dto';
+import {
+  UpsertProductionGateDto,
+  UpsertProductionSignoffDto,
+} from './dto/production-readiness.dto';
+import {
+  ProductionGate,
+  ProductionGateKey,
+  ProductionGateStatus as ProductionGateStatusValue,
+} from './entities/production-gate.entity';
 import {
   ProductionSignoff,
   ProductionSignoffKey,
@@ -22,18 +31,27 @@ export const REQUIRED_PRODUCTION_SIGNOFFS = [
 ];
 
 const REQUIRED_PRODUCTION_GATES = [
-  'MIGRATION',
-  'SEED',
-  'SMOKE',
-  'COMPLIANCE',
-  'AUDIT',
-  'BACKUP',
+  ProductionGateKey.MIGRATION,
+  ProductionGateKey.SEED,
+  ProductionGateKey.SMOKE,
+  ProductionGateKey.COMPLIANCE,
+  ProductionGateKey.AUDIT,
+  ProductionGateKey.BACKUP,
 ];
 
+export const PRODUCTION_SIGNOFF_AUDIT_ACTIONS = [
+  'CREATE_PRODUCTION_SIGNOFF',
+  'UPDATE_PRODUCTION_SIGNOFF',
+] as const;
+
 export interface ProductionGateStatus {
-  key: string;
-  status: 'PASSED' | 'FAILED' | 'UNKNOWN';
+  key: ProductionGateKey;
+  status: ProductionGateStatusValue;
   source: string;
+  evidenceUrl: string | null;
+  comment: string | null;
+  snapshot: Record<string, unknown> | null;
+  checkedAt: string | null;
 }
 
 export interface ProductionDecision {
@@ -55,11 +73,40 @@ export interface ProductionDecision {
   };
 }
 
+export interface ProductionSignoffHistoryEntry {
+  auditLogId: number;
+  chainSequence: number | null;
+  eventHash: string | null;
+  key: ProductionSignoffKey;
+  action: string | null;
+  decidedAt: string;
+  actorId: number;
+  actorName: string | null;
+  status: ProductionSignoffStatus | null;
+  signerName: string | null;
+  signerRole: string | null;
+  signedById: number | null;
+  signedAt: string | null;
+  proofUrl: string | null;
+  proofLabel: string | null;
+  comment: string | null;
+}
+
+export interface ProductionSignoffHistory {
+  tenantId: string;
+  generatedAt: string;
+  decision: ProductionDecision;
+  entries: ProductionSignoffHistoryEntry[];
+  byRole: Record<ProductionSignoffKey, ProductionSignoffHistoryEntry[]>;
+}
+
 @Injectable()
 export class ProductionReadinessService {
   constructor(
     @InjectRepository(ProductionSignoff)
     private readonly signoffRepository: Repository<ProductionSignoff>,
+    @InjectRepository(ProductionGate)
+    private readonly gateRepository: Repository<ProductionGate>,
     private readonly auditService: AuditService,
   ) {}
 
@@ -68,6 +115,68 @@ export class ProductionReadinessService {
       where: { tenantId },
       order: { key: 'ASC' },
     });
+  }
+
+  async findGates(tenantId: string): Promise<ProductionGateStatus[]> {
+    const gates = await this.findPersistedGates(tenantId);
+
+    return [
+      this.resolveGateStatus(
+        ProductionGateKey.FREEZE,
+        gates.get(ProductionGateKey.FREEZE),
+        'PROD_FREEZE_STATUS',
+        'FREEZE_READY',
+      ),
+      ...REQUIRED_PRODUCTION_GATES.map((gate) =>
+        this.resolveGateStatus(
+          gate,
+          gates.get(gate),
+          `PROD_GATE_${gate}`,
+          ProductionGateStatusValue.PASSED,
+        ),
+      ),
+    ];
+  }
+
+  async upsertGate(
+    tenantId: string,
+    key: ProductionGateKey,
+    dto: UpsertProductionGateDto,
+    actorId: number,
+  ) {
+    const normalized = this.normalizeGateInput(dto);
+    const existing = await this.gateRepository.findOne({
+      where: { tenantId, key },
+    });
+    const before = existing ? this.toGateAuditSnapshot(existing) : null;
+    const gate =
+      existing ||
+      this.gateRepository.create({
+        tenantId,
+        key,
+      });
+
+    Object.assign(gate, normalized, {
+      updatedById: actorId,
+    });
+
+    const savedGate = await this.gateRepository.save(gate);
+
+    await this.auditService.log(
+      tenantId,
+      actorId,
+      existing ? AuditAction.UPDATE : AuditAction.CREATE,
+      AuditEntityType.PLANNING,
+      `production-gate:${key}`,
+      {
+        action: existing ? 'UPDATE_PRODUCTION_GATE' : 'CREATE_PRODUCTION_GATE',
+        gateKey: key,
+        before,
+        after: this.toGateAuditSnapshot(savedGate),
+      },
+    );
+
+    return savedGate;
   }
 
   async upsertSignoff(
@@ -119,7 +228,10 @@ export class ProductionReadinessService {
   }
 
   async getDecision(tenantId: string): Promise<ProductionDecision> {
-    const signoffs = await this.findSignoffs(tenantId);
+    const [signoffs, gates] = await Promise.all([
+      this.findSignoffs(tenantId),
+      this.findPersistedGates(tenantId),
+    ]);
     const byKey = new Map(signoffs.map((signoff) => [signoff.key, signoff]));
     const missing = REQUIRED_PRODUCTION_SIGNOFFS.filter(
       (key) => !byKey.has(key),
@@ -136,16 +248,22 @@ export class ProductionReadinessService {
         signoff?.status === ProductionSignoffStatus.GO && !signoff.proofUrl
       );
     });
-    const freeze = this.readGateStatus(
-      'FREEZE',
+    const freeze = this.resolveGateStatus(
+      ProductionGateKey.FREEZE,
+      gates.get(ProductionGateKey.FREEZE),
       'PROD_FREEZE_STATUS',
       'FREEZE_READY',
     );
     const checks = REQUIRED_PRODUCTION_GATES.map((gate) =>
-      this.readGateStatus(gate, `PROD_GATE_${gate}`, 'PASSED'),
+      this.resolveGateStatus(
+        gate,
+        gates.get(gate),
+        `PROD_GATE_${gate}`,
+        ProductionGateStatusValue.PASSED,
+      ),
     );
     const failedGates = [freeze, ...checks].filter(
-      (gate) => gate.status !== 'PASSED',
+      (gate) => gate.status !== ProductionGateStatusValue.PASSED,
     );
     const blockers = [
       ...missing.map((key) => `Missing ${key} signoff`),
@@ -172,6 +290,39 @@ export class ProductionReadinessService {
         freeze,
         checks,
       },
+    };
+  }
+
+  async getSignoffHistory(tenantId: string): Promise<ProductionSignoffHistory> {
+    const [decision, logs] = await Promise.all([
+      this.getDecision(tenantId),
+      this.auditService.getLogs(tenantId, {
+        entityType: AuditEntityType.PLANNING,
+        detailActions: [...PRODUCTION_SIGNOFF_AUDIT_ACTIONS],
+        limit: 500,
+      }),
+    ]);
+    const entries = logs
+      .map((log) => this.toHistoryEntry(log))
+      .filter((entry): entry is ProductionSignoffHistoryEntry => !!entry)
+      .sort(
+        (left, right) =>
+          new Date(right.decidedAt).getTime() -
+          new Date(left.decidedAt).getTime(),
+      );
+    const byRole = Object.fromEntries(
+      REQUIRED_PRODUCTION_SIGNOFFS.map((key) => [
+        key,
+        entries.filter((entry) => entry.key === key),
+      ]),
+    ) as Record<ProductionSignoffKey, ProductionSignoffHistoryEntry[]>;
+
+    return {
+      tenantId,
+      generatedAt: new Date().toISOString(),
+      decision,
+      entries,
+      byRole,
     };
   }
 
@@ -212,26 +363,116 @@ export class ProductionReadinessService {
     return normalized;
   }
 
-  private readGateStatus(
-    key: string,
+  private normalizeGateInput(dto: UpsertProductionGateDto) {
+    return {
+      status: dto.status,
+      source: this.cleanOptional(dto.source) || 'APPLICATION',
+      evidenceUrl: this.cleanOptional(dto.evidenceUrl),
+      comment: this.cleanOptional(dto.comment),
+      snapshot: dto.snapshot ?? null,
+      checkedAt: dto.checkedAt ? new Date(dto.checkedAt) : new Date(),
+    };
+  }
+
+  private async findPersistedGates(tenantId: string) {
+    const gates = await this.gateRepository.find({
+      where: { tenantId },
+      order: { key: 'ASC' },
+    });
+
+    return new Map(gates.map((gate) => [gate.key, gate]));
+  }
+
+  private resolveGateStatus(
+    key: ProductionGateKey,
+    persistedGate: ProductionGate | undefined,
     envName: string,
     expectedValue: string,
   ): ProductionGateStatus {
+    if (persistedGate) {
+      return {
+        key,
+        status: persistedGate.status,
+        source: persistedGate.source || 'APPLICATION',
+        evidenceUrl: persistedGate.evidenceUrl,
+        comment: persistedGate.comment,
+        snapshot: persistedGate.snapshot,
+        checkedAt: this.toIsoString(persistedGate.checkedAt),
+      };
+    }
+
     const value = process.env[envName];
     if (!value) {
-      return { key, status: 'UNKNOWN', source: envName };
+      return {
+        key,
+        status: ProductionGateStatusValue.UNKNOWN,
+        source: envName,
+        evidenceUrl: null,
+        comment: null,
+        snapshot: null,
+        checkedAt: null,
+      };
     }
 
     return {
       key,
-      status: value === expectedValue ? 'PASSED' : 'FAILED',
+      status:
+        value === expectedValue
+          ? ProductionGateStatusValue.PASSED
+          : ProductionGateStatusValue.FAILED,
       source: envName,
+      evidenceUrl: null,
+      comment: null,
+      snapshot: null,
+      checkedAt: null,
     };
   }
 
   private cleanOptional(value?: string | null) {
     const trimmed = value?.trim();
     return trimmed ? trimmed : null;
+  }
+
+  private toHistoryEntry(log: AuditLog): ProductionSignoffHistoryEntry | null {
+    const details = log.details || {};
+    const key = details.signoffKey as ProductionSignoffKey | undefined;
+    const after = details.after || {};
+    if (!key || !Object.values(ProductionSignoffKey).includes(key)) {
+      return null;
+    }
+
+    return {
+      auditLogId: log.id,
+      chainSequence: log.chainSequence ?? null,
+      eventHash: log.eventHash ?? null,
+      key,
+      action: details.action || null,
+      decidedAt: this.toIsoString(log.timestamp) || new Date(0).toISOString(),
+      actorId: log.actorId,
+      actorName: this.resolveActorName(log.actor),
+      status: after.status || null,
+      signerName: after.signerName || null,
+      signerRole: after.signerRole || null,
+      signedById: after.signedById ?? null,
+      signedAt: after.signedAt || null,
+      proofUrl: after.proofUrl || null,
+      proofLabel: after.proofLabel || null,
+      comment: after.comment || null,
+    };
+  }
+
+  private resolveActorName(actor?: AuditLog['actor']) {
+    if (!actor) return null;
+    return (
+      actor.nom ||
+      [actor.firstName, actor.lastName].filter(Boolean).join(' ') ||
+      null
+    );
+  }
+
+  private toIsoString(value?: Date | string | null) {
+    if (!value) return null;
+    return value instanceof Date ? value.toISOString() : value;
   }
 
   private toAuditSnapshot(signoff: ProductionSignoff) {
@@ -242,8 +483,22 @@ export class ProductionReadinessService {
       signerRole: signoff.signerRole,
       proofUrl: signoff.proofUrl,
       proofLabel: signoff.proofLabel,
+      comment: signoff.comment,
       signedById: signoff.signedById,
       signedAt: signoff.signedAt?.toISOString?.() || signoff.signedAt,
+    };
+  }
+
+  private toGateAuditSnapshot(gate: ProductionGate) {
+    return {
+      key: gate.key,
+      status: gate.status,
+      source: gate.source,
+      evidenceUrl: gate.evidenceUrl,
+      comment: gate.comment,
+      snapshot: gate.snapshot,
+      updatedById: gate.updatedById,
+      checkedAt: gate.checkedAt?.toISOString?.() || gate.checkedAt,
     };
   }
 }

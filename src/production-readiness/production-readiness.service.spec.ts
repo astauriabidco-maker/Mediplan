@@ -7,6 +7,11 @@ import {
   AuditEntityType,
 } from '../audit/entities/audit-log.entity';
 import {
+  ProductionGate,
+  ProductionGateKey,
+  ProductionGateStatus,
+} from './entities/production-gate.entity';
+import {
   ProductionSignoff,
   ProductionSignoffKey,
   ProductionSignoffStatus,
@@ -24,23 +29,31 @@ const createRepositoryMock = (): RepositoryMock => ({
   find: jest.fn(),
   findOne: jest.fn(),
   create: jest.fn(
-    (entity: Partial<ProductionSignoff>) => entity as ProductionSignoff,
+    (entity: Partial<ProductionSignoff | ProductionGate>) =>
+      entity as ProductionSignoff | ProductionGate,
   ),
-  save: jest.fn((entity: Partial<ProductionSignoff>) =>
-    Promise.resolve({ id: entity.id ?? 1, ...entity } as ProductionSignoff),
+  save: jest.fn((entity: Partial<ProductionSignoff | ProductionGate>) =>
+    Promise.resolve({
+      id: entity.id ?? 1,
+      ...entity,
+    } as ProductionSignoff | ProductionGate),
   ),
 });
 
 describe('ProductionReadinessService', () => {
   let service: ProductionReadinessService;
   let repository: RepositoryMock;
-  let auditService: { log: jest.Mock };
+  let gateRepository: RepositoryMock;
+  let auditService: { log: jest.Mock; getLogs: jest.Mock };
   const originalEnv = process.env;
 
   beforeEach(async () => {
     process.env = { ...originalEnv };
     repository = createRepositoryMock();
-    auditService = { log: jest.fn() };
+    gateRepository = createRepositoryMock();
+    repository.find.mockResolvedValue([]);
+    gateRepository.find.mockResolvedValue([]);
+    auditService = { log: jest.fn(), getLogs: jest.fn().mockResolvedValue([]) };
 
     const moduleRef = await Test.createTestingModule({
       providers: [
@@ -48,6 +61,10 @@ describe('ProductionReadinessService', () => {
         {
           provide: getRepositoryToken(ProductionSignoff),
           useValue: repository,
+        },
+        {
+          provide: getRepositoryToken(ProductionGate),
+          useValue: gateRepository,
         },
         { provide: AuditService, useValue: auditService },
       ],
@@ -106,8 +123,73 @@ describe('ProductionReadinessService', () => {
       expect.objectContaining({
         action: 'CREATE_PRODUCTION_SIGNOFF',
         signoffKey: ProductionSignoffKey.SECURITY,
+        after: expect.objectContaining({
+          comment: 'Validation sécurité OK',
+        }),
       }),
     );
+  });
+
+  it('rebuilds signoff history from production audit events grouped by role', async () => {
+    repository.find.mockResolvedValue([
+      {
+        key: ProductionSignoffKey.SECURITY,
+        status: ProductionSignoffStatus.GO,
+        proofUrl: 'https://evidence.test/security',
+      },
+    ]);
+    auditService.getLogs.mockResolvedValue([
+      {
+        id: 12,
+        timestamp: new Date('2026-05-04T09:30:00.000Z'),
+        actorId: 51,
+        actor: { nom: 'RSSI' },
+        action: AuditAction.CREATE,
+        entityType: AuditEntityType.PLANNING,
+        entityId: 'production-signoff:SECURITY',
+        tenantId: 'tenant-a',
+        chainSequence: 7,
+        eventHash: 'hash-security-go',
+        details: {
+          action: 'CREATE_PRODUCTION_SIGNOFF',
+          signoffKey: ProductionSignoffKey.SECURITY,
+          after: {
+            status: ProductionSignoffStatus.GO,
+            signerName: 'RSSI',
+            signerRole: 'Sécurité',
+            signedById: 51,
+            signedAt: '2026-05-04T09:30:00.000Z',
+            proofUrl: 'https://evidence.test/security',
+            proofLabel: 'Rapport sécurité',
+            comment: 'Validation sécurité OK',
+          },
+        },
+      },
+    ]);
+
+    const history = await service.getSignoffHistory('tenant-a');
+
+    expect(auditService.getLogs).toHaveBeenCalledWith('tenant-a', {
+      entityType: AuditEntityType.PLANNING,
+      detailActions: ['CREATE_PRODUCTION_SIGNOFF', 'UPDATE_PRODUCTION_SIGNOFF'],
+      limit: 500,
+    });
+    expect(history.decision.status).toBe('PROD_NO_GO');
+    expect(history.entries).toEqual([
+      expect.objectContaining({
+        auditLogId: 12,
+        chainSequence: 7,
+        eventHash: 'hash-security-go',
+        key: ProductionSignoffKey.SECURITY,
+        actorId: 51,
+        actorName: 'RSSI',
+        status: ProductionSignoffStatus.GO,
+        proofUrl: 'https://evidence.test/security',
+        comment: 'Validation sécurité OK',
+      }),
+    ]);
+    expect(history.byRole.SECURITY).toHaveLength(1);
+    expect(history.byRole.HR).toEqual([]);
   });
 
   it('returns PROD_NO_GO while gates or signoffs are missing', async () => {
@@ -158,5 +240,85 @@ describe('ProductionReadinessService', () => {
 
     expect(decision.status).toBe('PROD_READY');
     expect(decision.blockers).toEqual([]);
+  });
+
+  it('uses persisted gates before environment fallbacks in the final decision', async () => {
+    process.env.PROD_FREEZE_STATUS = 'FREEZE_READY';
+    for (const gate of [
+      'MIGRATION',
+      'SEED',
+      'SMOKE',
+      'COMPLIANCE',
+      'AUDIT',
+      'BACKUP',
+    ]) {
+      process.env[`PROD_GATE_${gate}`] = 'PASSED';
+    }
+
+    repository.find.mockResolvedValue(
+      Object.values(ProductionSignoffKey).map((key) => ({
+        key,
+        status: ProductionSignoffStatus.GO,
+        proofUrl: `https://evidence.test/${key.toLowerCase()}`,
+      })),
+    );
+    gateRepository.find.mockResolvedValue([
+      {
+        key: ProductionGateKey.SMOKE,
+        status: ProductionGateStatus.FAILED,
+        source: 'CI',
+        evidenceUrl: 'https://ci.test/run/123',
+        checkedAt: new Date('2026-05-05T09:00:00.000Z'),
+      },
+    ]);
+
+    const decision = await service.getDecision('tenant-a');
+
+    expect(decision.status).toBe('PROD_NO_GO');
+    expect(decision.blockers).toContain('SMOKE gate is FAILED');
+    expect(decision.gates.checks).toContainEqual(
+      expect.objectContaining({
+        key: ProductionGateKey.SMOKE,
+        status: ProductionGateStatus.FAILED,
+        source: 'CI',
+      }),
+    );
+  });
+
+  it('upserts a production gate and writes an audit mutation', async () => {
+    gateRepository.findOne.mockResolvedValue(null);
+
+    const gate = await service.upsertGate(
+      'tenant-a',
+      ProductionGateKey.BACKUP,
+      {
+        status: ProductionGateStatus.PASSED,
+        source: 'backup-restore-drill',
+        evidenceUrl: 'https://evidence.test/backup',
+        snapshot: { restoreDrill: 'ok' },
+        checkedAt: '2026-05-05T10:00:00.000Z',
+      },
+      51,
+    );
+
+    expect(gate).toEqual(
+      expect.objectContaining({
+        tenantId: 'tenant-a',
+        key: ProductionGateKey.BACKUP,
+        status: ProductionGateStatus.PASSED,
+        updatedById: 51,
+      }),
+    );
+    expect(auditService.log).toHaveBeenCalledWith(
+      'tenant-a',
+      51,
+      AuditAction.CREATE,
+      AuditEntityType.PLANNING,
+      'production-gate:BACKUP',
+      expect.objectContaining({
+        action: 'CREATE_PRODUCTION_GATE',
+        gateKey: ProductionGateKey.BACKUP,
+      }),
+    );
   });
 });

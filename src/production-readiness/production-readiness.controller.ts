@@ -14,7 +14,9 @@ import { RolesGuard } from '../auth/roles.guard';
 import type { AuthenticatedRequest } from '../auth/authenticated-request';
 import { resolveTenantId } from '../auth/tenant-context';
 import {
+  ProductionGateParamDto,
   ProductionSignoffParamDto,
+  UpsertProductionGateDto,
   UpsertProductionSignoffDto,
 } from './dto/production-readiness.dto';
 import { ProductionReadinessService } from './production-readiness.service';
@@ -50,6 +52,44 @@ export class ProductionReadinessController {
       params.key,
       dto,
       req.user.id,
+    );
+  }
+
+  @Get('gates')
+  @Permissions('release:read', 'audit:read')
+  findGates(
+    @Request() req: AuthenticatedRequest,
+    @Query('tenantId') queryTenantId?: string,
+  ) {
+    return this.productionReadinessService.findGates(
+      resolveTenantId(req, queryTenantId),
+    );
+  }
+
+  @Patch('gates/:key')
+  @Permissions('release:write')
+  upsertGate(
+    @Request() req: AuthenticatedRequest,
+    @Param() params: ProductionGateParamDto,
+    @Body() dto: UpsertProductionGateDto,
+    @Query('tenantId') queryTenantId?: string,
+  ) {
+    return this.productionReadinessService.upsertGate(
+      resolveTenantId(req, queryTenantId),
+      params.key,
+      dto,
+      req.user.id,
+    );
+  }
+
+  @Get('signoffs/history')
+  @Permissions('release:read', 'audit:read')
+  getSignoffHistory(
+    @Request() req: AuthenticatedRequest,
+    @Query('tenantId') queryTenantId?: string,
+  ) {
+    return this.productionReadinessService.getSignoffHistory(
+      resolveTenantId(req, queryTenantId),
     );
   }
 

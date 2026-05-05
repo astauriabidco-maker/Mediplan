@@ -13,7 +13,18 @@ export type ProductionSignoffKey = (typeof PRODUCTION_SIGNOFF_KEYS)[number];
 export type ProductionSignoffStatus = 'PENDING' | 'GO' | 'NO_GO';
 export type ProductionDecisionStatus = 'PROD_READY' | 'PROD_NO_GO';
 export type ProductionReadinessStatus = ProductionDecisionStatus;
+export type ProductionGateKey =
+  | 'FREEZE'
+  | 'MIGRATION'
+  | 'SEED'
+  | 'SMOKE'
+  | 'COMPLIANCE'
+  | 'AUDIT'
+  | 'BACKUP';
 export type ProductionGateStatusValue = 'PASSED' | 'FAILED' | 'UNKNOWN';
+export type ProductionSignoffAuditAction =
+  | 'CREATE_PRODUCTION_SIGNOFF'
+  | 'UPDATE_PRODUCTION_SIGNOFF';
 
 export interface ProductionReadinessTenantParams {
   tenantId?: string;
@@ -36,9 +47,11 @@ export interface ProductionSignoff {
 }
 
 export interface ProductionGateStatus {
-  key: string;
+  key: ProductionGateKey;
   status: ProductionGateStatusValue;
   source: string;
+  evidenceUrl?: string | null;
+  checkedAt?: string | null;
 }
 
 export interface ProductionDecision {
@@ -60,6 +73,33 @@ export interface ProductionDecision {
   };
 }
 
+export interface ProductionSignoffHistoryEntry {
+  auditLogId: number;
+  chainSequence: number | null;
+  eventHash: string | null;
+  key: ProductionSignoffKey;
+  action: ProductionSignoffAuditAction | string | null;
+  decidedAt: string;
+  actorId: number;
+  actorName: string | null;
+  status: ProductionSignoffStatus | null;
+  signerName: string | null;
+  signerRole: string | null;
+  signedById: number | null;
+  signedAt: string | null;
+  proofUrl: string | null;
+  proofLabel: string | null;
+  comment: string | null;
+}
+
+export interface ProductionSignoffHistory {
+  tenantId: string;
+  generatedAt: string;
+  decision: ProductionDecision;
+  entries: ProductionSignoffHistoryEntry[];
+  byRole: Record<ProductionSignoffKey, ProductionSignoffHistoryEntry[]>;
+}
+
 export interface UpsertProductionSignoffInput {
   status: ProductionSignoffStatus;
   signerName?: string;
@@ -70,6 +110,17 @@ export interface UpsertProductionSignoffInput {
 }
 
 export type UpsertProductionSignoffPayload = UpsertProductionSignoffInput;
+
+export interface UpsertProductionGateInput {
+  status: ProductionGateStatusValue;
+  source?: string;
+  evidenceUrl?: string;
+  comment?: string;
+  snapshot?: Record<string, unknown>;
+  checkedAt?: string;
+}
+
+export type UpsertProductionGatePayload = UpsertProductionGateInput;
 
 const asParams = (params?: ProductionReadinessTenantParams) => ({
   params,
@@ -116,6 +167,46 @@ export const productionReadinessApi = {
     return response.data;
   },
 
+  signoffHistory: async (
+    params?: ProductionReadinessTenantParams,
+  ): Promise<ProductionSignoffHistory> => {
+    const response = await api.get<ProductionSignoffHistory>(
+      '/api/production-readiness/signoffs/history',
+      asParams(params),
+    );
+    return response.data;
+  },
+
+  getSignoffHistory: async (
+    params?: ProductionReadinessTenantParams,
+  ): Promise<ProductionSignoffHistory> => {
+    const response = await api.get<ProductionSignoffHistory>(
+      '/api/production-readiness/signoffs/history',
+      asParams(params),
+    );
+    return response.data;
+  },
+
+  gates: async (
+    params?: ProductionReadinessTenantParams,
+  ): Promise<ProductionGateStatus[]> => {
+    const response = await api.get<ProductionGateStatus[]>(
+      '/api/production-readiness/gates',
+      asParams(params),
+    );
+    return response.data;
+  },
+
+  getGates: async (
+    params?: ProductionReadinessTenantParams,
+  ): Promise<ProductionGateStatus[]> => {
+    const response = await api.get<ProductionGateStatus[]>(
+      '/api/production-readiness/gates',
+      asParams(params),
+    );
+    return response.data;
+  },
+
   updateSignoff: async (
     key: ProductionSignoffKey,
     payload: UpsertProductionSignoffPayload,
@@ -141,8 +232,38 @@ export const productionReadinessApi = {
     );
     return response.data;
   },
+
+  updateGate: async (
+    key: ProductionGateKey,
+    payload: UpsertProductionGatePayload,
+    params?: ProductionReadinessTenantParams,
+  ): Promise<ProductionGateStatus> => {
+    const response = await api.patch<ProductionGateStatus>(
+      `/api/production-readiness/gates/${key}`,
+      payload,
+      asParams(params),
+    );
+    return response.data;
+  },
+
+  upsertGate: async (
+    key: ProductionGateKey,
+    payload: UpsertProductionGatePayload,
+    params?: ProductionReadinessTenantParams,
+  ): Promise<ProductionGateStatus> => {
+    const response = await api.patch<ProductionGateStatus>(
+      `/api/production-readiness/gates/${key}`,
+      payload,
+      asParams(params),
+    );
+    return response.data;
+  },
 };
 
 export const fetchProductionDecision = productionReadinessApi.decision;
 export const fetchProductionSignoffs = productionReadinessApi.signoffs;
+export const fetchProductionSignoffHistory =
+  productionReadinessApi.signoffHistory;
 export const upsertProductionSignoff = productionReadinessApi.updateSignoff;
+export const fetchProductionGates = productionReadinessApi.gates;
+export const upsertProductionGate = productionReadinessApi.updateGate;

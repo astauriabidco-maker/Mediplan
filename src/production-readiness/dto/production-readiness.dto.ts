@@ -1,11 +1,17 @@
 import {
+  IsDateString,
   IsEnum,
+  IsObject,
   IsOptional,
   IsString,
   IsUrl,
   MaxLength,
   ValidateIf,
 } from 'class-validator';
+import {
+  ProductionGateKey,
+  ProductionGateStatus,
+} from '../entities/production-gate.entity';
 import {
   ProductionSignoffKey,
   ProductionSignoffStatus,
@@ -50,4 +56,37 @@ export class UpsertProductionSignoffDto {
 export class ProductionSignoffParamDto {
   @IsEnum(ProductionSignoffKey)
   key: ProductionSignoffKey;
+}
+
+export class UpsertProductionGateDto {
+  @IsEnum(ProductionGateStatus)
+  status: ProductionGateStatus;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(160)
+  source?: string;
+
+  @IsOptional()
+  @IsUrl({ require_tld: false })
+  @MaxLength(500)
+  evidenceUrl?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  comment?: string;
+
+  @IsOptional()
+  @IsObject()
+  snapshot?: Record<string, unknown>;
+
+  @IsOptional()
+  @IsDateString()
+  checkedAt?: string;
+}
+
+export class ProductionGateParamDto {
+  @IsEnum(ProductionGateKey)
+  key: ProductionGateKey;
 }

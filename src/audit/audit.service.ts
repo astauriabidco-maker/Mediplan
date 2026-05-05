@@ -10,6 +10,7 @@ export interface AuditLogFilters {
     entityType?: AuditEntityType;
     entityId?: string;
     detailAction?: string;
+    detailActions?: string[];
     from?: Date;
     to?: Date;
     limit?: number;
@@ -119,13 +120,18 @@ export class AuditService {
     }
 
     async getLogs(tenantId: string, filters: AuditLogFilters = {}) {
-        if (filters.detailAction) {
+        if (filters.detailAction || filters.detailActions?.length) {
             const query = this.auditLogRepository.createQueryBuilder('audit')
                 .leftJoinAndSelect('audit.actor', 'actor')
                 .where('audit.tenantId = :tenantId', { tenantId })
-                .andWhere(`audit.details ->> 'action' = :detailAction`, { detailAction: filters.detailAction })
                 .orderBy('audit.timestamp', 'DESC')
                 .take(Math.min(filters.limit || 100, 500));
+
+            if (filters.detailActions?.length) {
+                query.andWhere(`audit.details ->> 'action' IN (:...detailActions)`, { detailActions: filters.detailActions });
+            } else {
+                query.andWhere(`audit.details ->> 'action' = :detailAction`, { detailAction: filters.detailAction });
+            }
 
             if (filters.actorId) query.andWhere('audit.actorId = :actorId', { actorId: filters.actorId });
             if (filters.action) query.andWhere('audit.action = :action', { action: filters.action });

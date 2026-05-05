@@ -40,13 +40,15 @@ describe('AuditService', () => {
       where: expect.objectContaining({ tenantId: 'tenant-a' }),
       order: { chainSequence: 'DESC', timestamp: 'DESC', id: 'DESC' },
     });
-    expect(repository.save).toHaveBeenCalledWith(expect.objectContaining({
-      tenantId: 'tenant-a',
-      actorId: 42,
-      chainSequence: 3,
-      previousHash: 'previous-hash',
-      eventHash: expect.stringMatching(/^[a-f0-9]{64}$/),
-    }));
+    expect(repository.save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tenantId: 'tenant-a',
+        actorId: 42,
+        chainSequence: 3,
+        previousHash: 'previous-hash',
+        eventHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+      }),
+    );
     expect(result.eventHash).toEqual(expect.stringMatching(/^[a-f0-9]{64}$/));
     jest.useRealTimers();
   });
@@ -77,18 +79,20 @@ describe('AuditService', () => {
       },
     );
 
-    expect(repository.save).toHaveBeenCalledWith(expect.objectContaining({
-      details: {
-        action: 'UPDATE_AGENT',
-        email: '[redacted]',
-        matricule: '[redacted]',
-        after: {
-          nir: '[redacted]',
-          personalEmail: '[redacted]',
-          hospitalServiceId: 7,
+    expect(repository.save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        details: {
+          action: 'UPDATE_AGENT',
+          email: '[redacted]',
+          matricule: '[redacted]',
+          after: {
+            nir: '[redacted]',
+            personalEmail: '[redacted]',
+            hospitalServiceId: 7,
+          },
         },
-      },
-    }));
+      }),
+    );
   });
 
   it('filters logs by nested detail action through query builder', async () => {
@@ -110,11 +114,54 @@ describe('AuditService', () => {
     });
 
     expect(repository.createQueryBuilder).toHaveBeenCalledWith('audit');
-    expect(queryBuilder.andWhere).toHaveBeenCalledWith(`audit.details ->> 'action' = :detailAction`, { detailAction: 'PUBLISH_PLANNING' });
-    expect(queryBuilder.andWhere).toHaveBeenCalledWith('audit.actorId = :actorId', { actorId: 42 });
-    expect(queryBuilder.andWhere).toHaveBeenCalledWith('audit.action = :action', { action: AuditAction.UPDATE });
-    expect(queryBuilder.andWhere).toHaveBeenCalledWith('audit.entityType = :entityType', { entityType: AuditEntityType.PLANNING });
+    expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+      `audit.details ->> 'action' = :detailAction`,
+      { detailAction: 'PUBLISH_PLANNING' },
+    );
+    expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+      'audit.actorId = :actorId',
+      { actorId: 42 },
+    );
+    expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+      'audit.action = :action',
+      { action: AuditAction.UPDATE },
+    );
+    expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+      'audit.entityType = :entityType',
+      { entityType: AuditEntityType.PLANNING },
+    );
     expect(queryBuilder.take).toHaveBeenCalledWith(25);
+    expect(repository.find).not.toHaveBeenCalled();
+  });
+
+  it('filters logs by multiple nested detail actions through query builder', async () => {
+    const queryBuilder = createQueryBuilderMock();
+    const repository = {
+      createQueryBuilder: jest.fn(() => queryBuilder),
+      find: jest.fn(),
+    };
+    const service = new AuditService(repository as any);
+
+    await service.getLogs('tenant-a', {
+      entityType: AuditEntityType.PLANNING,
+      detailActions: ['CREATE_PRODUCTION_SIGNOFF', 'UPDATE_PRODUCTION_SIGNOFF'],
+      limit: 500,
+    });
+
+    expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+      `audit.details ->> 'action' IN (:...detailActions)`,
+      {
+        detailActions: [
+          'CREATE_PRODUCTION_SIGNOFF',
+          'UPDATE_PRODUCTION_SIGNOFF',
+        ],
+      },
+    );
+    expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+      'audit.entityType = :entityType',
+      { entityType: AuditEntityType.PLANNING },
+    );
+    expect(queryBuilder.take).toHaveBeenCalledWith(500);
     expect(repository.find).not.toHaveBeenCalled();
   });
 
@@ -153,16 +200,19 @@ describe('AuditService', () => {
     const verification = await service.verifyChain('tenant-a');
 
     expect(verification.valid).toBe(false);
-    expect(verification.issues).toEqual(expect.arrayContaining([
-      expect.objectContaining({ type: 'SEQUENCE_GAP', auditLogId: 2 }),
-      expect.objectContaining({ type: 'BROKEN_LINK', auditLogId: 2 }),
-      expect.objectContaining({ type: 'HASH_MISMATCH', auditLogId: 2 }),
-    ]));
+    expect(verification.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: 'SEQUENCE_GAP', auditLogId: 2 }),
+        expect.objectContaining({ type: 'BROKEN_LINK', auditLogId: 2 }),
+        expect.objectContaining({ type: 'HASH_MISMATCH', auditLogId: 2 }),
+      ]),
+    );
   });
 
   it('exports filtered logs with full-chain verification metadata', async () => {
     const repository = {
-      find: jest.fn()
+      find: jest
+        .fn()
         .mockResolvedValueOnce([{ id: 99, tenantId: 'tenant-a' }])
         .mockResolvedValueOnce([]),
     };
@@ -177,8 +227,14 @@ describe('AuditService', () => {
     expect(result.tenantId).toBe('tenant-a');
     expect(result.logs).toEqual([{ id: 99, tenantId: 'tenant-a' }]);
     expect(result.chainVerification.valid).toBe(true);
-    expect(repository.find).toHaveBeenNthCalledWith(1, expect.objectContaining({
-      where: expect.objectContaining({ tenantId: 'tenant-a', action: AuditAction.DELETE }),
-    }));
+    expect(repository.find).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        where: expect.objectContaining({
+          tenantId: 'tenant-a',
+          action: AuditAction.DELETE,
+        }),
+      }),
+    );
   });
 });

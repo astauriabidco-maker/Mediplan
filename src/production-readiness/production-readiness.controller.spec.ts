@@ -3,6 +3,10 @@ import {
   ProductionSignoffKey,
   ProductionSignoffStatus,
 } from './entities/production-signoff.entity';
+import {
+  ProductionGateKey,
+  ProductionGateStatus,
+} from './entities/production-gate.entity';
 import { ProductionReadinessService } from './production-readiness.service';
 import type { AuthenticatedRequest } from '../auth/authenticated-request';
 
@@ -10,7 +14,12 @@ type RequestOverrides = Partial<AuthenticatedRequest['user']>;
 type ProductionReadinessServiceMock = jest.Mocked<
   Pick<
     ProductionReadinessService,
-    'findSignoffs' | 'upsertSignoff' | 'getDecision'
+    | 'findSignoffs'
+    | 'upsertSignoff'
+    | 'findGates'
+    | 'upsertGate'
+    | 'getDecision'
+    | 'getSignoffHistory'
   >
 >;
 
@@ -32,7 +41,10 @@ const createRequest = (overrides: RequestOverrides = {}) =>
 const createServiceMock = (): ProductionReadinessServiceMock => ({
   findSignoffs: jest.fn(),
   upsertSignoff: jest.fn(),
+  findGates: jest.fn(),
+  upsertGate: jest.fn(),
   getDecision: jest.fn(),
+  getSignoffHistory: jest.fn(),
 });
 
 describe('ProductionReadinessController', () => {
@@ -50,12 +62,20 @@ describe('ProductionReadinessController', () => {
     const req = createRequest({ role: 'ADMIN' });
 
     await controller.findSignoffs(req, 'tenant-b');
+    await controller.findGates(req, 'tenant-b');
     await controller.getDecision(req, 'tenant-b');
+    await controller.getSignoffHistory(req, 'tenant-b');
 
     expect(productionReadinessService.findSignoffs).toHaveBeenCalledWith(
       'tenant-a',
     );
     expect(productionReadinessService.getDecision).toHaveBeenCalledWith(
+      'tenant-a',
+    );
+    expect(productionReadinessService.findGates).toHaveBeenCalledWith(
+      'tenant-a',
+    );
+    expect(productionReadinessService.getSignoffHistory).toHaveBeenCalledWith(
       'tenant-a',
     );
   });
@@ -88,6 +108,29 @@ describe('ProductionReadinessController', () => {
     expect(productionReadinessService.upsertSignoff).toHaveBeenCalledWith(
       'tenant-a',
       ProductionSignoffKey.DIRECTION,
+      dto,
+      77,
+    );
+  });
+
+  it('passes actor id and resolved tenant to gate mutations', async () => {
+    const req = createRequest({ id: 77 });
+    const dto = {
+      status: ProductionGateStatus.PASSED,
+      source: 'CI',
+      snapshot: { runId: 123 },
+    };
+
+    await controller.upsertGate(
+      req,
+      { key: ProductionGateKey.SMOKE },
+      dto,
+      'tenant-b',
+    );
+
+    expect(productionReadinessService.upsertGate).toHaveBeenCalledWith(
+      'tenant-a',
+      ProductionGateKey.SMOKE,
       dto,
       77,
     );

@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   PRODUCTION_READINESS_API_CONTRACT,
   REQUIRED_PRODUCTION_DECISION_STATUSES,
+  REQUIRED_PRODUCTION_GATE_KEYS,
+  REQUIRED_PRODUCTION_GATE_STATUSES,
   REQUIRED_PRODUCTION_READINESS_SURFACES,
   REQUIRED_PRODUCTION_SIGNOFF_KEYS,
   REQUIRED_PRODUCTION_SIGNOFF_STATUSES,
@@ -13,6 +15,8 @@ describe('PRODUCTION_READINESS_API_CONTRACT', () => {
   it('covers production readiness surfaces and domain states', () => {
     expect(REQUIRED_PRODUCTION_READINESS_SURFACES).toEqual([
       'signoffs',
+      'signoffHistory',
+      'gates',
       'decision',
     ]);
     expect(REQUIRED_PRODUCTION_SIGNOFF_KEYS).toEqual([
@@ -31,11 +35,25 @@ describe('PRODUCTION_READINESS_API_CONTRACT', () => {
       'PROD_READY',
       'PROD_NO_GO',
     ]);
+    expect(REQUIRED_PRODUCTION_GATE_KEYS).toEqual([
+      'FREEZE',
+      'MIGRATION',
+      'SEED',
+      'SMOKE',
+      'COMPLIANCE',
+      'AUDIT',
+      'BACKUP',
+    ]);
+    expect(REQUIRED_PRODUCTION_GATE_STATUSES).toEqual([
+      'PASSED',
+      'FAILED',
+      'UNKNOWN',
+    ]);
     expect(getMissingProductionReadinessSurfaces()).toEqual([]);
   });
 
   it('defines endpoint essentials for signoffs and decision', () => {
-    expect(PRODUCTION_READINESS_API_CONTRACT).toHaveLength(3);
+    expect(PRODUCTION_READINESS_API_CONTRACT).toHaveLength(6);
 
     for (const endpoint of PRODUCTION_READINESS_API_CONTRACT) {
       expect(endpoint.label).not.toHaveLength(0);
@@ -61,6 +79,8 @@ describe('PRODUCTION_READINESS_API_CONTRACT', () => {
     ];
 
     expect(getMissingProductionReadinessSurfaces(partialContract)).toEqual([
+      'signoffHistory',
+      'gates',
       'decision',
     ]);
   });

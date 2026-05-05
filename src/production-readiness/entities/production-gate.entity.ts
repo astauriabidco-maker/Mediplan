@@ -7,23 +7,25 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 
-export enum ProductionSignoffKey {
-  HR = 'HR',
-  SECURITY = 'SECURITY',
-  OPERATIONS = 'OPERATIONS',
-  TECHNICAL = 'TECHNICAL',
-  DIRECTION = 'DIRECTION',
+export enum ProductionGateKey {
+  FREEZE = 'FREEZE',
+  MIGRATION = 'MIGRATION',
+  SEED = 'SEED',
+  SMOKE = 'SMOKE',
+  COMPLIANCE = 'COMPLIANCE',
+  AUDIT = 'AUDIT',
+  BACKUP = 'BACKUP',
 }
 
-export enum ProductionSignoffStatus {
-  PENDING = 'PENDING',
-  GO = 'GO',
-  NO_GO = 'NO_GO',
+export enum ProductionGateStatus {
+  PASSED = 'PASSED',
+  FAILED = 'FAILED',
+  UNKNOWN = 'UNKNOWN',
 }
 
 @Entity()
 @Index(['tenantId', 'key'], { unique: true })
-export class ProductionSignoff {
+export class ProductionGate {
   @PrimaryGeneratedColumn()
   id: number;
 
@@ -31,35 +33,32 @@ export class ProductionSignoff {
   tenantId: string;
 
   @Column({ type: 'varchar', length: 32 })
-  key: ProductionSignoffKey;
+  key: ProductionGateKey;
 
   @Column({
     type: 'varchar',
     length: 16,
-    default: ProductionSignoffStatus.PENDING,
+    default: ProductionGateStatus.UNKNOWN,
   })
-  status: ProductionSignoffStatus;
+  status: ProductionGateStatus;
 
   @Column({ type: 'varchar', nullable: true })
-  signerName: string | null;
+  source: string | null;
 
   @Column({ type: 'varchar', nullable: true })
-  signerRole: string | null;
-
-  @Column({ type: 'varchar', nullable: true })
-  proofUrl: string | null;
-
-  @Column({ type: 'varchar', nullable: true })
-  proofLabel: string | null;
+  evidenceUrl: string | null;
 
   @Column({ type: 'text', nullable: true })
   comment: string | null;
 
+  @Column({ type: 'jsonb', nullable: true })
+  snapshot: Record<string, unknown> | null;
+
   @Column({ type: 'int', nullable: true })
-  signedById: number | null;
+  updatedById: number | null;
 
   @Column({ type: 'timestamp', nullable: true })
-  signedAt: Date | null;
+  checkedAt: Date | null;
 
   @CreateDateColumn()
   createdAt: Date;

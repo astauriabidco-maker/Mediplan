@@ -1,10 +1,16 @@
 import type {
+  ProductionGateKey,
+  ProductionGateStatusValue,
   ProductionDecisionStatus,
   ProductionSignoffKey,
   ProductionSignoffStatus,
 } from './production-readiness.api';
 
-export type ProductionReadinessSurface = 'signoffs' | 'decision';
+export type ProductionReadinessSurface =
+  | 'signoffs'
+  | 'signoffHistory'
+  | 'gates'
+  | 'decision';
 
 export interface ProductionReadinessEndpointContract {
   surface: ProductionReadinessSurface;
@@ -18,6 +24,8 @@ export interface ProductionReadinessEndpointContract {
 
 export const REQUIRED_PRODUCTION_READINESS_SURFACES = [
   'signoffs',
+  'signoffHistory',
+  'gates',
   'decision',
 ] as const satisfies readonly ProductionReadinessSurface[];
 
@@ -39,6 +47,22 @@ export const REQUIRED_PRODUCTION_DECISION_STATUSES = [
   'PROD_READY',
   'PROD_NO_GO',
 ] as const satisfies readonly ProductionDecisionStatus[];
+
+export const REQUIRED_PRODUCTION_GATE_KEYS = [
+  'FREEZE',
+  'MIGRATION',
+  'SEED',
+  'SMOKE',
+  'COMPLIANCE',
+  'AUDIT',
+  'BACKUP',
+] as const satisfies readonly ProductionGateKey[];
+
+export const REQUIRED_PRODUCTION_GATE_STATUSES = [
+  'PASSED',
+  'FAILED',
+  'UNKNOWN',
+] as const satisfies readonly ProductionGateStatusValue[];
 
 export const PRODUCTION_READINESS_API_CONTRACT = [
   {
@@ -67,6 +91,36 @@ export const PRODUCTION_READINESS_API_CONTRACT = [
     permissions: ['release:read', 'audit:read'],
     expectedStates: REQUIRED_PRODUCTION_DECISION_STATUSES,
     recoverableErrors: [400, 401, 403],
+  },
+  {
+    surface: 'signoffHistory',
+    label: 'Production signoff audit history',
+    method: 'GET',
+    path: '/api/production-readiness/signoffs/history',
+    permissions: ['release:read', 'audit:read'],
+    expectedStates: [
+      ...REQUIRED_PRODUCTION_SIGNOFF_STATUSES,
+      ...REQUIRED_PRODUCTION_DECISION_STATUSES,
+    ],
+    recoverableErrors: [400, 401, 403],
+  },
+  {
+    surface: 'gates',
+    label: 'Production gates snapshot',
+    method: 'GET',
+    path: '/api/production-readiness/gates',
+    permissions: ['release:read', 'audit:read'],
+    expectedStates: REQUIRED_PRODUCTION_GATE_STATUSES,
+    recoverableErrors: [400, 401, 403],
+  },
+  {
+    surface: 'gates',
+    label: 'Production gate decision',
+    method: 'PATCH',
+    path: '/api/production-readiness/gates/:key',
+    permissions: ['release:write'],
+    expectedStates: REQUIRED_PRODUCTION_GATE_STATUSES,
+    recoverableErrors: [400, 401, 403, 404, 409],
   },
 ] as const satisfies readonly ProductionReadinessEndpointContract[];
 
