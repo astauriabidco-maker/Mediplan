@@ -65,15 +65,18 @@ runs migrations, seeds data, or restores backups. It aggregates RC readiness,
 preprod evidence files and explicit production signoffs.
 
 Production signoffs and gates are provided through env variables:
-  PROD_SIGNOFF_RH=GO
-  PROD_SIGNOFF_MANAGER=GO
-  PROD_SIGNOFF_EXPLOITATION=GO
+  PROD_SIGNOFF_HR=GO
   PROD_SIGNOFF_SECURITY=GO
+  PROD_SIGNOFF_OPERATIONS=GO
+  PROD_SIGNOFF_TECHNICAL=GO
   PROD_SIGNOFF_DIRECTION=GO
-  PROD_GATE_CI_PRODUCT=PASSED
-  PROD_GATE_BACKUP_RESTORE=PASSED
-  PROD_GATE_SECURITY_AUDIT=PASSED
-  PROD_GATE_ROLLBACK=PASSED
+  PROD_FREEZE_STATUS=FREEZE_READY
+  PROD_GATE_MIGRATION=PASSED
+  PROD_GATE_SEED=PASSED
+  PROD_GATE_SMOKE=PASSED
+  PROD_GATE_COMPLIANCE=PASSED
+  PROD_GATE_AUDIT=PASSED
+  PROD_GATE_BACKUP=PASSED
 `);
 }
 
@@ -127,29 +130,48 @@ async function collectRcDecision(includeGitStatus) {
 }
 
 const signoffDefinitions = [
-  ['rh', 'PROD_SIGNOFF_RH', 'Responsable RH'],
-  ['manager', 'PROD_SIGNOFF_MANAGER', 'Manager pilote'],
-  ['exploitation', 'PROD_SIGNOFF_EXPLOITATION', 'Responsable exploitation'],
-  ['security', 'PROD_SIGNOFF_SECURITY', 'Referent securite'],
-  ['direction', 'PROD_SIGNOFF_DIRECTION', 'Direction / sponsor metier'],
+  ['HR', 'PROD_SIGNOFF_HR', 'Responsable RH', 'PROD_SIGNOFF_RH'],
+  ['SECURITY', 'PROD_SIGNOFF_SECURITY', 'Referent securite'],
+  [
+    'OPERATIONS',
+    'PROD_SIGNOFF_OPERATIONS',
+    'Responsable exploitation',
+    'PROD_SIGNOFF_EXPLOITATION',
+  ],
+  [
+    'TECHNICAL',
+    'PROD_SIGNOFF_TECHNICAL',
+    'Responsable technique',
+    'PROD_SIGNOFF_MANAGER',
+  ],
+  ['DIRECTION', 'PROD_SIGNOFF_DIRECTION', 'Direction / sponsor metier'],
 ];
 
 const gateDefinitions = [
-  ['ciProduct', 'PROD_GATE_CI_PRODUCT', 'Gate produit complete'],
-  ['backupRestore', 'PROD_GATE_BACKUP_RESTORE', 'Backup/restore recent'],
-  ['securityAudit', 'PROD_GATE_SECURITY_AUDIT', 'Audit securite dependances'],
-  ['rollback', 'PROD_GATE_ROLLBACK', 'Rollback applicatif et donnees'],
+  ['FREEZE', 'PROD_FREEZE_STATUS', 'Freeze production', 'FREEZE_READY'],
+  ['MIGRATION', 'PROD_GATE_MIGRATION', 'Migration OK', 'PASSED'],
+  ['SEED', 'PROD_GATE_SEED', 'Seed OK', 'PASSED'],
+  ['SMOKE', 'PROD_GATE_SMOKE', 'Smoke API OK', 'PASSED'],
+  ['COMPLIANCE', 'PROD_GATE_COMPLIANCE', 'Conformite healthy', 'PASSED'],
+  ['AUDIT', 'PROD_GATE_AUDIT', 'Audit valide', 'PASSED'],
+  ['BACKUP', 'PROD_GATE_BACKUP', 'Backup exportable/restaurable', 'PASSED'],
 ];
 
-const normalizeDecision = (value) => String(value || '').trim().toUpperCase();
+const normalizeDecision = (value) =>
+  String(value || '')
+    .trim()
+    .toUpperCase();
 
 function collectSignoffs() {
-  return signoffDefinitions.map(([id, envKey, label]) => {
-    const value = normalizeDecision(process.env[envKey]);
+  return signoffDefinitions.map(([id, envKey, label, legacyEnvKey]) => {
+    const value = normalizeDecision(
+      process.env[envKey] || process.env[legacyEnvKey],
+    );
     const ok = value === 'GO';
     return {
       id,
       envKey,
+      legacyEnvKey,
       label,
       decision: value || 'MISSING',
       ok,
@@ -159,16 +181,18 @@ function collectSignoffs() {
 }
 
 function collectGates() {
-  return gateDefinitions.map(([id, envKey, label]) => {
+  return gateDefinitions.map(([id, envKey, label, expected]) => {
     const value = normalizeDecision(process.env[envKey]);
-    const ok = value === 'PASSED';
+    const ok = value === expected;
     return {
       id,
       envKey,
       label,
       status: value || 'MISSING',
       ok,
-      note: ok ? 'Gate declaree PASSED.' : `${envKey}=PASSED requis avant PROD_READY.`,
+      note: ok
+        ? `Gate declaree ${expected}.`
+        : `${envKey}=${expected} requis avant PROD_READY.`,
     };
   });
 }
@@ -177,8 +201,14 @@ async function collectEvidence(reportDir) {
   const files = {
     goNoGo: path.join(reportDir, `preprod-go-no-go-final-${runDate}.json`),
     opsReadiness: path.join(reportDir, `preprod-ops-readiness-${runDate}.json`),
-    demoHealth: path.join(reportDir, `preprod-demo-health-check-${runDate}.json`),
-    opsSummary: path.join(reportDir, `preprod-operational-summary-${runDate}.json`),
+    demoHealth: path.join(
+      reportDir,
+      `preprod-demo-health-check-${runDate}.json`,
+    ),
+    opsSummary: path.join(
+      reportDir,
+      `preprod-operational-summary-${runDate}.json`,
+    ),
   };
 
   const entries = [];
@@ -354,8 +384,14 @@ try {
     assertDryRun(options);
     await mkdir(options.reportDir, { recursive: true });
     const review = await buildReview(options);
-    const jsonPath = path.join(options.reportDir, `production-readiness-review-${runDate}.json`);
-    const mdPath = path.join(options.reportDir, `production-readiness-review-${runDate}.md`);
+    const jsonPath = path.join(
+      options.reportDir,
+      `production-readiness-review-${runDate}.json`,
+    );
+    const mdPath = path.join(
+      options.reportDir,
+      `production-readiness-review-${runDate}.md`,
+    );
     await writeFile(jsonPath, `${JSON.stringify(review, null, 2)}\n`);
     await writeFile(mdPath, `${renderMarkdown(review)}\n`);
     printOutput(review, options.format);

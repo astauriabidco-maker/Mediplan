@@ -16,47 +16,71 @@ const VALID_DECLARATIONS = new Set(['PASSED', 'FAILED', 'NO_GO', 'WAIVED']);
 
 const commandGroups = [
   {
-    id: 'ci-product',
-    label: 'CI produit',
-    envKey: 'PROD_GATE_CI_PRODUCT',
+    id: 'migration',
+    label: 'Migration OK',
+    envKey: 'PROD_GATE_MIGRATION',
     required: true,
     commands: [
       {
-        id: 'ci-product-verify',
-        label: 'CI produit verify',
+        id: 'migration-show',
+        label: 'Inventaire migrations',
         file: 'npm',
-        args: ['run', 'ci:product:verify'],
-        display: 'npm run ci:product:verify',
+        args: ['run', 'migration:show'],
+        display: 'npm run migration:show',
         preferred: true,
       },
+    ],
+  },
+  {
+    id: 'seed',
+    label: 'Seed OK',
+    envKey: 'PROD_GATE_SEED',
+    required: true,
+    declarativeOnly: true,
+    commands: [
       {
-        id: 'ci-product-full',
-        label: 'CI produit complet',
-        file: 'npm',
-        args: ['run', 'ci:product'],
-        display: 'npm run ci:product',
+        id: 'seed-declaration',
+        label: 'Declaration seed preprod',
+        display: 'PROD_GATE_SEED=PASSED with seed report attached',
       },
     ],
   },
   {
-    id: 'frontend-budget',
-    label: 'Budget frontend',
-    envKey: 'PROD_GATE_FRONTEND_BUDGET',
+    id: 'smoke',
+    label: 'Smoke API OK',
+    envKey: 'PROD_GATE_SMOKE',
     required: true,
     commands: [
       {
-        id: 'frontend-budget-check',
-        label: 'Budget bundle frontend',
+        id: 'preprod-smoke',
+        label: 'Smoke API preprod',
         file: 'npm',
-        args: ['run', 'frontend:budget:check'],
-        display: 'npm run frontend:budget:check',
+        args: ['run', 'preprod:compose:smoke'],
+        display: 'npm run preprod:compose:smoke',
+        env: { ENV_FILE: process.env.ENV_FILE || '.env.preprod' },
       },
     ],
   },
   {
-    id: 'audits',
-    label: 'Audits',
-    envKey: 'PROD_GATE_AUDITS',
+    id: 'compliance',
+    label: 'Conformite healthy',
+    envKey: 'PROD_GATE_COMPLIANCE',
+    required: true,
+    commands: [
+      {
+        id: 'preprod-go-no-go-final',
+        label: 'Decision preprod finale',
+        file: 'npm',
+        args: ['run', 'preprod:go-no-go'],
+        display: 'ENV_FILE=.env.preprod npm run preprod:go-no-go',
+        env: { ENV_FILE: process.env.ENV_FILE || '.env.preprod' },
+      },
+    ],
+  },
+  {
+    id: 'audit',
+    label: 'Audit valide',
+    envKey: 'PROD_GATE_AUDIT',
     required: true,
     commands: [
       {
@@ -76,49 +100,17 @@ const commandGroups = [
     ],
   },
   {
-    id: 'preprod-go-no-go',
-    label: 'Preprod go/no-go',
-    envKey: 'PROD_GATE_PREPROD_GO_NO_GO',
-    required: true,
-    commands: [
-      {
-        id: 'preprod-go-no-go-final',
-        label: 'Decision preprod finale',
-        file: 'npm',
-        args: ['run', 'preprod:go-no-go'],
-        display: 'ENV_FILE=.env.preprod npm run preprod:go-no-go',
-        env: { ENV_FILE: process.env.ENV_FILE || '.env.preprod' },
-      },
-    ],
-  },
-  {
-    id: 'ops-readiness',
-    label: 'Ops readiness',
-    envKey: 'PROD_GATE_OPS_READINESS',
-    required: true,
-    commands: [
-      {
-        id: 'preprod-ops-readiness',
-        label: 'Readiness exploitation',
-        file: 'npm',
-        args: ['run', 'preprod:ops:readiness'],
-        display: 'ENV_FILE=.env.preprod npm run preprod:ops:readiness',
-        env: { ENV_FILE: process.env.ENV_FILE || '.env.preprod' },
-      },
-    ],
-  },
-  {
-    id: 'backup-restore-recent',
-    label: 'Backup/restore recent',
-    envKey: 'PROD_GATE_BACKUP_RESTORE_RECENT',
+    id: 'backup',
+    label: 'Backup exportable/restaurable',
+    envKey: 'PROD_GATE_BACKUP',
     required: true,
     declarativeOnly: true,
     commands: [
       {
         id: 'backup-restore-declaration',
-        label: 'Declaration backup/restore recent',
+        label: 'Declaration backup/restore',
         display:
-          'PROD_GATE_BACKUP_RESTORE_RECENT=PASSED with evidence path/date in release ticket',
+          'PROD_GATE_BACKUP=PASSED with evidence path/date in release ticket',
       },
     ],
   },
@@ -178,19 +170,19 @@ function printHelp() {
 
 Usage:
   node scripts/production-final-gates.mjs [--format markdown|json|both]
-  node scripts/production-final-gates.mjs --execute [--only gate-id[,gate-id]] [--ci-command verify|full]
+  node scripts/production-final-gates.mjs --execute [--only gate-id[,gate-id]]
 
 Default mode is dry-run/plan. It prints the final gate plan and declarations,
 but does not run CI, builds, audits, preprod checks, Docker, migrations,
 backup restore, deployment, git tag, git push, or package mutation.
 
 Required declarations:
-  PROD_GATE_CI_PRODUCT=PASSED
-  PROD_GATE_FRONTEND_BUDGET=PASSED
-  PROD_GATE_AUDITS=PASSED
-  PROD_GATE_PREPROD_GO_NO_GO=PASSED
-  PROD_GATE_OPS_READINESS=PASSED
-  PROD_GATE_BACKUP_RESTORE_RECENT=PASSED
+  PROD_GATE_MIGRATION=PASSED
+  PROD_GATE_SEED=PASSED
+  PROD_GATE_SMOKE=PASSED
+  PROD_GATE_COMPLIANCE=PASSED
+  PROD_GATE_AUDIT=PASSED
+  PROD_GATE_BACKUP=PASSED
 
 Accepted declaration values: PASSED, FAILED, NO_GO, WAIVED.
 Decision is FINAL_GATES_READY only when all required PROD_GATE_* values are PASSED.
@@ -202,7 +194,10 @@ async function readJson(relativePath) {
   return JSON.parse(raw);
 }
 
-const normalizeDeclaration = (value) => String(value || '').trim().toUpperCase();
+const normalizeDeclaration = (value) =>
+  String(value || '')
+    .trim()
+    .toUpperCase();
 
 function collectDeclaration(group) {
   const value = normalizeDeclaration(process.env[group.envKey]);
@@ -299,12 +294,11 @@ async function buildReport(options) {
       required: group.required,
       declarativeOnly: Boolean(group.declarativeOnly),
       declaration,
-      commands:
-        group.declarativeOnly
-          ? group.commands.map((command) => commandToPlan(command, false))
-          : executableCommands.map((command) =>
-              commandToPlan(command, options.execute),
-            ),
+      commands: group.declarativeOnly
+        ? group.commands.map((command) => commandToPlan(command, false))
+        : executableCommands.map((command) =>
+            commandToPlan(command, options.execute),
+          ),
       executionResults: [],
     };
   });
@@ -327,7 +321,9 @@ async function buildReport(options) {
       );
     }
     if (gate.required && !gate.declaration.passed) {
-      noGoReasons.push(`${gate.label} not declared PASSED via ${gate.declaration.envKey}`);
+      noGoReasons.push(
+        `${gate.label} not declared PASSED via ${gate.declaration.envKey}`,
+      );
     }
     for (const result of gate.executionResults) {
       if (result.status !== 'PASSED') {
@@ -340,7 +336,8 @@ async function buildReport(options) {
     generatedAt,
     runDate,
     mode: options.execute ? 'execute' : 'dry-run-plan',
-    decision: noGoReasons.length === 0 ? 'FINAL_GATES_READY' : 'FINAL_GATES_NO_GO',
+    decision:
+      noGoReasons.length === 0 ? 'FINAL_GATES_READY' : 'FINAL_GATES_NO_GO',
     noGoReasons,
     repository: {
       root: REPO_ROOT,
@@ -353,7 +350,7 @@ async function buildReport(options) {
     safeguards: [
       'Default mode is dry-run/plan and does not run heavy or mutating commands.',
       'Commands execute only when --execute is provided.',
-      'Backup/restore recent is declarative only and is never launched by this orchestrator.',
+      'Backup gate is declarative only and no restore is launched by this orchestrator.',
       'No Docker compose up/down, migration, seed, deploy, git tag, git push, or package mutation.',
       'FINAL_GATES_READY depends on explicit PROD_GATE_* declarations set to PASSED.',
     ],

@@ -8,40 +8,23 @@ const generatedAt = now.toISOString();
 
 const roles = [
   {
-    id: 'rh',
+    id: 'HR',
     label: 'Responsable RH',
-    decisionEnv: 'PROD_SIGNOFF_RH',
-    ownerEnv: 'PROD_SIGNOFF_RH_OWNER',
-    dateEnv: 'PROD_SIGNOFF_RH_DATE',
-    reasonEnv: 'PROD_SIGNOFF_RH_REASON',
-    evidenceEnv: 'PROD_SIGNOFF_RH_EVIDENCE',
+    decisionEnv: 'PROD_SIGNOFF_HR',
+    ownerEnv: 'PROD_SIGNOFF_HR_OWNER',
+    dateEnv: 'PROD_SIGNOFF_HR_DATE',
+    reasonEnv: 'PROD_SIGNOFF_HR_REASON',
+    evidenceEnv: 'PROD_SIGNOFF_HR_EVIDENCE',
+    legacyDecisionEnv: 'PROD_SIGNOFF_RH',
+    legacyOwnerEnv: 'PROD_SIGNOFF_RH_OWNER',
+    legacyDateEnv: 'PROD_SIGNOFF_RH_DATE',
+    legacyReasonEnv: 'PROD_SIGNOFF_RH_REASON',
+    legacyEvidenceEnv: 'PROD_SIGNOFF_RH_EVIDENCE',
     expectedEvidence:
       'PV de recette RH, liste des ecarts acceptes, confirmation du support utilisateurs.',
   },
   {
-    id: 'manager',
-    label: 'Manager pilote',
-    decisionEnv: 'PROD_SIGNOFF_MANAGER',
-    ownerEnv: 'PROD_SIGNOFF_MANAGER_OWNER',
-    dateEnv: 'PROD_SIGNOFF_MANAGER_DATE',
-    reasonEnv: 'PROD_SIGNOFF_MANAGER_REASON',
-    evidenceEnv: 'PROD_SIGNOFF_MANAGER_EVIDENCE',
-    expectedEvidence:
-      'Compte rendu pilote, plan de communication equipe, acceptation des impacts connus.',
-  },
-  {
-    id: 'exploitation',
-    label: 'Responsable exploitation',
-    decisionEnv: 'PROD_SIGNOFF_EXPLOITATION',
-    ownerEnv: 'PROD_SIGNOFF_EXPLOITATION_OWNER',
-    dateEnv: 'PROD_SIGNOFF_EXPLOITATION_DATE',
-    reasonEnv: 'PROD_SIGNOFF_EXPLOITATION_REASON',
-    evidenceEnv: 'PROD_SIGNOFF_EXPLOITATION_EVIDENCE',
-    expectedEvidence:
-      'Checklist exploitation, preuve backup/restore, procedure rollback, astreinte identifiee.',
-  },
-  {
-    id: 'security',
+    id: 'SECURITY',
     label: 'Referent securite',
     decisionEnv: 'PROD_SIGNOFF_SECURITY',
     ownerEnv: 'PROD_SIGNOFF_SECURITY_OWNER',
@@ -52,7 +35,39 @@ const roles = [
       'Revue dependances, revue secrets/acces, journal des risques residuels acceptes.',
   },
   {
-    id: 'direction',
+    id: 'OPERATIONS',
+    label: 'Responsable exploitation',
+    decisionEnv: 'PROD_SIGNOFF_OPERATIONS',
+    ownerEnv: 'PROD_SIGNOFF_OPERATIONS_OWNER',
+    dateEnv: 'PROD_SIGNOFF_OPERATIONS_DATE',
+    reasonEnv: 'PROD_SIGNOFF_OPERATIONS_REASON',
+    evidenceEnv: 'PROD_SIGNOFF_OPERATIONS_EVIDENCE',
+    legacyDecisionEnv: 'PROD_SIGNOFF_EXPLOITATION',
+    legacyOwnerEnv: 'PROD_SIGNOFF_EXPLOITATION_OWNER',
+    legacyDateEnv: 'PROD_SIGNOFF_EXPLOITATION_DATE',
+    legacyReasonEnv: 'PROD_SIGNOFF_EXPLOITATION_REASON',
+    legacyEvidenceEnv: 'PROD_SIGNOFF_EXPLOITATION_EVIDENCE',
+    expectedEvidence:
+      'Checklist exploitation, preuve backup/restore, procedure rollback, astreinte identifiee.',
+  },
+  {
+    id: 'TECHNICAL',
+    label: 'Responsable technique',
+    decisionEnv: 'PROD_SIGNOFF_TECHNICAL',
+    ownerEnv: 'PROD_SIGNOFF_TECHNICAL_OWNER',
+    dateEnv: 'PROD_SIGNOFF_TECHNICAL_DATE',
+    reasonEnv: 'PROD_SIGNOFF_TECHNICAL_REASON',
+    evidenceEnv: 'PROD_SIGNOFF_TECHNICAL_EVIDENCE',
+    legacyDecisionEnv: 'PROD_SIGNOFF_MANAGER',
+    legacyOwnerEnv: 'PROD_SIGNOFF_MANAGER_OWNER',
+    legacyDateEnv: 'PROD_SIGNOFF_MANAGER_DATE',
+    legacyReasonEnv: 'PROD_SIGNOFF_MANAGER_REASON',
+    legacyEvidenceEnv: 'PROD_SIGNOFF_MANAGER_EVIDENCE',
+    expectedEvidence:
+      'Compte rendu technique, plan de bascule, acceptation des impacts connus.',
+  },
+  {
+    id: 'DIRECTION',
     label: 'Direction / sponsor metier',
     decisionEnv: 'PROD_SIGNOFF_DIRECTION',
     ownerEnv: 'PROD_SIGNOFF_DIRECTION_OWNER',
@@ -65,15 +80,13 @@ const roles = [
 ];
 
 const gates = [
-  ['PROD_GATE_CI_PRODUCT', 'CI produit complete'],
-  ['PROD_GATE_FRONTEND_BUDGET', 'Budget frontend'],
-  ['PROD_GATE_AUDITS', 'Audits securite/dependances'],
-  ['PROD_GATE_PREPROD_GO_NO_GO', 'Preprod go/no-go'],
-  ['PROD_GATE_OPS_READINESS', 'Ops readiness'],
-  ['PROD_GATE_BACKUP_RESTORE_RECENT', 'Backup/restore recent'],
-  ['PROD_GATE_BACKUP_RESTORE', 'Backup/restore accepte par production readiness'],
-  ['PROD_GATE_SECURITY_AUDIT', 'Audit securite accepte par production readiness'],
-  ['PROD_GATE_ROLLBACK', 'Rollback accepte par production readiness'],
+  ['PROD_FREEZE_STATUS', 'Freeze production', 'FREEZE_READY'],
+  ['PROD_GATE_MIGRATION', 'Migration OK', 'PASSED'],
+  ['PROD_GATE_SEED', 'Seed OK', 'PASSED'],
+  ['PROD_GATE_SMOKE', 'Smoke API OK', 'PASSED'],
+  ['PROD_GATE_COMPLIANCE', 'Conformite healthy', 'PASSED'],
+  ['PROD_GATE_AUDIT', 'Audit valide', 'PASSED'],
+  ['PROD_GATE_BACKUP', 'Backup exportable/restaurable', 'PASSED'],
 ];
 
 function parseArgs(argv) {
@@ -123,7 +136,9 @@ pushes, migrates, seeds, restores backups or mutates data.
 }
 
 const value = (key) => String(process.env[key] || '').trim();
+const firstValue = (...keys) => keys.map(value).find(Boolean) || '';
 const decision = (key) => value(key).toUpperCase();
+const firstDecision = (...keys) => firstValue(...keys).toUpperCase();
 const escapeMarkdownCell = (item) =>
   String(item || '-')
     .replace(/\r?\n/g, ' ')
@@ -132,28 +147,34 @@ const escapeMarkdownCell = (item) =>
 function buildPack() {
   const roleRows = roles.map((role) => ({
     ...role,
-    decision: decision(role.decisionEnv) || 'MISSING',
-    owner: value(role.ownerEnv) || 'A_COMPLETER',
-    signedAt: value(role.dateEnv) || 'A_COMPLETER',
-    reason: value(role.reasonEnv) || 'A_COMPLETER',
-    evidence: value(role.evidenceEnv) || 'A_COMPLETER',
+    decision:
+      firstDecision(role.decisionEnv, role.legacyDecisionEnv) || 'MISSING',
+    owner: firstValue(role.ownerEnv, role.legacyOwnerEnv) || 'A_COMPLETER',
+    signedAt: firstValue(role.dateEnv, role.legacyDateEnv) || 'A_COMPLETER',
+    reason: firstValue(role.reasonEnv, role.legacyReasonEnv) || 'A_COMPLETER',
+    evidence:
+      firstValue(role.evidenceEnv, role.legacyEvidenceEnv) || 'A_COMPLETER',
     complete:
-      decision(role.decisionEnv) === 'GO' &&
-      Boolean(value(role.ownerEnv)) &&
-      Boolean(value(role.dateEnv)) &&
-      Boolean(value(role.reasonEnv)) &&
-      Boolean(value(role.evidenceEnv)),
+      firstDecision(role.decisionEnv, role.legacyDecisionEnv) === 'GO' &&
+      Boolean(firstValue(role.ownerEnv, role.legacyOwnerEnv)) &&
+      Boolean(firstValue(role.dateEnv, role.legacyDateEnv)) &&
+      Boolean(firstValue(role.reasonEnv, role.legacyReasonEnv)) &&
+      Boolean(firstValue(role.evidenceEnv, role.legacyEvidenceEnv)),
   }));
-  const gateRows = gates.map(([envKey, label]) => ({
+  const gateRows = gates.map(([envKey, label, expected]) => ({
     envKey,
     label,
     status: decision(envKey) || 'MISSING',
-    complete: decision(envKey) === 'PASSED',
+    expected,
+    complete: decision(envKey) === expected,
   }));
   const missing = [
     ...roleRows
       .filter((role) => !role.complete)
-      .map((role) => `${role.label}: GO, signataire, date, raison et preuve requis`),
+      .map(
+        (role) =>
+          `${role.label}: GO, signataire, date, raison et preuve requis`,
+      ),
     ...gateRows
       .filter((gate) => !gate.complete)
       .map((gate) => `${gate.label}: ${gate.envKey}=PASSED requis`),
@@ -168,13 +189,13 @@ function buildPack() {
     gates: gateRows,
     commands: {
       signoffs:
-        'PROD_SIGNOFF_RH=GO PROD_SIGNOFF_MANAGER=GO PROD_SIGNOFF_EXPLOITATION=GO PROD_SIGNOFF_SECURITY=GO PROD_SIGNOFF_DIRECTION=GO npm run production:signoffs -- --format json',
+        'PROD_SIGNOFF_HR=GO PROD_SIGNOFF_SECURITY=GO PROD_SIGNOFF_OPERATIONS=GO PROD_SIGNOFF_TECHNICAL=GO PROD_SIGNOFF_DIRECTION=GO npm run production:signoffs -- --format json',
       gates:
-        'PROD_GATE_CI_PRODUCT=PASSED PROD_GATE_FRONTEND_BUDGET=PASSED PROD_GATE_AUDITS=PASSED PROD_GATE_PREPROD_GO_NO_GO=PASSED PROD_GATE_OPS_READINESS=PASSED PROD_GATE_BACKUP_RESTORE_RECENT=PASSED npm run production:gates -- --format json',
+        'PROD_FREEZE_STATUS=FREEZE_READY PROD_GATE_MIGRATION=PASSED PROD_GATE_SEED=PASSED PROD_GATE_SMOKE=PASSED PROD_GATE_COMPLIANCE=PASSED PROD_GATE_AUDIT=PASSED PROD_GATE_BACKUP=PASSED npm run production:gates -- --format json',
       readiness:
-        'PROD_SIGNOFF_RH=GO PROD_SIGNOFF_MANAGER=GO PROD_SIGNOFF_EXPLOITATION=GO PROD_SIGNOFF_SECURITY=GO PROD_SIGNOFF_DIRECTION=GO PROD_GATE_CI_PRODUCT=PASSED PROD_GATE_BACKUP_RESTORE=PASSED PROD_GATE_SECURITY_AUDIT=PASSED PROD_GATE_ROLLBACK=PASSED npm run production:readiness -- --format json',
+        'PROD_SIGNOFF_HR=GO PROD_SIGNOFF_SECURITY=GO PROD_SIGNOFF_OPERATIONS=GO PROD_SIGNOFF_TECHNICAL=GO PROD_SIGNOFF_DIRECTION=GO PROD_FREEZE_STATUS=FREEZE_READY PROD_GATE_MIGRATION=PASSED PROD_GATE_SEED=PASSED PROD_GATE_SMOKE=PASSED PROD_GATE_COMPLIANCE=PASSED PROD_GATE_AUDIT=PASSED PROD_GATE_BACKUP=PASSED npm run production:readiness -- --format json',
       finalDecision:
-        'PROD_SIGNOFF_RH=GO PROD_SIGNOFF_MANAGER=GO PROD_SIGNOFF_EXPLOITATION=GO PROD_SIGNOFF_SECURITY=GO PROD_SIGNOFF_DIRECTION=GO PROD_GATE_CI_PRODUCT=PASSED PROD_GATE_BACKUP_RESTORE=PASSED PROD_GATE_SECURITY_AUDIT=PASSED PROD_GATE_ROLLBACK=PASSED PROD_GATE_FRONTEND_BUDGET=PASSED PROD_GATE_AUDITS=PASSED PROD_GATE_PREPROD_GO_NO_GO=PASSED PROD_GATE_OPS_READINESS=PASSED PROD_GATE_BACKUP_RESTORE_RECENT=PASSED npm run production:decision -- --decision-dir preprod-reports',
+        'PROD_SIGNOFF_HR=GO PROD_SIGNOFF_SECURITY=GO PROD_SIGNOFF_OPERATIONS=GO PROD_SIGNOFF_TECHNICAL=GO PROD_SIGNOFF_DIRECTION=GO PROD_FREEZE_STATUS=FREEZE_READY PROD_GATE_MIGRATION=PASSED PROD_GATE_SEED=PASSED PROD_GATE_SMOKE=PASSED PROD_GATE_COMPLIANCE=PASSED PROD_GATE_AUDIT=PASSED PROD_GATE_BACKUP=PASSED npm run production:decision -- --decision-dir preprod-reports',
     },
     safeguards: [
       'No deployment.',
@@ -220,7 +241,9 @@ function renderMarkdown(pack) {
     '',
     '## Champs manquants',
     '',
-    ...(pack.missing.length ? pack.missing.map((item) => `- ${item}`) : ['- Aucun.']),
+    ...(pack.missing.length
+      ? pack.missing.map((item) => `- ${item}`)
+      : ['- Aucun.']),
     '',
     '## Commandes de relance',
     '',
@@ -248,8 +271,14 @@ try {
   } else {
     const pack = buildPack();
     await mkdir(options.reportDir, { recursive: true });
-    const jsonPath = join(options.reportDir, `production-decision-evidence-pack-${runDate}.json`);
-    const mdPath = join(options.reportDir, `production-decision-evidence-pack-${runDate}.md`);
+    const jsonPath = join(
+      options.reportDir,
+      `production-decision-evidence-pack-${runDate}.json`,
+    );
+    const mdPath = join(
+      options.reportDir,
+      `production-decision-evidence-pack-${runDate}.md`,
+    );
     await writeFile(jsonPath, `${JSON.stringify(pack, null, 2)}\n`);
     await writeFile(mdPath, `${renderMarkdown(pack)}\n`);
 

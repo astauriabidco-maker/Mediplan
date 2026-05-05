@@ -6,43 +6,23 @@ const runDate = generatedAt.slice(0, 10);
 
 const signoffDefinitions = [
   {
-    id: 'rh',
+    id: 'HR',
     label: 'Responsable RH',
-    decisionEnv: 'PROD_SIGNOFF_RH',
-    ownerEnv: 'PROD_SIGNOFF_RH_OWNER',
-    dateEnv: 'PROD_SIGNOFF_RH_DATE',
-    reasonEnv: 'PROD_SIGNOFF_RH_REASON',
+    decisionEnv: 'PROD_SIGNOFF_HR',
+    ownerEnv: 'PROD_SIGNOFF_HR_OWNER',
+    dateEnv: 'PROD_SIGNOFF_HR_DATE',
+    reasonEnv: 'PROD_SIGNOFF_HR_REASON',
+    legacyDecisionEnv: 'PROD_SIGNOFF_RH',
+    legacyOwnerEnv: 'PROD_SIGNOFF_RH_OWNER',
+    legacyDateEnv: 'PROD_SIGNOFF_RH_DATE',
+    legacyReasonEnv: 'PROD_SIGNOFF_RH_REASON',
     expectedOwner: 'Responsable RH nomme pour le pilote',
     signs: 'Validation metier RH du perimetre production.',
     expectedEvidence:
       'PV de recette RH, liste des ecarts acceptes, confirmation du support utilisateurs.',
   },
   {
-    id: 'manager',
-    label: 'Manager pilote',
-    decisionEnv: 'PROD_SIGNOFF_MANAGER',
-    ownerEnv: 'PROD_SIGNOFF_MANAGER_OWNER',
-    dateEnv: 'PROD_SIGNOFF_MANAGER_DATE',
-    reasonEnv: 'PROD_SIGNOFF_MANAGER_REASON',
-    expectedOwner: 'Manager du service pilote',
-    signs: 'Validation operationnelle du service pilote et du calendrier de bascule.',
-    expectedEvidence:
-      'Compte rendu pilote, plan de communication equipe, acceptation des impacts connus.',
-  },
-  {
-    id: 'exploitation',
-    label: 'Responsable exploitation',
-    decisionEnv: 'PROD_SIGNOFF_EXPLOITATION',
-    ownerEnv: 'PROD_SIGNOFF_EXPLOITATION_OWNER',
-    dateEnv: 'PROD_SIGNOFF_EXPLOITATION_DATE',
-    reasonEnv: 'PROD_SIGNOFF_EXPLOITATION_REASON',
-    expectedOwner: 'Responsable exploitation / run',
-    signs: 'Validation run, supervision, sauvegardes et procedure rollback.',
-    expectedEvidence:
-      'Checklist exploitation, preuve backup/restore, procedure rollback, astreinte identifiee.',
-  },
-  {
-    id: 'security',
+    id: 'SECURITY',
     label: 'Referent securite',
     decisionEnv: 'PROD_SIGNOFF_SECURITY',
     ownerEnv: 'PROD_SIGNOFF_SECURITY_OWNER',
@@ -54,14 +34,48 @@ const signoffDefinitions = [
       'Revue dependances, revue secrets/acces, journal des risques residuels acceptes.',
   },
   {
-    id: 'direction',
+    id: 'OPERATIONS',
+    label: 'Responsable exploitation',
+    decisionEnv: 'PROD_SIGNOFF_OPERATIONS',
+    ownerEnv: 'PROD_SIGNOFF_OPERATIONS_OWNER',
+    dateEnv: 'PROD_SIGNOFF_OPERATIONS_DATE',
+    reasonEnv: 'PROD_SIGNOFF_OPERATIONS_REASON',
+    legacyDecisionEnv: 'PROD_SIGNOFF_EXPLOITATION',
+    legacyOwnerEnv: 'PROD_SIGNOFF_EXPLOITATION_OWNER',
+    legacyDateEnv: 'PROD_SIGNOFF_EXPLOITATION_DATE',
+    legacyReasonEnv: 'PROD_SIGNOFF_EXPLOITATION_REASON',
+    expectedOwner: 'Responsable exploitation / run',
+    signs: 'Validation run, supervision, sauvegardes et procedure rollback.',
+    expectedEvidence:
+      'Checklist exploitation, preuve backup/restore, procedure rollback, astreinte identifiee.',
+  },
+  {
+    id: 'TECHNICAL',
+    label: 'Responsable technique',
+    decisionEnv: 'PROD_SIGNOFF_TECHNICAL',
+    ownerEnv: 'PROD_SIGNOFF_TECHNICAL_OWNER',
+    dateEnv: 'PROD_SIGNOFF_TECHNICAL_DATE',
+    reasonEnv: 'PROD_SIGNOFF_TECHNICAL_REASON',
+    legacyDecisionEnv: 'PROD_SIGNOFF_MANAGER',
+    legacyOwnerEnv: 'PROD_SIGNOFF_MANAGER_OWNER',
+    legacyDateEnv: 'PROD_SIGNOFF_MANAGER_DATE',
+    legacyReasonEnv: 'PROD_SIGNOFF_MANAGER_REASON',
+    expectedOwner: 'Responsable technique / lead applicatif',
+    signs:
+      'Validation technique du runbook, des gates et de la fenetre de bascule.',
+    expectedEvidence:
+      'Compte rendu technique, plan de bascule, acceptation des impacts connus.',
+  },
+  {
+    id: 'DIRECTION',
     label: 'Direction / sponsor metier',
     decisionEnv: 'PROD_SIGNOFF_DIRECTION',
     ownerEnv: 'PROD_SIGNOFF_DIRECTION_OWNER',
     dateEnv: 'PROD_SIGNOFF_DIRECTION_DATE',
     reasonEnv: 'PROD_SIGNOFF_DIRECTION_REASON',
     expectedOwner: 'Direction ou sponsor metier',
-    signs: 'Arbitrage final GO/NO-GO et acceptation du risque de mise en production.',
+    signs:
+      'Arbitrage final GO/NO-GO et acceptation du risque de mise en production.',
     expectedEvidence:
       'Decision sponsor datee, fenetre de lancement approuvee, criteres de retour arriere valides.',
   },
@@ -111,10 +125,10 @@ This script is non destructive. It only reads production signoff environment
 variables and prints a formal Markdown and/or JSON matrix.
 
 Required GO variables:
-  PROD_SIGNOFF_RH=GO
-  PROD_SIGNOFF_MANAGER=GO
-  PROD_SIGNOFF_EXPLOITATION=GO
+  PROD_SIGNOFF_HR=GO
   PROD_SIGNOFF_SECURITY=GO
+  PROD_SIGNOFF_OPERATIONS=GO
+  PROD_SIGNOFF_TECHNICAL=GO
   PROD_SIGNOFF_DIRECTION=GO
 
 Optional metadata per role:
@@ -126,13 +140,21 @@ Optional metadata per role:
 
 const normalize = (value) => String(value || '').trim();
 const normalizeDecision = (value) => normalize(value).toUpperCase();
+const readEnv = (env, primaryKey, legacyKey) =>
+  normalize(env[primaryKey]) || normalize(env[legacyKey]);
 
 function collectSignoffs(env) {
   return signoffDefinitions.map((definition) => {
-    const decision = normalizeDecision(env[definition.decisionEnv]);
-    const owner = normalize(env[definition.ownerEnv]) || definition.expectedOwner;
-    const signedAt = normalize(env[definition.dateEnv]) || null;
-    const reason = normalize(env[definition.reasonEnv]) || null;
+    const decision = normalizeDecision(
+      readEnv(env, definition.decisionEnv, definition.legacyDecisionEnv),
+    );
+    const owner =
+      readEnv(env, definition.ownerEnv, definition.legacyOwnerEnv) ||
+      definition.expectedOwner;
+    const signedAt =
+      readEnv(env, definition.dateEnv, definition.legacyDateEnv) || null;
+    const reason =
+      readEnv(env, definition.reasonEnv, definition.legacyReasonEnv) || null;
     const ok = decision === 'GO';
 
     return {
@@ -142,6 +164,7 @@ function collectSignoffs(env) {
       ownerEnv: definition.ownerEnv,
       dateEnv: definition.dateEnv,
       reasonEnv: definition.reasonEnv,
+      legacyDecisionEnv: definition.legacyDecisionEnv,
       expectedOwner: definition.expectedOwner,
       owner,
       signedAt,

@@ -29,24 +29,27 @@ node scripts/production-readiness-review.mjs --dry-run --include-git-status
 
 `PROD_READY` exige toutes les variables suivantes a `GO`:
 
-| Role | Variable |
-| --- | --- |
-| Responsable RH | `PROD_SIGNOFF_RH=GO` |
-| Manager pilote | `PROD_SIGNOFF_MANAGER=GO` |
-| Responsable exploitation | `PROD_SIGNOFF_EXPLOITATION=GO` |
-| Referent securite | `PROD_SIGNOFF_SECURITY=GO` |
-| Direction / sponsor metier | `PROD_SIGNOFF_DIRECTION=GO` |
+| Role                       | Variable                     |
+| -------------------------- | ---------------------------- |
+| Responsable RH             | `PROD_SIGNOFF_HR=GO`         |
+| Referent securite          | `PROD_SIGNOFF_SECURITY=GO`   |
+| Responsable exploitation   | `PROD_SIGNOFF_OPERATIONS=GO` |
+| Responsable technique      | `PROD_SIGNOFF_TECHNICAL=GO`  |
+| Direction / sponsor metier | `PROD_SIGNOFF_DIRECTION=GO`  |
 
 ## Gates obligatoires
 
 `PROD_READY` exige toutes les variables suivantes a `PASSED`:
 
-| Gate | Variable |
-| --- | --- |
-| Gate produit complete | `PROD_GATE_CI_PRODUCT=PASSED` |
-| Backup/restore recent | `PROD_GATE_BACKUP_RESTORE=PASSED` |
-| Audit securite dependances | `PROD_GATE_SECURITY_AUDIT=PASSED` |
-| Rollback applicatif et donnees | `PROD_GATE_ROLLBACK=PASSED` |
+| Gate                          | Variable                          |
+| ----------------------------- | --------------------------------- |
+| Freeze production             | `PROD_FREEZE_STATUS=FREEZE_READY` |
+| Migration OK                  | `PROD_GATE_MIGRATION=PASSED`      |
+| Seed OK                       | `PROD_GATE_SEED=PASSED`           |
+| Smoke API OK                  | `PROD_GATE_SMOKE=PASSED`          |
+| Conformite healthy            | `PROD_GATE_COMPLIANCE=PASSED`     |
+| Audit valide                  | `PROD_GATE_AUDIT=PASSED`          |
+| Backup exportable/restaurable | `PROD_GATE_BACKUP=PASSED`         |
 
 ## Preuves preprod attendues
 
@@ -66,7 +69,7 @@ Les preuves doivent etre `GO`, `READY` ou `PASSED` selon le rapport.
 
 - le finalizer RC retourne `RC_READY`;
 - les cinq signoffs sont `GO`;
-- les quatre gates sont `PASSED`;
+- le freeze vaut `FREEZE_READY` et les six gates API valent `PASSED`;
 - les preuves preprod du jour sont presentes et vertes;
 - le statut Git est propre ou les ecarts sont attribues au moment de la freeze.
 

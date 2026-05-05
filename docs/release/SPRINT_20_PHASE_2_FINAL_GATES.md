@@ -32,14 +32,14 @@ node scripts/production-final-gates.mjs --execute --ci-command full
 
 ## Gates
 
-| Gate | Env declaratif | Commande planifiee |
-| --- | --- | --- |
-| CI produit | `PROD_GATE_CI_PRODUCT` | `npm run ci:product:verify` par defaut, ou `npm run ci:product` avec `--ci-command full` |
-| Budget frontend | `PROD_GATE_FRONTEND_BUDGET` | `npm run frontend:budget:check` |
-| Audits | `PROD_GATE_AUDITS` | `npm run frontend:audit`, `npm audit --omit=dev --audit-level=moderate` |
-| Preprod go/no-go | `PROD_GATE_PREPROD_GO_NO_GO` | `ENV_FILE=.env.preprod npm run preprod:go-no-go` |
-| Ops readiness | `PROD_GATE_OPS_READINESS` | `ENV_FILE=.env.preprod npm run preprod:ops:readiness` |
-| Backup/restore recent | `PROD_GATE_BACKUP_RESTORE_RECENT` | Declaratif uniquement, aucune restauration lancee |
+| Gate                          | Env declaratif         | Commande planifiee                                                      |
+| ----------------------------- | ---------------------- | ----------------------------------------------------------------------- |
+| Migration OK                  | `PROD_GATE_MIGRATION`  | `npm run migration:show`                                                |
+| Seed OK                       | `PROD_GATE_SEED`       | Declaratif uniquement, rapport seed rattache                            |
+| Smoke API OK                  | `PROD_GATE_SMOKE`      | `npm run preprod:compose:smoke`                                         |
+| Conformite healthy            | `PROD_GATE_COMPLIANCE` | `ENV_FILE=.env.preprod npm run preprod:go-no-go`                        |
+| Audit valide                  | `PROD_GATE_AUDIT`      | `npm run frontend:audit`, `npm audit --omit=dev --audit-level=moderate` |
+| Backup exportable/restaurable | `PROD_GATE_BACKUP`     | Declaratif uniquement, preuve backup/restore rattachee                  |
 
 ## Decision
 
@@ -60,12 +60,12 @@ ajoute aussi une raison de no-go.
 Exemple pret:
 
 ```bash
-PROD_GATE_CI_PRODUCT=PASSED \
-PROD_GATE_FRONTEND_BUDGET=PASSED \
-PROD_GATE_AUDITS=PASSED \
-PROD_GATE_PREPROD_GO_NO_GO=PASSED \
-PROD_GATE_OPS_READINESS=PASSED \
-PROD_GATE_BACKUP_RESTORE_RECENT=PASSED \
+PROD_GATE_MIGRATION=PASSED \
+PROD_GATE_SEED=PASSED \
+PROD_GATE_SMOKE=PASSED \
+PROD_GATE_COMPLIANCE=PASSED \
+PROD_GATE_AUDIT=PASSED \
+PROD_GATE_BACKUP=PASSED \
 node scripts/production-final-gates.mjs --format json
 ```
 
