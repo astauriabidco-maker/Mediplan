@@ -62,6 +62,7 @@
     "production:gates": "node scripts/production-final-gates.mjs",
     "production:signoffs": "node scripts/production-signoff-matrix.mjs",
     "production:decision": "node scripts/production-decision-final.mjs --dry-run",
+    "production:evidence-pack": "node scripts/production-decision-evidence-pack.mjs",
     "ci:product:verify": "node scripts/ci-product-verify.mjs",
     "ci:frontend": "npm run frontend:build && npm run frontend:budget:check && npm run frontend:lint && npm run frontend:test && npm run frontend:audit && npm run frontend:smoke:routes",
     "ci:product": "npm run ci:frontend && npm run ci:quality",
