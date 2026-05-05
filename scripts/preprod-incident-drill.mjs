@@ -48,13 +48,22 @@ const from =
   process.env.INCIDENT_FROM || process.env.FROM || defaultFrom.toISOString();
 const to = process.env.INCIDENT_TO || process.env.TO || now.toISOString();
 const runDate = now.toISOString().slice(0, 10);
-const allowPublish = process.env.INCIDENT_ALLOW_PUBLISH === 'true';
-const allowRestore = process.env.INCIDENT_ALLOW_RESTORE === 'true';
+const args = new Set(process.argv.slice(2));
+const dryRun = args.has('--dry-run') || process.env.INCIDENT_DRY_RUN === 'true';
+const requestedPublish = process.env.INCIDENT_ALLOW_PUBLISH === 'true';
+const requestedRestore = process.env.INCIDENT_ALLOW_RESTORE === 'true';
+const allowPublish = requestedPublish && !dryRun;
+const allowRestore = requestedRestore && !dryRun;
 const expectBlockedPublication =
   process.env.INCIDENT_EXPECT_BLOCKED_PUBLICATION === 'true';
 const expectCriticalAlert =
   process.env.INCIDENT_EXPECT_CRITICAL_ALERT === 'true';
 const importMode = process.env.INCIDENT_IMPORT_MODE || 'REPLACE_PLANNING_DATA';
+const runtimeEnv =
+  process.env.INCIDENT_ENV ||
+  process.env.APP_ENV ||
+  process.env.NODE_ENV ||
+  'preprod';
 
 let apiToken = process.env.API_TOKEN || '';
 
@@ -110,11 +119,29 @@ const headers = {
 };
 
 const scenarioResults = [];
+const mutations = [];
+const checks = [];
+
+const recordMutation = (mutation) => {
+  mutations.push({
+    timestamp: new Date().toISOString(),
+    ...mutation,
+  });
+};
 
 const record = (scenario) => {
-  scenarioResults.push({
+  const result = {
     ...scenario,
     status: scenario.ok ? 'PASSED' : 'FAILED',
+  };
+  scenarioResults.push(result);
+  checks.push({
+    name: result.name,
+    status: result.status,
+    observed: result.observed,
+    httpStatus: result.httpStatus,
+    durationMs: result.durationMs,
+    evidence: result.evidence,
   });
 };
 
@@ -154,6 +181,16 @@ const summarizeAlert = (alert) => ({
   updatedAt: alert.updatedAt,
 });
 
+const escapeMarkdownCell = (value) =>
+  String(value ?? '-')
+    .replace(/\r?\n/g, ' ')
+    .replace(/\|/g, '\\|');
+
+const publishGuard = dryRun
+  ? 'dry-run active: publish mutation forced to preview'
+  : requestedPublish
+    ? 'INCIDENT_ALLOW_PUBLISH=true and dry-run disabled'
+    : 'INCIDENT_ALLOW_PUBLISH=true required to execute publish';
 const publishPath = allowPublish
   ? '/api/planning/publish'
   : '/api/planning/publish/preview';
@@ -162,6 +199,19 @@ const publishAttempt = await request(publishPath, {
   method: 'POST',
   headers,
   body: publishPayload,
+});
+recordMutation({
+  name: 'planning.publish',
+  endpoint: publishPath,
+  method: 'POST',
+  destructive: true,
+  action: allowPublish ? 'executed' : dryRun ? 'simulated' : 'skipped',
+  guard: publishGuard,
+  requested: requestedPublish,
+  dryRun,
+  httpStatus: publishAttempt.httpStatus,
+  durationMs: publishAttempt.durationMs,
+  payload: { start: from, end: to },
 });
 const blockedPublication = allowPublish
   ? !publishAttempt.ok &&
@@ -180,7 +230,9 @@ record({
     : publishAttempt.ok
       ? allowPublish
         ? 'published'
-        : 'preview-publishable'
+        : dryRun
+          ? 'dry-run-preview-publishable'
+          : 'preview-publishable'
       : 'failed',
   httpStatus: publishAttempt.httpStatus,
   durationMs: publishAttempt.durationMs,
@@ -192,7 +244,7 @@ record({
   },
   note: expectBlockedPublication
     ? 'Incident attendu: la publication doit etre refusee.'
-    : 'Observation non bloquante: activer INCIDENT_EXPECT_BLOCKED_PUBLICATION=true pendant le drill incident.',
+    : `Observation non bloquante: activer INCIDENT_EXPECT_BLOCKED_PUBLICATION=true pendant le drill incident. Guard: ${publishGuard}.`,
 });
 
 const observability = await requestJson(
@@ -246,6 +298,11 @@ record({
 });
 
 let restoreResult = null;
+const restoreGuard = dryRun
+  ? 'dry-run active: restore mutation blocked'
+  : requestedRestore
+    ? 'INCIDENT_ALLOW_RESTORE=true and dry-run disabled'
+    : 'INCIDENT_ALLOW_RESTORE=true required to execute restore';
 if (allowRestore) {
   restoreResult = await requestJson(
     `/api/tenant-backups/import?${query({ tenantId })}`,
@@ -258,6 +315,24 @@ if (allowRestore) {
       }),
     },
   );
+  recordMutation({
+    name: 'tenant-backups.import',
+    endpoint: `/api/tenant-backups/import?${query({ tenantId })}`,
+    method: 'POST',
+    destructive: true,
+    action: 'executed',
+    guard: restoreGuard,
+    requested: requestedRestore,
+    dryRun,
+    httpStatus: restoreResult.httpStatus,
+    durationMs: restoreResult.durationMs,
+    payload: {
+      tenantId,
+      mode: importMode,
+      snapshotKind: snapshot.body?.kind,
+      schemaVersion: snapshot.body?.schemaVersion,
+    },
+  });
 
   record({
     name: 'Restauration',
@@ -271,13 +346,29 @@ if (allowRestore) {
     },
   });
 } else {
+  recordMutation({
+    name: 'tenant-backups.import',
+    endpoint: `/api/tenant-backups/import?${query({ tenantId })}`,
+    method: 'POST',
+    destructive: true,
+    action: dryRun && requestedRestore ? 'simulated' : 'skipped',
+    guard: restoreGuard,
+    requested: requestedRestore,
+    dryRun,
+    payload: {
+      tenantId,
+      mode: importMode,
+      snapshotKind: snapshot.body?.kind,
+      schemaVersion: snapshot.body?.schemaVersion,
+    },
+  });
   record({
     name: 'Restauration',
     ok: true,
-    observed: 'skipped',
+    observed: dryRun && requestedRestore ? 'dry-run-simulated' : 'skipped',
     evidence: {
       mode: importMode,
-      guard: 'Set INCIDENT_ALLOW_RESTORE=true to execute import.',
+      guard: restoreGuard,
     },
     note: 'Restauration non executee par defaut pour eviter une mutation preprod involontaire.',
   });
@@ -319,26 +410,110 @@ record({
 const status = scenarioResults.every((scenario) => scenario.ok)
   ? 'PASSED'
   : 'FAILED';
+const goNoGo =
+  status === 'PASSED' && openHighAlerts.length === 0 ? 'GO' : 'NO-GO';
+const generatedAt = new Date().toISOString();
+const report = {
+  status,
+  goNoGo,
+  generatedAt,
+  timestamps: {
+    startedAt: now.toISOString(),
+    completedAt: generatedAt,
+    runDate,
+    periodFrom: from,
+    periodTo: to,
+  },
+  tenant: {
+    id: tenantId,
+    env: runtimeEnv,
+    baseUrl,
+  },
+  dryRun,
+  guards: {
+    requestedPublish,
+    requestedRestore,
+    allowPublish,
+    allowRestore,
+    publishGuard,
+    restoreGuard,
+    nonDestructiveDefault:
+      !requestedPublish && !requestedRestore
+        ? 'active'
+        : dryRun
+          ? 'forced-by-dry-run'
+          : 'overridden-by-explicit-flags',
+  },
+  period: { from, to },
+  expectations: {
+    blockedPublication: expectBlockedPublication,
+    criticalAlert: expectCriticalAlert,
+  },
+  checks,
+  scenarios: scenarioResults,
+  mutations,
+  alerts: {
+    highOpenCount: openHighAlerts.length,
+    highOpen: openHighAlerts.map(summarizeAlert),
+  },
+  auditChain: {
+    valid: auditVerification.body?.valid,
+    events: auditVerification.body?.total,
+    verification: auditVerification.body,
+  },
+  backup: {
+    exportableBefore: metricsBefore.body?.exportable,
+    exportableAfter: metricsAfter.body?.exportable,
+    snapshotKind: snapshot.body?.kind,
+    schemaVersion: snapshot.body?.schemaVersion,
+    datasetCounts: snapshot.body?.integrity?.datasetCounts,
+    export: snapshot.body,
+  },
+  restoreResult: restoreResult?.body || null,
+  metricsBefore: metricsBefore.body,
+  metricsAfter: metricsAfter.body,
+};
 
 const markdown = [
   `# Rapport incidents preprod - ${runDate}`,
   '',
   `- Statut: ${status}`,
+  `- Go/No-Go: ${goNoGo}`,
   `- Base URL: ${baseUrl}`,
   `- Tenant: ${tenantId}`,
+  `- Env: ${runtimeEnv}`,
+  `- Genere: ${generatedAt}`,
   `- Periode: ${from} -> ${to}`,
+  `- Dry-run: ${dryRun ? 'oui' : 'non'}`,
   `- Restauration executee: ${allowRestore ? 'oui' : 'non'}`,
   `- Publication executee: ${allowPublish ? 'oui' : 'non, preview uniquement'}`,
+  `- Garde publication: ${publishGuard}`,
+  `- Garde restauration: ${restoreGuard}`,
   '',
-  '## Scenarios',
+  '## Checks',
   '',
-  '| Scenario | Statut | Observe | HTTP | Duree | Note |',
+  '| Check | Statut | Observe | HTTP | Duree | Note |',
   '| --- | --- | --- | ---: | ---: | --- |',
   ...scenarioResults.map(
     (scenario) =>
-      `| ${scenario.name} | ${scenario.status} | ${scenario.observed || '-'} | ${
-        scenario.httpStatus || '-'
-      } | ${scenario.durationMs ?? '-'} ms | ${scenario.note || ''} |`,
+      `| ${escapeMarkdownCell(scenario.name)} | ${scenario.status} | ${escapeMarkdownCell(
+        scenario.observed,
+      )} | ${scenario.httpStatus || '-'} | ${
+        scenario.durationMs ?? '-'
+      } ms | ${escapeMarkdownCell(scenario.note || '')} |`,
+  ),
+  '',
+  '## Mutations',
+  '',
+  '| Mutation | Action | Methode | Endpoint | Garde | HTTP |',
+  '| --- | --- | --- | --- | --- | ---: |',
+  ...mutations.map(
+    (mutation) =>
+      `| ${escapeMarkdownCell(mutation.name)} | ${mutation.action} | ${
+        mutation.method
+      } | ${escapeMarkdownCell(mutation.endpoint)} | ${escapeMarkdownCell(
+        mutation.guard,
+      )} | ${mutation.httpStatus || '-'} |`,
   ),
   '',
   '## Synthese reprise',
@@ -351,6 +526,7 @@ const markdown = [
   `- Chaine audit valide: ${auditVerification.body?.valid}`,
   `- Evenements audit verifies: ${auditVerification.body?.total}`,
   `- Backup exportable: ${metricsAfter.body?.exportable}`,
+  `- Backup exportable avant/apres: ${metricsBefore.body?.exportable} -> ${metricsAfter.body?.exportable}`,
   '',
   ...(openHighAlerts.length
     ? [
@@ -360,9 +536,11 @@ const markdown = [
         '| ---: | --- | --- | --- | --- |',
         ...openHighAlerts.map((alert) => {
           const summary = summarizeAlert(alert);
-          return `| ${summary.id} | ${summary.agentName || summary.agentId || '-'} | ${
-            summary.type || '-'
-          } | ${summary.ruleCode || '-'} | ${String(summary.message || '').replace(/\|/g, '\\|')} |`;
+          return `| ${summary.id} | ${escapeMarkdownCell(
+            summary.agentName || summary.agentId || '-',
+          )} | ${escapeMarkdownCell(summary.type || '-')} | ${escapeMarkdownCell(
+            summary.ruleCode || '-',
+          )} | ${escapeMarkdownCell(summary.message || '-')} |`;
         }),
         '',
       ]
@@ -372,26 +550,7 @@ const markdown = [
 await mkdir(reportDir, { recursive: true });
 await writeFile(
   join(reportDir, `preprod-incident-drill-${runDate}.json`),
-  `${JSON.stringify(
-    {
-      status,
-      generatedAt: now.toISOString(),
-      baseUrl,
-      tenantId,
-      period: { from, to },
-      allowRestore,
-      expectBlockedPublication,
-      expectCriticalAlert,
-      scenarios: scenarioResults,
-      metricsBefore: metricsBefore.body,
-      metricsAfter: metricsAfter.body,
-      restoreResult: restoreResult?.body || null,
-      auditVerification: auditVerification.body,
-      openHighAlerts: openHighAlerts.map(summarizeAlert),
-    },
-    null,
-    2,
-  )}\n`,
+  `${JSON.stringify(report, null, 2)}\n`,
 );
 await writeFile(
   join(reportDir, `preprod-incident-drill-${runDate}.md`),

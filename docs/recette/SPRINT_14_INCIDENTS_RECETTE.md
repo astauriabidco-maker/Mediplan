@@ -1,8 +1,13 @@
-# Sprint 14 Phase 4 - Scenarios incidents preprod
+# Sprint 14 Phase 4 / Sprint 15 Phase 3 - Runbook incidents preprod
 
 Objectif: prouver que l'equipe sait detecter, qualifier, sauvegarder,
 restaurer et reprendre le service apres correction sur la preprod. Les
 scenarios utilisent les endpoints reels exposes avec le prefixe `/api`.
+
+Mise a jour Sprint 15 Phase 3: le runbook formalise le mode dry-run par defaut,
+les garde-fous explicites pour publier ou restaurer, le rapport enrichi
+Markdown/JSON, l'idempotence attendue des executions et les commandes de
+validation de cloture.
 
 ## Prerequis
 
@@ -12,13 +17,40 @@ scenarios utilisent les endpoints reels exposes avec le prefixe `/api`.
 - Tenant cible: `HGD-DOUALA` par defaut.
 - Fenetre de recette: `INCIDENT_FROM` / `INCIDENT_TO`, sinon les dernieres 24h.
 
-Commande de verification non destructive:
+## Modes d'execution Sprint 15 Phase 3
+
+### Dry-run non destructif
+
+Le dry-run est le mode par defaut et doit etre lance en premier sur chaque
+fenetre de recette. Il n'execute ni publication reelle ni restauration:
+
+- la publication utilise `POST /api/planning/publish/preview`;
+- la restauration est marquee `skipped`;
+- les controles observability, audit et backup restent effectues;
+- les rapports sont produits dans `REPORT_DIR`.
 
 ```bash
 ENV_FILE=.env.preprod node scripts/preprod-incident-drill.mjs
 ```
 
-Commande de drill complet avec restauration explicite:
+### Drill publication avec garde-fou
+
+Une publication reelle est interdite sans accord explicite. Pour auditer un
+refus reel de publication pendant un incident, activer le garde-fou
+`INCIDENT_ALLOW_PUBLISH=true` et rendre le refus bloquant avec
+`INCIDENT_EXPECT_BLOCKED_PUBLICATION=true`:
+
+```bash
+ENV_FILE=.env.preprod \
+INCIDENT_ALLOW_PUBLISH=true \
+INCIDENT_EXPECT_BLOCKED_PUBLICATION=true \
+node scripts/preprod-incident-drill.mjs
+```
+
+### Drill restauration avec garde-fou
+
+Une restauration reelle est interdite sans accord explicite. L'import n'est
+execute que si `INCIDENT_ALLOW_RESTORE=true` est present sur la commande:
 
 ```bash
 ENV_FILE=.env.preprod \
@@ -26,10 +58,55 @@ INCIDENT_ALLOW_RESTORE=true \
 node scripts/preprod-incident-drill.mjs
 ```
 
-Les rapports sont ecrits dans `preprod-reports/`:
+Le mode de restauration par defaut est `REPLACE_PLANNING_DATA`. Changer ce mode
+uniquement si le ticket incident le justifie:
+
+```bash
+ENV_FILE=.env.preprod \
+INCIDENT_ALLOW_RESTORE=true \
+INCIDENT_IMPORT_MODE=REPLACE_PLANNING_DATA \
+node scripts/preprod-incident-drill.mjs
+```
+
+## Rapports et preuves enrichies
+
+Les rapports sont ecrits dans `preprod-reports/` par defaut:
 
 - `preprod-incident-drill-YYYY-MM-DD.md`;
 - `preprod-incident-drill-YYYY-MM-DD.json`.
+
+Le rapport Markdown donne une synthese directement attachable au ticket:
+
+- statut global du drill;
+- base URL, tenant et periode;
+- rappel des mutations executees ou non: publication et restauration;
+- tableau des scenarios avec statut, observation, HTTP, duree et note;
+- synthese reprise: observability finale, raisons finales, alertes hautes,
+  audit chain et backup exportable;
+- liste detaillee des alertes hautes ouvertes si elles existent.
+
+Le rapport JSON conserve les preuves machine:
+
+- `scenarios` avec `evidence` par controle;
+- `metricsBefore` et `metricsAfter`;
+- `restoreResult` quand une restauration est executee;
+- `auditVerification`;
+- `openHighAlerts` normalisees avec agent, type, regle et message.
+
+## Idempotence attendue
+
+- Une execution dry-run peut etre relancee sur la meme fenetre sans modifier la
+  preprod.
+- Les mutations sont opt-in et visibles dans le rapport via
+  `Publication executee` et `Restauration executee`.
+- Une restauration doit toujours exporter le snapshot avant import, puis
+  comparer les metriques backup avant/apres.
+- Les noms de rapports sont journaliers. Relancer plusieurs fois le meme jour
+  remplace les fichiers du jour; archiver ou changer `REPORT_DIR` si plusieurs
+  preuves doivent etre conservees separement.
+- Les scenarios `Publication bloquee` et `Alerte critique` sont non bloquants
+  par defaut. Les rendre bloquants uniquement pendant un drill incident force
+  avec les variables `INCIDENT_EXPECT_*`.
 
 ## Variables utiles
 
@@ -93,6 +170,14 @@ Preuve script:
 Si le planning a deja ete corrige, ce scenario est conserve comme observation.
 Pendant un drill incident force, lancer avec
 `INCIDENT_EXPECT_BLOCKED_PUBLICATION=true`.
+
+Garde-fou Sprint 15 Phase 3:
+
+- ne jamais activer `INCIDENT_ALLOW_PUBLISH=true` sur une fenetre non validee
+  par le ticket incident;
+- conserver la sortie dry-run avant toute publication reelle;
+- verifier dans le rapport que `Publication executee: oui` apparait seulement
+  pour un drill explicitement autorise.
 
 ## Scenario 2 - Alerte critique
 
@@ -182,6 +267,14 @@ Preuve script:
 - `evidence.mode`;
 - `evidence.imported`.
 
+Garde-fou Sprint 15 Phase 3:
+
+- verifier que l'export backup est `PASSED` avant d'autoriser l'import;
+- documenter le mode `INCIDENT_IMPORT_MODE` dans le ticket;
+- conserver les metriques backup avant/apres issues du rapport JSON;
+- ne jamais combiner restauration et publication reelle dans la meme commande
+  sans validation explicite du responsable de recette.
+
 ## Scenario 5 - Reprise apres correction
 
 But: confirmer que la preprod redevient exploitable apres correction ou
@@ -222,13 +315,56 @@ Preuve script:
 
 ## Conservation des preuves
 
-Pour chaque execution, conserver dans le ticket Sprint 14:
+Pour chaque execution, conserver dans le ticket de recette:
 
 - commande lancee avec variables masquees;
 - rapport Markdown;
+- rapport JSON si un ecart, une alerte ou une mutation a ete observe;
 - statut final;
+- valeurs `Publication executee` et `Restauration executee`;
 - anomalies ou ecarts acceptes;
 - decision `GO`, `GO SOUS RESERVE` ou `NO-GO`.
+
+## Validation Sprint 15 Phase 3
+
+Commandes a lancer avant cloture de la phase:
+
+```bash
+node --check scripts/preprod-incident-drill.mjs
+```
+
+```bash
+ENV_FILE=.env.preprod \
+REPORT_DIR=preprod-reports/sprint-15-phase-3 \
+node scripts/preprod-incident-drill.mjs
+```
+
+Commandes optionnelles, uniquement si le ticket incident l'autorise:
+
+```bash
+ENV_FILE=.env.preprod \
+REPORT_DIR=preprod-reports/sprint-15-phase-3 \
+INCIDENT_ALLOW_PUBLISH=true \
+INCIDENT_EXPECT_BLOCKED_PUBLICATION=true \
+node scripts/preprod-incident-drill.mjs
+```
+
+```bash
+ENV_FILE=.env.preprod \
+REPORT_DIR=preprod-reports/sprint-15-phase-3 \
+INCIDENT_ALLOW_RESTORE=true \
+node scripts/preprod-incident-drill.mjs
+```
+
+Critere de validation:
+
+- `node --check` passe;
+- le dry-run preprod retourne `Statut: PASSED`;
+- le rapport indique `Publication executee: non, preview uniquement`;
+- le rapport indique `Restauration executee: non`;
+- observability finale non critique, audit valide et backup exportable;
+- toute commande avec `INCIDENT_ALLOW_PUBLISH` ou `INCIDENT_ALLOW_RESTORE` est
+  rattachee a une autorisation explicite dans le ticket.
 
 ## Execution de cloture Sprint 14
 

@@ -5,11 +5,23 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const DEFAULT_ROUTES = [
-  { route: '/dashboard', chunks: ['DashboardPage', 'DashboardAnalyticsCharts'], maxKiB: 450 },
-  { route: '/manager, /manager/cockpit', chunk: 'ManagerCockpitPage', maxKiB: 120 },
+  {
+    route: '/dashboard',
+    chunks: ['DashboardPage', 'DashboardAnalyticsCharts'],
+    maxKiB: 450,
+  },
+  {
+    route: '/manager, /manager/cockpit',
+    chunk: 'ManagerCockpitPage',
+    maxKiB: 120,
+  },
   { route: '/manager/worklist', chunk: 'ManagerWorklistPage', maxKiB: 120 },
   { route: '/planning', chunks: ['Planning', 'PlanningCalendar'], maxKiB: 320 },
-  { route: '/planning/prepublication', chunk: 'PlanningPrepublicationPage', maxKiB: 160 },
+  {
+    route: '/planning/prepublication',
+    chunk: 'PlanningPrepublicationPage',
+    maxKiB: 160,
+  },
   { route: '/attendance', chunk: 'AttendancePage', maxKiB: 120 },
   { route: '/leaves', chunk: 'LeavesPage', maxKiB: 160 },
   { route: '/agents', chunk: 'AgentsPage', maxKiB: 160 },
@@ -37,14 +49,18 @@ function parseRouteBudgets(value) {
   }
 
   return value.split(',').reduce((budgets, pair) => {
-    const separator = pair.includes('=') ? pair.lastIndexOf('=') : pair.lastIndexOf(':');
+    const separator = pair.includes('=')
+      ? pair.lastIndexOf('=')
+      : pair.lastIndexOf(':');
     const rawName = separator >= 0 ? pair.slice(0, separator) : '';
     const rawLimit = separator >= 0 ? pair.slice(separator + 1) : '';
     const name = rawName?.trim();
     const limitKiB = Number(rawLimit);
 
     if (!name || !Number.isFinite(limitKiB) || limitKiB <= 0) {
-      throw new Error(`Invalid route budget "${pair}". Use ChunkName=260 or /route=260.`);
+      throw new Error(
+        `Invalid route budget "${pair}". Use ChunkName=260 or /route=260.`,
+      );
     }
 
     budgets[name] = limitKiB;
@@ -141,7 +157,7 @@ async function listAssetFiles(dir) {
   for (const entry of entries) {
     const fullPath = path.join(dir, entry.name);
     if (entry.isDirectory()) {
-      files.push(...await listAssetFiles(fullPath));
+      files.push(...(await listAssetFiles(fullPath)));
       continue;
     }
 
@@ -157,18 +173,20 @@ async function collectAssets(distDir) {
   const assetsDir = path.join(distDir, 'assets');
   const files = await listAssetFiles(assetsDir);
 
-  return Promise.all(files.map(async (file) => {
-    const bytes = await stat(file).then((details) => details.size);
-    const content = await readFile(file);
+  return Promise.all(
+    files.map(async (file) => {
+      const bytes = await stat(file).then((details) => details.size);
+      const content = await readFile(file);
 
-    return {
-      name: path.relative(distDir, file).replaceAll(path.sep, '/'),
-      basename: path.basename(file),
-      bytes,
-      gzipBytes: gzipSync(content).byteLength,
-      type: path.extname(file).slice(1),
-    };
-  }));
+      return {
+        name: path.relative(distDir, file).replaceAll(path.sep, '/'),
+        basename: path.basename(file),
+        bytes,
+        gzipBytes: gzipSync(content).byteLength,
+        type: path.extname(file).slice(1),
+      };
+    }),
+  );
 }
 
 function kib(bytes) {
@@ -179,8 +197,17 @@ function fmtKiB(bytes) {
   return `${kib(bytes).toFixed(1)} KiB`;
 }
 
+function fmtDeltaKiB(bytes, limitKiB) {
+  const delta = kib(bytes) - limitKiB;
+  const sign = delta >= 0 ? '+' : '';
+  return `${sign}${delta.toFixed(1)} KiB`;
+}
+
 function findChunk(assets, chunkName) {
-  return assets.find((asset) => asset.type === 'js' && asset.basename.startsWith(`${chunkName}-`));
+  return assets.find(
+    (asset) =>
+      asset.type === 'js' && asset.basename.startsWith(`${chunkName}-`),
+  );
 }
 
 function routeChunkNames(routeBudget) {
@@ -203,15 +230,22 @@ function evaluateBudgets(assets, options) {
   const violations = [];
   const routes = DEFAULT_ROUTES.map((routeBudget) => {
     const chunkNames = routeChunkNames(routeBudget);
-    const routeAssets = chunkNames.map((chunkName) => ({ chunkName, asset: findChunk(assets, chunkName) }));
+    const routeAssets = chunkNames.map((chunkName) => ({
+      chunkName,
+      asset: findChunk(assets, chunkName),
+    }));
     const missingChunks = routeAssets.filter((routeAsset) => !routeAsset.asset);
-    const totalBytes = routeAssets.reduce((sum, routeAsset) => sum + (routeAsset.asset?.bytes ?? 0), 0);
-    const limitKiB = chunkNames
-      .map((chunkName) => normalizedOptions.routeBudgets[chunkName])
-      .find((limit) => limit !== undefined)
-      ?? normalizedOptions.routeBudgets[routeBudget.route]
-      ?? routeBudget.maxKiB
-      ?? normalizedOptions.maxRouteKiB;
+    const totalBytes = routeAssets.reduce(
+      (sum, routeAsset) => sum + (routeAsset.asset?.bytes ?? 0),
+      0,
+    );
+    const limitKiB =
+      chunkNames
+        .map((chunkName) => normalizedOptions.routeBudgets[chunkName])
+        .find((limit) => limit !== undefined) ??
+      normalizedOptions.routeBudgets[routeBudget.route] ??
+      routeBudget.maxKiB ??
+      normalizedOptions.maxRouteKiB;
 
     for (const missingChunk of missingChunks) {
       violations.push({
@@ -251,7 +285,11 @@ function evaluateBudgets(assets, options) {
       });
     }
 
-    if (asset.type === 'js' && asset.basename.startsWith('index-') && kib(asset.bytes) > normalizedOptions.maxEntryKiB) {
+    if (
+      asset.type === 'js' &&
+      asset.basename.startsWith('index-') &&
+      kib(asset.bytes) > normalizedOptions.maxEntryKiB
+    ) {
       violations.push({
         scope: 'entry',
         name: asset.name,
@@ -269,6 +307,165 @@ function padRight(value, size) {
   return String(value).padEnd(size, ' ');
 }
 
+function truncate(value, size) {
+  const text = String(value);
+  if (text.length <= size) {
+    return padRight(text, size);
+  }
+
+  return `${text.slice(0, size - 3)}...`;
+}
+
+function assetRouteLabels(asset, routes) {
+  return routes
+    .filter((route) =>
+      route.assets.some((routeAsset) => routeAsset.name === asset.name),
+    )
+    .map((route) => route.route);
+}
+
+function assetBudgetLabel(asset, routes, options) {
+  if (asset.type === 'js' && asset.basename.startsWith('index-')) {
+    return `${options.maxEntryKiB} KiB entry`;
+  }
+
+  const route = routes.find((candidate) =>
+    candidate.assets.some((routeAsset) => routeAsset.name === asset.name),
+  );
+  if (route) {
+    return `${route.limitKiB} KiB route`;
+  }
+
+  return `${options.maxChunkKiB} KiB chunk`;
+}
+
+function routeStatus(route) {
+  if (route.assets.length !== route.chunkNames.length) {
+    return 'missing';
+  }
+
+  const usage = kib(route.totalBytes) / route.limitKiB;
+  if (usage > 1) {
+    return `over ${fmtDeltaKiB(route.totalBytes, route.limitKiB)}`;
+  }
+
+  if (usage >= 0.85) {
+    return `watch ${Math.round(usage * 100)}%`;
+  }
+
+  return `ok ${Math.round(usage * 100)}%`;
+}
+
+function assetSignal(asset, routes, options) {
+  const route = routes.find((candidate) =>
+    candidate.assets.some((routeAsset) => routeAsset.name === asset.name),
+  );
+  const routeOverBudget = route && kib(route.totalBytes) > route.limitKiB;
+  const chunkOverBudget = kib(asset.bytes) > options.maxChunkKiB;
+  const entryOverBudget =
+    asset.type === 'js' &&
+    asset.basename.startsWith('index-') &&
+    kib(asset.bytes) > options.maxEntryKiB;
+
+  if (entryOverBudget) {
+    return `entry over ${fmtDeltaKiB(asset.bytes, options.maxEntryKiB)}`;
+  }
+
+  if (routeOverBudget) {
+    return `route over ${fmtDeltaKiB(route.totalBytes, route.limitKiB)}`;
+  }
+
+  if (chunkOverBudget) {
+    return `chunk over ${fmtDeltaKiB(asset.bytes, options.maxChunkKiB)}`;
+  }
+
+  if (route && kib(route.totalBytes) / route.limitKiB >= 0.85) {
+    return `route watch ${Math.round((kib(route.totalBytes) / route.limitKiB) * 100)}%`;
+  }
+
+  return 'ok';
+}
+
+function buildRecommendations(assets, evaluation, options) {
+  const recommendations = [];
+  const seen = new Set();
+  const add = (text) => {
+    if (!seen.has(text)) {
+      seen.add(text);
+      recommendations.push(text);
+    }
+  };
+
+  for (const violation of evaluation.violations) {
+    if (violation.scope === 'entry') {
+      add(
+        `Entry ${violation.name}: move route-only imports behind lazy boundaries or split shared providers; reduce ${fmtDeltaKiB(violation.actualBytes, violation.limitKiB)} to pass ${violation.limitKiB} KiB.`,
+      );
+    } else if (violation.scope === 'chunk') {
+      const routes = assetRouteLabels(
+        assets.find((asset) => asset.name === violation.name) ?? {},
+        evaluation.routes,
+      );
+      const suffix =
+        routes.length > 0 ? ` Route(s): ${routes.join(', ')}.` : '';
+      add(
+        `Chunk ${violation.name}: inspect heavy dependencies and dynamic imports; reduce ${fmtDeltaKiB(violation.actualBytes, violation.limitKiB)} to pass ${violation.limitKiB} KiB.${suffix}`,
+      );
+    } else if (violation.actualBytes) {
+      const route = evaluation.routes.find(
+        (candidate) => candidate.route === violation.name,
+      );
+      const chunkList =
+        route?.assets.map((asset) => asset.basename).join(', ') ??
+        'expected route chunks';
+      add(
+        `Route ${violation.name}: split or defer ${chunkList}; reduce ${fmtDeltaKiB(violation.actualBytes, violation.limitKiB)} to pass ${violation.limitKiB} KiB.`,
+      );
+    } else {
+      add(
+        `Route ${violation.name}: restore the expected lazy chunk or update DEFAULT_ROUTES if the route was intentionally renamed.`,
+      );
+    }
+  }
+
+  const watchedRoutes = evaluation.routes
+    .filter(
+      (route) =>
+        route.assets.length === route.chunkNames.length &&
+        kib(route.totalBytes) <= route.limitKiB &&
+        kib(route.totalBytes) / route.limitKiB >= 0.85,
+    )
+    .sort(
+      (left, right) =>
+        right.totalBytes / right.limitKiB - left.totalBytes / left.limitKiB,
+    )
+    .slice(0, 3);
+
+  for (const route of watchedRoutes) {
+    add(
+      `Route ${route.route}: keep new imports lazy; only ${Math.abs(kib(route.totalBytes) - route.limitKiB).toFixed(1)} KiB remains before the ${route.limitKiB} KiB budget.`,
+    );
+  }
+
+  const topStandalone = [...assets]
+    .filter(
+      (asset) =>
+        asset.type === 'js' &&
+        assetRouteLabels(asset, evaluation.routes).length === 0 &&
+        !asset.basename.startsWith('index-'),
+    )
+    .sort((left, right) => right.bytes - left.bytes)
+    .at(0);
+
+  if (recommendations.length === 0 && topStandalone) {
+    add(
+      `Largest non-route JS ${topStandalone.name}: review whether it should be mapped to a route budget or split if it grows past ${options.maxChunkKiB} KiB.`,
+    );
+  }
+
+  return recommendations;
+}
+
 function renderReport(assets, evaluation, options) {
   const sorted = [...assets].sort((left, right) => right.bytes - left.bytes);
   const lines = [
@@ -276,24 +473,62 @@ function renderReport(assets, evaluation, options) {
     `Dist: ${path.relative(process.cwd(), options.distDir) || options.distDir}`,
     `Thresholds: chunk <= ${options.maxChunkKiB} KiB, entry <= ${options.maxEntryKiB} KiB, route default <= ${options.maxRouteKiB} KiB`,
     '',
-    `Largest ${Math.min(options.top, sorted.length)} assets:`,
-    `${padRight('Asset', 52)} ${padRight('Raw', 10)} ${padRight('Gzip', 10)}`,
-    `${'-'.repeat(52)} ${'-'.repeat(10)} ${'-'.repeat(10)}`,
+    `Largest ${Math.min(options.top, sorted.length)} assets by impact:`,
+    `${padRight('Asset', 52)} ${padRight('Route(s)', 28)} ${padRight('Raw', 10)} ${padRight('Gzip', 10)} ${padRight('Budget', 16)} Signal`,
+    `${'-'.repeat(52)} ${'-'.repeat(28)} ${'-'.repeat(10)} ${'-'.repeat(10)} ${'-'.repeat(16)} ${'-'.repeat(18)}`,
   ];
 
   for (const asset of sorted.slice(0, options.top)) {
-    lines.push(`${padRight(asset.name, 52)} ${padRight(fmtKiB(asset.bytes), 10)} ${padRight(fmtKiB(asset.gzipBytes), 10)}`);
+    const routes = assetRouteLabels(asset, evaluation.routes);
+    lines.push(
+      [
+        truncate(asset.name, 52),
+        truncate(routes.length > 0 ? routes.join(', ') : '-', 28),
+        padRight(fmtKiB(asset.bytes), 10),
+        padRight(fmtKiB(asset.gzipBytes), 10),
+        padRight(assetBudgetLabel(asset, evaluation.routes, options), 16),
+        assetSignal(asset, evaluation.routes, options),
+      ].join(' '),
+    );
   }
 
-  lines.push('', 'Route chunks:');
-  lines.push(`${padRight('Route', 30)} ${padRight('Chunk', 36)} ${padRight('Raw', 10)} Budget`);
-  lines.push(`${'-'.repeat(30)} ${'-'.repeat(36)} ${'-'.repeat(10)} ${'-'.repeat(10)}`);
+  const sortedRoutes = [...evaluation.routes].sort((left, right) => {
+    const leftUsage =
+      left.assets.length === left.chunkNames.length
+        ? left.totalBytes / left.limitKiB
+        : Number.POSITIVE_INFINITY;
+    const rightUsage =
+      right.assets.length === right.chunkNames.length
+        ? right.totalBytes / right.limitKiB
+        : Number.POSITIVE_INFINITY;
+    return rightUsage - leftUsage;
+  });
 
-  for (const route of evaluation.routes) {
-    const chunkLabel = route.assets.length > 0
-      ? route.assets.map((asset) => asset.basename).join(', ')
-      : route.chunkNames.map((chunkName) => `${chunkName}-*.js`).join(', ');
-    lines.push(`${padRight(route.route, 30)} ${padRight(chunkLabel, 36)} ${padRight(route.assets.length > 0 ? fmtKiB(route.totalBytes) : 'missing', 10)} ${route.limitKiB} KiB`);
+  lines.push('', 'Routes closest to budget:');
+  lines.push(
+    `${padRight('Route', 30)} ${padRight('Chunk(s)', 36)} ${padRight('Raw', 10)} ${padRight('Budget', 10)} Status`,
+  );
+  lines.push(
+    `${'-'.repeat(30)} ${'-'.repeat(36)} ${'-'.repeat(10)} ${'-'.repeat(10)} ${'-'.repeat(16)}`,
+  );
+
+  for (const route of sortedRoutes) {
+    const chunkLabel =
+      route.assets.length > 0
+        ? route.assets.map((asset) => asset.basename).join(', ')
+        : route.chunkNames.map((chunkName) => `${chunkName}-*.js`).join(', ');
+    lines.push(
+      [
+        truncate(route.route, 30),
+        truncate(chunkLabel, 36),
+        padRight(
+          route.assets.length > 0 ? fmtKiB(route.totalBytes) : 'missing',
+          10,
+        ),
+        padRight(`${route.limitKiB} KiB`, 10),
+        routeStatus(route),
+      ].join(' '),
+    );
   }
 
   if (evaluation.violations.length > 0) {
@@ -303,6 +538,14 @@ function renderReport(assets, evaluation, options) {
     }
   } else {
     lines.push('', 'All bundle budgets passed.');
+  }
+
+  const recommendations = buildRecommendations(assets, evaluation, options);
+  if (recommendations.length > 0) {
+    lines.push('', 'Actionable recommendations:');
+    for (const recommendation of recommendations) {
+      lines.push(`- ${recommendation}`);
+    }
   }
 
   return lines.join('\n');
@@ -319,7 +562,15 @@ export async function runBudget(options) {
   };
 }
 
-export { DEFAULT_ROUTES, evaluateBudgets, normalizeOptions, parseArgs, parseRouteBudgets, renderReport };
+export {
+  DEFAULT_ROUTES,
+  buildRecommendations,
+  evaluateBudgets,
+  normalizeOptions,
+  parseArgs,
+  parseRouteBudgets,
+  renderReport,
+};
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   try {

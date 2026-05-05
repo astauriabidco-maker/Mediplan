@@ -1,7 +1,8 @@
-import React, { useMemo, useState } from 'react';
+import React, { memo, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { format, startOfWeek } from 'date-fns';
-import { fr } from 'date-fns/locale';
+import { format } from 'date-fns/format';
+import { startOfWeek } from 'date-fns/startOfWeek';
+import { fr } from 'date-fns/locale/fr';
 import {
   AlertTriangle,
   CalendarCheck,
@@ -30,13 +31,29 @@ import {
   usePlanningPublicationPreview,
   usePublishPlanningPeriod,
 } from '../hooks/usePlanningPublication';
-import { ApiErrorState, EmptyState, PageSkeleton, SkeletonBlock } from '../components/UIStates';
+import {
+  ApiErrorState,
+  EmptyState,
+  PageSkeleton,
+  SkeletonBlock,
+} from '../components/UIStates';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
 const toInputDate = (date: Date) => format(date, 'yyyy-MM-dd');
+
+const getDefaultPeriodInput = () => {
+  const weekStart = startOfWeek(new Date(), { weekStartsOn: 1 });
+  const weekEnd = new Date(weekStart);
+  weekEnd.setDate(weekStart.getDate() + 6);
+
+  return {
+    from: toInputDate(weekStart),
+    to: toInputDate(weekEnd),
+  };
+};
 
 const toPeriodStart = (date: string) => {
   if (!date) return '';
@@ -114,7 +131,7 @@ const getApiError = (error: unknown) => {
     : message || 'Erreur inconnue';
 };
 
-const ReportStat = ({
+const ReportStat = memo(function ReportStat({
   label,
   value,
   tone,
@@ -122,16 +139,18 @@ const ReportStat = ({
   label: string;
   value: number | string;
   tone: string;
-}) => (
-  <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
-    <div className={cn('text-2xl font-black', tone)}>{value}</div>
-    <div className="mt-1 text-xs font-bold uppercase tracking-wide text-slate-500">
-      {label}
+}) {
+  return (
+    <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
+      <div className={cn('text-2xl font-black', tone)}>{value}</div>
+      <div className="mt-1 text-xs font-bold uppercase tracking-wide text-slate-500">
+        {label}
+      </div>
     </div>
-  </div>
-);
+  );
+});
 
-const IssueList = ({
+const IssueList = memo(function IssueList({
   title,
   items,
   empty,
@@ -141,118 +160,144 @@ const IssueList = ({
   items: PublishPlanningIssue[];
   empty: string;
   variant: 'blocking' | 'warning';
-}) => (
-  <section className="space-y-3">
-    <div className="flex items-center justify-between">
-      <h2 className="text-sm font-bold uppercase tracking-wide text-slate-300">
-        {title}
-      </h2>
-      <span
-        className={cn(
-          'rounded-full px-2.5 py-1 text-xs font-bold',
-          variant === 'blocking'
-            ? 'bg-rose-500/10 text-rose-300'
-            : 'bg-amber-500/10 text-amber-300',
-        )}
-      >
-        {items.length}
-      </span>
-    </div>
-
-    {items.length === 0 ? (
-      <div className="rounded-lg border border-dashed border-slate-800 p-6 text-center text-sm text-slate-500">
-        {empty}
+}) {
+  return (
+    <section className="space-y-3">
+      <div className="flex items-center justify-between">
+        <h2 className="text-sm font-bold uppercase tracking-wide text-slate-300">
+          {title}
+        </h2>
+        <span
+          className={cn(
+            'rounded-full px-2.5 py-1 text-xs font-bold',
+            variant === 'blocking'
+              ? 'bg-rose-500/10 text-rose-300'
+              : 'bg-amber-500/10 text-amber-300',
+          )}
+        >
+          {items.length}
+        </span>
       </div>
-    ) : (
-      <div className="space-y-3">
-        {items.map((item) => (
-          <div
-            key={`${variant}-${item.shiftId}`}
-            className="rounded-lg border border-slate-800 bg-slate-900 p-4"
-          >
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <div className="font-bold text-white">
-                  Shift #{item.shiftId}
+
+      {items.length === 0 ? (
+        <div className="rounded-lg border border-dashed border-slate-800 p-6 text-center text-sm text-slate-500">
+          {empty}
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {items.map((item) => {
+            const exceptionReason = getExceptionReason(item);
+
+            return (
+              <div
+                key={`${variant}-${item.shiftId}`}
+                className="rounded-lg border border-slate-800 bg-slate-900 p-4"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="font-bold text-white">
+                      Shift #{item.shiftId}
+                    </div>
+                    {item.agentId && (
+                      <div className="mt-1 text-xs text-slate-500">
+                        Agent #{item.agentId}
+                      </div>
+                    )}
+                  </div>
+                  {variant === 'blocking' ? (
+                    <XCircle size={18} className="shrink-0 text-rose-400" />
+                  ) : (
+                    <AlertTriangle
+                      size={18}
+                      className="shrink-0 text-amber-400"
+                    />
+                  )}
                 </div>
-                {item.agentId && (
-                  <div className="mt-1 text-xs text-slate-500">
-                    Agent #{item.agentId}
+
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {getIssueReasons(item).map((reason) => (
+                    <span
+                      key={reason}
+                      className="rounded-md bg-slate-800 px-2 py-1 text-xs font-medium text-slate-300"
+                    >
+                      {formatRule(reason)}
+                    </span>
+                  ))}
+                </div>
+
+                {exceptionReason && (
+                  <div className="mt-3 rounded-lg border border-amber-500/20 bg-amber-500/10 p-3 text-xs text-amber-100">
+                    Exception approuvée: {exceptionReason}
                   </div>
                 )}
               </div>
-              {variant === 'blocking' ? (
-                <XCircle size={18} className="shrink-0 text-rose-400" />
-              ) : (
-                <AlertTriangle size={18} className="shrink-0 text-amber-400" />
-              )}
-            </div>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
+});
 
-            <div className="mt-3 flex flex-wrap gap-2">
-              {getIssueReasons(item).map((reason) => (
-                <span
-                  key={reason}
-                  className="rounded-md bg-slate-800 px-2 py-1 text-xs font-medium text-slate-300"
-                >
-                  {formatRule(reason)}
-                </span>
-              ))}
-            </div>
+const TimelineRow = memo(function TimelineRow({
+  item,
+}: {
+  item: PlanningTimelineItem;
+}) {
+  const timestamp = useMemo(() => new Date(item.timestamp), [item.timestamp]);
+  const day = useMemo(
+    () => format(timestamp, 'dd MMM', { locale: fr }),
+    [timestamp],
+  );
+  const time = useMemo(() => format(timestamp, 'HH:mm'), [timestamp]);
 
-            {getExceptionReason(item) && (
-              <div className="mt-3 rounded-lg border border-amber-500/20 bg-amber-500/10 p-3 text-xs text-amber-100">
-                Exception approuvée: {getExceptionReason(item)}
-              </div>
+  return (
+    <div className="grid gap-3 border-b border-slate-800 py-4 last:border-b-0 sm:grid-cols-[120px_1fr] sm:gap-4">
+      <div className="text-xs text-slate-500">
+        <div className="font-bold text-slate-300">{day}</div>
+        <div>{time}</div>
+      </div>
+      <div className="space-y-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <span
+            className={cn(
+              'break-all rounded-full border px-2.5 py-1 text-xs font-bold',
+              actionTone[item.action] ||
+                'border-slate-700 bg-slate-800 text-slate-300',
             )}
-          </div>
-        ))}
-      </div>
-    )}
-  </section>
-);
-
-const TimelineRow = ({ item }: { item: PlanningTimelineItem }) => (
-  <div className="grid gap-3 border-b border-slate-800 py-4 last:border-b-0 sm:grid-cols-[120px_1fr] sm:gap-4">
-    <div className="text-xs text-slate-500">
-      <div className="font-bold text-slate-300">
-        {format(new Date(item.timestamp), 'dd MMM', { locale: fr })}
-      </div>
-      <div>{format(new Date(item.timestamp), 'HH:mm')}</div>
-    </div>
-    <div className="space-y-2">
-      <div className="flex flex-wrap items-center gap-2">
-        <span
-          className={cn(
-            'break-all rounded-full border px-2.5 py-1 text-xs font-bold',
-            actionTone[item.action] ||
-              'border-slate-700 bg-slate-800 text-slate-300',
+          >
+            {item.action}
+          </span>
+          {item.status && (
+            <span className="rounded-full bg-slate-800 px-2.5 py-1 text-xs text-slate-300">
+              {item.status}
+            </span>
           )}
-        >
-          {item.action}
-        </span>
-        {item.status && (
-          <span className="rounded-full bg-slate-800 px-2.5 py-1 text-xs text-slate-300">
-            {item.status}
-          </span>
-        )}
-        {item.severity && (
-          <span className="rounded-full bg-rose-500/10 px-2.5 py-1 text-xs font-bold text-rose-300">
-            {item.severity}
-          </span>
-        )}
-      </div>
-      <div>
-        <div className="break-words font-semibold text-white">{item.label}</div>
-        <div className="mt-1 text-xs text-slate-500">
-          {item.entity.type} {item.entity.id ? `#${item.entity.id}` : ''} ·
-          {item.actorId ? `acteur #${item.actorId}` : 'systeme compliance'}
+          {item.severity && (
+            <span className="rounded-full bg-rose-500/10 px-2.5 py-1 text-xs font-bold text-rose-300">
+              {item.severity}
+            </span>
+          )}
+        </div>
+        <div>
+          <div className="break-words font-semibold text-white">
+            {item.label}
+          </div>
+          <div className="mt-1 text-xs text-slate-500">
+            {item.entity.type} {item.entity.id ? `#${item.entity.id}` : ''} ·
+            {item.actorId ? `acteur #${item.actorId}` : 'systeme compliance'}
+          </div>
         </div>
       </div>
     </div>
-  </div>
-);
+  );
+});
 
-const Recommendations = ({ report }: { report?: PublishPlanningReport }) => {
+const Recommendations = memo(function Recommendations({
+  report,
+}: {
+  report?: PublishPlanningReport;
+}) {
   const recommendations = report?.recommendations || [];
 
   return (
@@ -281,20 +326,16 @@ const Recommendations = ({ report }: { report?: PublishPlanningReport }) => {
       )}
     </section>
   );
-};
+});
 
 export const PlanningPrepublicationPage = () => {
-  const weekStart = startOfWeek(new Date(), { weekStartsOn: 1 });
-  const weekEnd = new Date(weekStart);
-  weekEnd.setDate(weekStart.getDate() + 6);
-
-  const [from, setFrom] = useState(toInputDate(weekStart));
-  const [to, setTo] = useState(toInputDate(weekEnd));
+  const [periodInput, setPeriodInput] = useState(getDefaultPeriodInput);
   const [agentId, setAgentId] = useState('');
   const [shiftId, setShiftId] = useState('');
   const [limit, setLimit] = useState(80);
   const [publishedReport, setPublishedReport] =
     useState<PublishPlanningReport | null>(null);
+  const { from, to } = periodInput;
   const hasMissingPeriod = !from || !to;
   const hasInvalidPeriod = Boolean(from && to && from > to);
 
@@ -329,7 +370,14 @@ export const PlanningPrepublicationPage = () => {
 
   const report = publishedReport || preview.data?.report;
   const canPublish = Boolean(preview.data?.publishable && !publish.isPending);
-  const reportsUrl = buildReportsUrl(period.start, period.end);
+  const reportsUrl = useMemo(
+    () => buildReportsUrl(period.start, period.end),
+    [period.start, period.end],
+  );
+  const reportPeriodLabel = useMemo(
+    () => `${formatDateTime(report?.start)} - ${formatDateTime(report?.end)}`,
+    [report?.start, report?.end],
+  );
 
   const handlePublish = async () => {
     if (!preview.data?.publishable) return;
@@ -406,7 +454,12 @@ export const PlanningPrepublicationPage = () => {
             <input
               type="date"
               value={from}
-              onChange={(event) => setFrom(event.target.value)}
+              onChange={(event) =>
+                setPeriodInput((current) => ({
+                  ...current,
+                  from: event.target.value,
+                }))
+              }
               aria-invalid={hasMissingPeriod || hasInvalidPeriod}
               aria-describedby={
                 hasMissingPeriod || hasInvalidPeriod
@@ -426,7 +479,12 @@ export const PlanningPrepublicationPage = () => {
             <input
               type="date"
               value={to}
-              onChange={(event) => setTo(event.target.value)}
+              onChange={(event) =>
+                setPeriodInput((current) => ({
+                  ...current,
+                  to: event.target.value,
+                }))
+              }
               aria-invalid={hasMissingPeriod || hasInvalidPeriod}
               aria-describedby={
                 hasMissingPeriod || hasInvalidPeriod
@@ -478,7 +536,11 @@ export const PlanningPrepublicationPage = () => {
           La date de fin doit être postérieure ou égale à la date de début.
         </div>
       ) : preview.isLoading ? (
-        <PageSkeleton title="Analyse de publication en cours" rows={3} sidePanel />
+        <PageSkeleton
+          title="Analyse de publication en cours"
+          rows={3}
+          sidePanel
+        />
       ) : preview.isError ? (
         <ApiErrorState
           title="Impossible de calculer la pré-publication"
@@ -491,7 +553,10 @@ export const PlanningPrepublicationPage = () => {
         <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_420px]">
           <div className="space-y-6">
             {preview.isFetching && (
-              <div role="status" className="rounded-lg border border-blue-500/20 bg-blue-500/10 px-4 py-3 text-sm font-medium text-blue-100">
+              <div
+                role="status"
+                className="rounded-lg border border-blue-500/20 bg-blue-500/10 px-4 py-3 text-sm font-medium text-blue-100"
+              >
                 Recalcul de pré-publication en cours. Le dernier rapport reste
                 affiché.
               </div>
@@ -519,8 +584,7 @@ export const PlanningPrepublicationPage = () => {
                         : 'Publication bloquée'}
                     </h2>
                     <p className="mt-1 text-sm text-slate-300">
-                      {formatDateTime(report?.start)} -{' '}
-                      {formatDateTime(report?.end)}
+                      {reportPeriodLabel}
                     </p>
                   </div>
                 </div>
@@ -556,13 +620,19 @@ export const PlanningPrepublicationPage = () => {
               </div>
 
               {publish.isError && (
-                <div role="alert" className="mt-4 rounded-md border border-rose-500/30 bg-rose-500/10 p-3 text-sm text-rose-100">
+                <div
+                  role="alert"
+                  className="mt-4 rounded-md border border-rose-500/30 bg-rose-500/10 p-3 text-sm text-rose-100"
+                >
                   {getApiError(publish.error)}
                 </div>
               )}
 
               {publish.isSuccess && (
-                <div role="status" className="mt-4 rounded-md border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-100">
+                <div
+                  role="status"
+                  className="mt-4 rounded-md border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-100"
+                >
                   {publish.data.message} · {publish.data.affected} shift(s)
                   publié(s).
                 </div>
@@ -718,12 +788,21 @@ export const PlanningPrepublicationPage = () => {
                   </h2>
                 </div>
                 {timeline.isFetching && (
-                  <Loader2 role="status" aria-label="Actualisation de la timeline métier" size={16} className="animate-spin text-slate-500" />
+                  <Loader2
+                    role="status"
+                    aria-label="Actualisation de la timeline métier"
+                    size={16}
+                    className="animate-spin text-slate-500"
+                  />
                 )}
               </div>
 
               {timeline.isLoading ? (
-                <div className="space-y-3" role="status" aria-label="Chargement de la timeline métier">
+                <div
+                  className="space-y-3"
+                  role="status"
+                  aria-label="Chargement de la timeline métier"
+                >
                   <SkeletonBlock className="h-16" />
                   <SkeletonBlock className="h-16" />
                   <SkeletonBlock className="h-16" />
