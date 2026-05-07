@@ -9,9 +9,24 @@ const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.dirname(scriptDir);
 const args = process.argv.slice(2);
 
-const ROUTINE_ORDER = ['daily', 'weekly', 'escalation', 'backup', 'audit', 'slo'];
+const ROUTINE_ORDER = [
+  'daily',
+  'weekly',
+  'escalation',
+  'backup',
+  'audit',
+  'slo',
+];
 const OUTPUT_FORMATS = ['json', 'markdown', 'both'];
-const EXECUTION_MODES = ['dry-run', 'mock', 'api'];
+const EXECUTION_MODES = ['disabled', 'dry-run', 'mock', 'api'];
+const DEFAULT_FREQUENCIES = {
+  daily: process.env.OPS_ROUTINE_DAILY_FREQUENCY || 'P1D',
+  weekly: process.env.OPS_ROUTINE_WEEKLY_FREQUENCY || 'P7D',
+  escalation: process.env.OPS_ROUTINE_ESCALATION_FREQUENCY || 'PT15M',
+  backup: process.env.OPS_ROUTINE_BACKUP_FREQUENCY || 'P1D',
+  audit: process.env.OPS_ROUTINE_AUDIT_FREQUENCY || 'P1D',
+  slo: process.env.OPS_ROUTINE_SLO_FREQUENCY || 'PT1H',
+};
 
 function readValue(argv, index, arg) {
   const value = argv[index + 1];
@@ -36,7 +51,7 @@ function parseArgs(argv) {
   weeklyFrom.setDate(now.getDate() - 7);
 
   const options = {
-    mode: 'dry-run',
+    mode: process.env.OPS_ROUTINE_MODE || 'dry-run',
     routines: ['daily', 'backup', 'audit', 'slo'],
     format: 'both',
     reportDir: process.env.REPORT_DIR || 'prod-reports',
@@ -45,7 +60,10 @@ function parseArgs(argv) {
       process.env.OPS_ROUTINE_FROM ||
       process.env.OPS_DAILY_FROM ||
       defaultFrom.toISOString(),
-    to: process.env.OPS_ROUTINE_TO || process.env.OPS_DAILY_TO || now.toISOString(),
+    to:
+      process.env.OPS_ROUTINE_TO ||
+      process.env.OPS_DAILY_TO ||
+      now.toISOString(),
     weeklyFrom:
       process.env.OPS_ROUTINE_WEEKLY_FROM ||
       process.env.OPS_WEEKLY_FROM ||
@@ -60,7 +78,10 @@ function parseArgs(argv) {
       process.env.APP_ENV ||
       process.env.NODE_ENV ||
       'postprod',
-    baseUrl: (process.env.BASE_URL || 'http://localhost:3005').replace(/\/$/, ''),
+    baseUrl: (process.env.BASE_URL || 'http://localhost:3005').replace(
+      /\/$/,
+      '',
+    ),
     incidentId: process.env.INCIDENT_ID || 'INC-DRY-RUN',
     week: process.env.OP_RUNBOOK_WEEK || '',
     journalPath: process.env.OPS_ROUTINE_JOURNAL || '',
@@ -77,12 +98,15 @@ function parseArgs(argv) {
       10,
     ),
     help: false,
+    frequencies: { ...DEFAULT_FREQUENCIES },
   };
 
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
 
-    if (arg === '--dry-run') {
+    if (arg === '--disabled') {
+      options.mode = 'disabled';
+    } else if (arg === '--dry-run') {
       options.mode = 'dry-run';
     } else if (arg === '--mock' || arg === '--smoke') {
       options.mode = 'mock';
@@ -143,6 +167,24 @@ function parseArgs(argv) {
     } else if (arg === '--slo-max-health-ms') {
       options.sloMaxHealthMs = Number.parseInt(readValue(argv, index, arg), 10);
       index += 1;
+    } else if (arg === '--daily-frequency') {
+      options.frequencies.daily = readValue(argv, index, arg);
+      index += 1;
+    } else if (arg === '--weekly-frequency') {
+      options.frequencies.weekly = readValue(argv, index, arg);
+      index += 1;
+    } else if (arg === '--escalation-frequency') {
+      options.frequencies.escalation = readValue(argv, index, arg);
+      index += 1;
+    } else if (arg === '--backup-frequency') {
+      options.frequencies.backup = readValue(argv, index, arg);
+      index += 1;
+    } else if (arg === '--audit-frequency') {
+      options.frequencies.audit = readValue(argv, index, arg);
+      index += 1;
+    } else if (arg === '--slo-frequency') {
+      options.frequencies.slo = readValue(argv, index, arg);
+      index += 1;
     } else if (arg === '--help' || arg === '-h') {
       options.help = true;
     } else {
@@ -160,7 +202,7 @@ function parseArgs(argv) {
     throw new Error('--format must be json, markdown, or both');
   }
   if (!EXECUTION_MODES.includes(options.mode)) {
-    throw new Error('--mode must be dry-run, mock, or api');
+    throw new Error('--mode must be disabled, dry-run, mock, or api');
   }
 
   const unknownRoutines = options.routines.filter(
@@ -198,7 +240,10 @@ function parseArgs(argv) {
   }
 
   if (!options.journalPath) {
-    options.journalPath = path.join(options.reportDir, 'ops-routine-journal.jsonl');
+    options.journalPath = path.join(
+      options.reportDir,
+      'ops-routine-journal.jsonl',
+    );
   }
 
   return options;
@@ -208,12 +253,14 @@ function printHelp() {
   console.log(`Mediplan Sprint 25 ops routine scheduler
 
 Usage:
+  node scripts/ops-routine-scheduler.mjs --disabled
   node scripts/ops-routine-scheduler.mjs --dry-run
   node scripts/ops-routine-scheduler.mjs --mock --routines all
   node scripts/ops-routine-scheduler.mjs --api --routines daily,backup,audit,slo
 
 Options:
   --routines daily,weekly,escalation,backup,audit,slo,all
+  --disabled             Skip execution. Default for Nest scheduled worker.
   --dry-run              Plan only. Default and non destructive.
   --mock                 Execute only mocked/local non destructive routines.
   --api                  Execute GET probes and safe report scripts.
@@ -227,6 +274,12 @@ Options:
   --base-url <url>
   --incident-id <id>
   --week <YYYY-Www>
+  --daily-frequency <ISO-8601 duration>
+  --weekly-frequency <ISO-8601 duration>
+  --escalation-frequency <ISO-8601 duration>
+  --backup-frequency <ISO-8601 duration>
+  --audit-frequency <ISO-8601 duration>
+  --slo-frequency <ISO-8601 duration>
 
 The scheduler never runs migrations, seed/reset commands, Docker mutations,
 backup restores, alert resolutions, git resets, or shell-expanded commands.
@@ -236,7 +289,8 @@ Reports and the JSONL journal are the only local writes.
 
 const parseEnvLine = (line) => {
   const trimmed = line.trim();
-  if (!trimmed || trimmed.startsWith('#') || !trimmed.includes('=')) return null;
+  if (!trimmed || trimmed.startsWith('#') || !trimmed.includes('='))
+    return null;
 
   const separatorIndex = trimmed.indexOf('=');
   const key = trimmed.slice(0, separatorIndex).trim();
@@ -328,7 +382,8 @@ const routineCatalog = {
   daily: {
     title: 'Daily post-prod check',
     cadence: 'Quotidien',
-    objective: 'Collecter health, audit chain, backup metrics et alertes ouvertes.',
+    objective:
+      'Collecter health, audit chain, backup metrics et alertes ouvertes.',
     type: 'script',
     command: command(
       'Daily check',
@@ -357,7 +412,8 @@ const routineCatalog = {
   weekly: {
     title: 'Weekly ops report',
     cadence: 'Hebdomadaire',
-    objective: 'Consolider incidents, journal, restore evidence, audit et backup.',
+    objective:
+      'Consolider incidents, journal, restore evidence, audit et backup.',
     type: 'script',
     command: command(
       'Weekly report',
@@ -446,7 +502,10 @@ const dangerousPatterns = [
 ];
 
 function isSafeCommand(commandSpec) {
-  const printable = [process.execPath, ...commandSpec.argsBuilder({ mode: 'dry-run', reportDir: '' })]
+  const printable = [
+    process.execPath,
+    ...commandSpec.argsBuilder({ mode: 'dry-run', reportDir: '' }),
+  ]
     .filter(Boolean)
     .join(' ');
   return !dangerousPatterns.some((pattern) => pattern.test(printable));
@@ -468,6 +527,7 @@ function buildScriptPlan(id, options) {
     id,
     title: routine.title,
     cadence: routine.cadence,
+    configuredFrequency: options.frequencies[id],
     objective: routine.objective,
     type: routine.type,
     command: {
@@ -503,6 +563,7 @@ function mockedApiResult(id, options) {
     id,
     title: routineCatalog[id].title,
     cadence: routineCatalog[id].cadence,
+    configuredFrequency: options.frequencies[id],
     objective: routineCatalog[id].objective,
     type: 'api',
     status: 'PASSED',
@@ -532,6 +593,7 @@ function buildApiPlan(id, options) {
     id,
     title: routineCatalog[id].title,
     cadence: routineCatalog[id].cadence,
+    configuredFrequency: options.frequencies[id],
     objective: routineCatalog[id].objective,
     type: 'api',
     status: 'PLANNED',
@@ -555,8 +617,19 @@ async function runChild(plan, options) {
   const routine = routineCatalog[plan.id];
   const startedAt = new Date().toISOString();
 
+  if (options.mode === 'disabled') {
+    return {
+      ...plan,
+      status: 'DISABLED',
+      blockingReasons: ['OPS_ROUTINE_MODE disabled'],
+    };
+  }
+
   if (options.mode === 'dry-run') {
-    return { ...plan, status: plan.status === 'BLOCKED' ? 'BLOCKED' : 'PLANNED' };
+    return {
+      ...plan,
+      status: plan.status === 'BLOCKED' ? 'BLOCKED' : 'PLANNED',
+    };
   }
 
   if (plan.status === 'BLOCKED') {
@@ -604,6 +677,14 @@ async function runChild(plan, options) {
 }
 
 async function runApiRoutine(id, options) {
+  if (options.mode === 'disabled') {
+    return {
+      ...buildApiPlan(id, options),
+      status: 'DISABLED',
+      blockingReasons: ['OPS_ROUTINE_MODE disabled'],
+    };
+  }
+
   if (options.mode === 'dry-run') {
     return buildApiPlan(id, options);
   }
@@ -690,12 +771,17 @@ async function runApiRoutine(id, options) {
     }
   }
 
-  const backupBody = checks.find((check) => check.name === 'Backup metrics')?.body || {};
+  const backupBody =
+    checks.find((check) => check.name === 'Backup metrics')?.body || {};
   const auditBody =
-    checks.find((check) => check.name === 'Audit chain verification')?.body || {};
+    checks.find((check) => check.name === 'Audit chain verification')?.body ||
+    {};
   const compliance =
-    checks.find((check) => check.name === 'Planning compliance health')?.body || {};
-  const alerts = toArray(checks.find((check) => check.name === 'Open alerts')?.body);
+    checks.find((check) => check.name === 'Planning compliance health')?.body ||
+    {};
+  const alerts = toArray(
+    checks.find((check) => check.name === 'Open alerts')?.body,
+  );
   const maxHealthMs = Math.max(
     0,
     ...checks
@@ -704,16 +790,24 @@ async function runApiRoutine(id, options) {
   );
   const highAlerts = Math.max(
     alerts.filter((alert) =>
-      ['HIGH', 'CRITICAL'].includes(String(alert?.severity || '').toUpperCase()),
+      ['HIGH', 'CRITICAL'].includes(
+        String(alert?.severity || '').toUpperCase(),
+      ),
     ).length,
     compliance.counters?.highAlerts || 0,
   );
-  const openAlerts = Math.max(alerts.length, compliance.counters?.openAlerts || 0);
+  const openAlerts = Math.max(
+    alerts.length,
+    compliance.counters?.openAlerts || 0,
+  );
 
   const blockingReasons = [
     ...checks
       .filter((check) => !check.ok)
-      .map((check) => `${check.name} failed${check.reason ? `: ${check.reason}` : ''}`),
+      .map(
+        (check) =>
+          `${check.name} failed${check.reason ? `: ${check.reason}` : ''}`,
+      ),
     ...(id === 'backup' && backupBody.exportable !== true
       ? ['backup metrics not exportable']
       : []),
@@ -724,13 +818,17 @@ async function runApiRoutine(id, options) {
       ? [`${toArray(auditBody.issues).length} audit issues detected`]
       : []),
     ...(id === 'slo' && maxHealthMs > options.sloMaxHealthMs
-      ? [`health latency ${maxHealthMs} ms exceeds ${options.sloMaxHealthMs} ms`]
+      ? [
+          `health latency ${maxHealthMs} ms exceeds ${options.sloMaxHealthMs} ms`,
+        ]
       : []),
     ...(id === 'slo' && openAlerts > options.openAlertLimit
       ? [`${openAlerts} open alerts exceed limit ${options.openAlertLimit}`]
       : []),
     ...(id === 'slo' && highAlerts > options.highAlertLimit
-      ? [`${highAlerts} HIGH/CRITICAL alerts exceed limit ${options.highAlertLimit}`]
+      ? [
+          `${highAlerts} HIGH/CRITICAL alerts exceed limit ${options.highAlertLimit}`,
+        ]
       : []),
   ];
 
@@ -738,6 +836,7 @@ async function runApiRoutine(id, options) {
     id,
     title: routineCatalog[id].title,
     cadence: routineCatalog[id].cadence,
+    configuredFrequency: options.frequencies[id],
     objective: routineCatalog[id].objective,
     type: 'api',
     status: blockingReasons.length ? 'FAILED' : 'PASSED',
@@ -793,7 +892,7 @@ function buildMarkdown(report) {
       const commandOrEndpoints =
         routine.command?.printable || routine.endpoints?.join(', ') || '-';
       return `| ${escapeMarkdownCell(routine.title)} | ${routine.type} | ${escapeMarkdownCell(
-        routine.cadence,
+        `${routine.cadence} (${routine.configuredFrequency || 'n/a'})`,
       )} | ${routine.status} | ${escapeMarkdownCell(commandOrEndpoints)} |`;
     }),
     '',
@@ -805,7 +904,9 @@ function buildMarkdown(report) {
       `- ID: ${routine.id}`,
       `- Statut: ${routine.status}`,
       `- Objectif: ${routine.objective}`,
-      ...(routine.exitCode !== undefined ? [`- Exit code: ${routine.exitCode}`] : []),
+      ...(routine.exitCode !== undefined
+        ? [`- Exit code: ${routine.exitCode}`]
+        : []),
       ...(routine.metrics
         ? [
             `- Backup exportable: ${routine.metrics.backupExportable ?? 'n/a'}`,
@@ -848,9 +949,13 @@ function buildMarkdown(report) {
 }
 
 function computeStatus(routines) {
+  if (routines.every((routine) => routine.status === 'DISABLED'))
+    return 'DISABLED';
   if (routines.some((routine) => routine.status === 'FAILED')) return 'FAILED';
-  if (routines.some((routine) => routine.status === 'BLOCKED')) return 'BLOCKED';
-  if (routines.every((routine) => routine.status === 'PLANNED')) return 'PLANNED';
+  if (routines.some((routine) => routine.status === 'BLOCKED'))
+    return 'BLOCKED';
+  if (routines.every((routine) => routine.status === 'PLANNED'))
+    return 'PLANNED';
   return 'PASSED';
 }
 
@@ -880,11 +985,8 @@ async function writeOutputs(report, markdown, options) {
       mode: report.mode,
       environment: report.environment,
       tenantId: report.tenantId,
-      routines: report.routines.map((routine) => ({
-        id: routine.id,
-        status: routine.status,
-        blockingReasons: routine.blockingReasons || [],
-      })),
+      attemptCount: report.attempts.length,
+      attempts: report.attempts,
       outputs,
     })}\n`,
   );
@@ -901,13 +1003,26 @@ async function main() {
     return;
   }
 
-  const orderedRoutines = ROUTINE_ORDER.filter((id) => options.routines.includes(id));
+  const orderedRoutines = ROUTINE_ORDER.filter((id) =>
+    options.routines.includes(id),
+  );
   const routines = [];
   for (const id of orderedRoutines) {
     routines.push(await runRoutine(id, options));
   }
 
   const generatedAt = new Date().toISOString();
+  const attempts = routines.map((routine) => ({
+    id: routine.id,
+    status: routine.status,
+    mode: options.mode,
+    configuredFrequency: options.frequencies[routine.id],
+    startedAt: routine.startedAt || generatedAt,
+    finishedAt: routine.finishedAt || generatedAt,
+    exitCode: routine.exitCode ?? null,
+    blockingReasons: routine.blockingReasons || [],
+  }));
+
   const report = {
     status: computeStatus(routines),
     generatedAt,
@@ -927,9 +1042,12 @@ async function main() {
       highAlertLimit: options.highAlertLimit,
       sloMaxHealthMs: options.sloMaxHealthMs,
     },
+    frequencies: options.frequencies,
+    attempts,
     nonDestructive: true,
     policy: {
       defaultMode: 'dry-run',
+      disabledModeAvailable: true,
       shellExecution: false,
       methodsAllowed: ['GET'],
       migrationsExecuted: false,

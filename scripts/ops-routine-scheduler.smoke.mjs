@@ -18,6 +18,11 @@ assert.match(
 );
 assert.match(
   source,
+  /disabledModeAvailable: true/,
+  'scheduler must expose a disabled mode',
+);
+assert.match(
+  source,
   /shellExecution: false/,
   'scheduler must declare shell execution disabled',
 );
@@ -76,12 +81,19 @@ try {
     `dry-run failed\nstdout:\n${dryRun.stdout}\nstderr:\n${dryRun.stderr}`,
   );
 
-  const dryJsonPath = path.join(reportDir, 'ops-routine-scheduler-2026-05-08.json');
+  const dryJsonPath = path.join(
+    reportDir,
+    'ops-routine-scheduler-2026-05-08.json',
+  );
   const dryMarkdownPath = path.join(
     reportDir,
     'ops-routine-scheduler-2026-05-08.md',
   );
-  assert.equal(existsSync(dryJsonPath), true, 'dry-run JSON report must be written');
+  assert.equal(
+    existsSync(dryJsonPath),
+    true,
+    'dry-run JSON report must be written',
+  );
   assert.equal(
     existsSync(dryMarkdownPath),
     true,
@@ -93,6 +105,8 @@ try {
   assert.equal(dryReport.status, 'PLANNED');
   assert.equal(dryReport.mode, 'dry-run');
   assert.equal(dryReport.nonDestructive, true);
+  assert.equal(dryReport.frequencies.daily, 'P1D');
+  assert.equal(dryReport.attempts.length, 4);
   assert.equal(dryReport.policy.shellExecution, false);
   assert.equal(dryReport.policy.backupRestoreExecuted, false);
   assert.deepEqual(
@@ -103,8 +117,51 @@ try {
     dryReport.routines.every((routine) => routine.status === 'PLANNED'),
     true,
   );
-  assert.match(dryMarkdown, /# Orchestration routines ops Sprint 25 - 2026-05-08/);
+  assert.match(
+    dryMarkdown,
+    /# Orchestration routines ops Sprint 25 - 2026-05-08/,
+  );
   assert.match(dryMarkdown, /- Non destructif: oui/);
+
+  const disabledDir = path.join(tempDir, 'disabled-reports');
+  const disabledRun = spawnSync(
+    process.execPath,
+    [
+      schedulerPath,
+      '--disabled',
+      '--routines',
+      'daily,slo',
+      '--report-dir',
+      disabledDir,
+      '--date',
+      '2026-05-08',
+      '--from',
+      '2026-05-07T00:00:00.000Z',
+      '--to',
+      '2026-05-08T00:00:00.000Z',
+      '--tenant',
+      'OPS-SMOKE',
+    ],
+    { cwd: path.dirname(scriptDir), encoding: 'utf8' },
+  );
+
+  assert.equal(
+    disabledRun.status,
+    0,
+    `disabled run failed\nstdout:\n${disabledRun.stdout}\nstderr:\n${disabledRun.stderr}`,
+  );
+  const disabledReport = JSON.parse(
+    await readFile(
+      path.join(disabledDir, 'ops-routine-scheduler-2026-05-08.json'),
+      'utf8',
+    ),
+  );
+  assert.equal(disabledReport.status, 'DISABLED');
+  assert.equal(disabledReport.mode, 'disabled');
+  assert.equal(
+    disabledReport.routines.every((routine) => routine.status === 'DISABLED'),
+    true,
+  );
 
   const mockDir = path.join(tempDir, 'mock-reports');
   const mockJournal = path.join(tempDir, 'mock-journal.jsonl');
@@ -138,7 +195,10 @@ try {
   );
 
   const mockReport = JSON.parse(
-    await readFile(path.join(mockDir, 'ops-routine-scheduler-2026-05-08.json'), 'utf8'),
+    await readFile(
+      path.join(mockDir, 'ops-routine-scheduler-2026-05-08.json'),
+      'utf8',
+    ),
   );
   assert.equal(mockReport.status, 'PASSED');
   assert.equal(mockReport.mode, 'mock');
@@ -154,6 +214,7 @@ try {
   const journalEntry = JSON.parse(journalLines[0]);
   assert.equal(journalEntry.status, 'PASSED');
   assert.equal(journalEntry.tenantId, 'OPS-SMOKE');
+  assert.equal(journalEntry.attemptCount, 3);
 
   console.log('ops-routine-scheduler smoke passed');
 } finally {

@@ -17,6 +17,7 @@ import {
   OperationsJournalEntryStatus,
   OperationsJournalEntryType,
 } from './entities/operations-journal-entry.entity';
+import { OpsOnCallConfigService } from './ops-on-call-config.service';
 import { OpsNotificationService } from './ops-notification.service';
 
 jest.mock('axios', () => ({
@@ -26,6 +27,9 @@ jest.mock('axios', () => ({
 type RepositoryMock = {
   create: jest.Mock;
   save: jest.Mock;
+};
+type OnCallConfigServiceMock = {
+  resolveRecipients: jest.Mock;
 };
 
 const createRepositoryMock = (): RepositoryMock => ({
@@ -40,16 +44,21 @@ const createConfigService = (values: Record<string, unknown> = {}) => ({
     key in values ? values[key] : defaultValue,
   ),
 });
+const createOnCallConfigService = (): OnCallConfigServiceMock => ({
+  resolveRecipients: jest.fn().mockResolvedValue([]),
+});
 
 describe('OpsNotificationService', () => {
   let service: OpsNotificationService;
   let journalRepository: RepositoryMock;
   let configService: ReturnType<typeof createConfigService>;
+  let onCallConfigService: OnCallConfigServiceMock;
 
   beforeEach(async () => {
     jest.clearAllMocks();
     journalRepository = createRepositoryMock();
     configService = createConfigService();
+    onCallConfigService = createOnCallConfigService();
 
     const moduleRef = await Test.createTestingModule({
       providers: [
@@ -59,6 +68,7 @@ describe('OpsNotificationService', () => {
           useValue: journalRepository,
         },
         { provide: ConfigService, useValue: configService },
+        { provide: OpsOnCallConfigService, useValue: onCallConfigService },
       ],
     }).compile();
 
@@ -128,6 +138,7 @@ describe('OpsNotificationService', () => {
           useValue: journalRepository,
         },
         { provide: ConfigService, useValue: configService },
+        { provide: OpsOnCallConfigService, useValue: onCallConfigService },
       ],
     }).compile();
     service = moduleRef.get(OpsNotificationService);
@@ -175,6 +186,58 @@ describe('OpsNotificationService', () => {
     );
   });
 
+  it('resolves active on-call config recipients before env fallbacks', async () => {
+    (axios.post as jest.Mock).mockResolvedValue({ status: 200 });
+    onCallConfigService.resolveRecipients.mockResolvedValue([
+      'l1@tenant-a.test',
+      'shared@tenant-a.test',
+    ]);
+    configService = createConfigService({
+      OPS_NOTIFICATION_HIGH_CHANNELS: 'webhook',
+      OPS_NOTIFICATION_HIGH_RECIPIENT_ROLES: 'OPS,ON_CALL',
+      OPS_NOTIFICATION_RECIPIENTS_OPS: 'shared@tenant-a.test',
+      OPS_NOTIFICATION_WEBHOOK_URL: 'https://ops.example.test/hook',
+    });
+
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        OpsNotificationService,
+        {
+          provide: getRepositoryToken(OperationsJournalEntry),
+          useValue: journalRepository,
+        },
+        { provide: ConfigService, useValue: configService },
+        { provide: OpsOnCallConfigService, useValue: onCallConfigService },
+      ],
+    }).compile();
+    service = moduleRef.get(OpsNotificationService);
+
+    await service.notify({
+      tenant: 'tenant-a',
+      severity: OperationIncidentSeverity.HIGH,
+      eventType: OpsNotificationEventType.INCIDENT,
+      title: 'Incident planning',
+      message: 'Publication degradee',
+      recipients: ['incident-owner@tenant-a.test'],
+    });
+
+    expect(onCallConfigService.resolveRecipients).toHaveBeenCalledWith(
+      'tenant-a',
+      ['OPS', 'ON_CALL'],
+    );
+    expect(axios.post).toHaveBeenCalledWith(
+      'https://ops.example.test/hook',
+      expect.objectContaining({
+        recipients: [
+          'incident-owner@tenant-a.test',
+          'l1@tenant-a.test',
+          'shared@tenant-a.test',
+        ],
+      }),
+      expect.any(Object),
+    );
+  });
+
   it('uses configured webhook channels without exposing transport secrets', async () => {
     (axios.post as jest.Mock).mockResolvedValue({ status: 200 });
     configService = createConfigService({
@@ -192,6 +255,7 @@ describe('OpsNotificationService', () => {
           useValue: journalRepository,
         },
         { provide: ConfigService, useValue: configService },
+        { provide: OpsOnCallConfigService, useValue: onCallConfigService },
       ],
     }).compile();
     service = moduleRef.get(OpsNotificationService);
@@ -248,6 +312,7 @@ describe('OpsNotificationService', () => {
           useValue: journalRepository,
         },
         { provide: ConfigService, useValue: configService },
+        { provide: OpsOnCallConfigService, useValue: onCallConfigService },
       ],
     }).compile();
     service = moduleRef.get(OpsNotificationService);
@@ -294,6 +359,7 @@ describe('OpsNotificationService', () => {
           useValue: journalRepository,
         },
         { provide: ConfigService, useValue: configService },
+        { provide: OpsOnCallConfigService, useValue: onCallConfigService },
       ],
     }).compile();
     service = moduleRef.get(OpsNotificationService);

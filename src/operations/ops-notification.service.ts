@@ -22,6 +22,7 @@ import {
   OperationsJournalEntryStatus,
   OperationsJournalEntryType,
 } from './entities/operations-journal-entry.entity';
+import { OpsOnCallConfigService } from './ops-on-call-config.service';
 
 const SECRET_KEY_PATTERN =
   /(token|secret|password|authorization|apikey|api_key|webhook|url)/i;
@@ -84,6 +85,7 @@ export class OpsNotificationService {
     @InjectRepository(OperationsJournalEntry)
     private readonly journalRepository: Repository<OperationsJournalEntry>,
     private readonly configService: ConfigService,
+    private readonly onCallConfigService: OpsOnCallConfigService,
   ) {}
 
   async notify(
@@ -95,7 +97,7 @@ export class OpsNotificationService {
     };
     const policy = this.resolvePolicy(normalizedPayload);
     const channels = this.resolveChannels(normalizedPayload.channels, policy);
-    normalizedPayload.recipients = this.resolveRecipients(
+    normalizedPayload.recipients = await this.resolveRecipients(
       normalizedPayload,
       policy,
     );
@@ -274,22 +276,30 @@ export class OpsNotificationService {
     return enabled.length ? enabled : [OpsNotificationChannel.DRY_RUN];
   }
 
-  private resolveRecipients(
+  private async resolveRecipients(
     payload: OpsNotificationPayloadDto,
     policy: OpsNotificationResolvedPolicy,
   ) {
+    const policyRoles = [
+      ...policy.recipientRoles,
+      ...(payload.recipientRoles ?? []),
+    ];
+    const configuredRecipients =
+      await this.onCallConfigService.resolveRecipients(
+        payload.tenant,
+        policyRoles,
+      );
+
     return Array.from(
       new Set([
         ...(payload.recipients ?? []),
-        ...this.resolveRecipientsByRole(payload.tenant, [
-          ...policy.recipientRoles,
-          ...(payload.recipientRoles ?? []),
-        ]),
+        ...configuredRecipients,
+        ...this.resolveEnvRecipientsByRole(payload.tenant, policyRoles),
       ]),
     );
   }
 
-  private resolveRecipientsByRole(tenant: string, roles: string[]) {
+  private resolveEnvRecipientsByRole(tenant: string, roles: string[]) {
     const tenantKey = this.toEnvKey(tenant);
     return roles.flatMap((role) => {
       const roleKey = this.toEnvKey(role);

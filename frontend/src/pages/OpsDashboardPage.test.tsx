@@ -14,6 +14,7 @@ vi.mock('../api/ops.api', async () => {
     ...actual,
     opsApi: {
       summary: vi.fn(),
+      getRunbook: vi.fn(),
       resolveAlert: vi.fn(),
       rerunShiftCheck: vi.fn(),
       declareIncident: vi.fn(),
@@ -205,6 +206,68 @@ const buildSummary = (
     escalatedIncidents: 0,
     lastActivityAt: '2026-05-05T08:00:00.000Z',
   },
+  actionCenter: {
+    available: true,
+    status: 'CRITICAL',
+    generatedAt: '2026-05-05T08:01:00.000Z',
+    total: 1,
+    items: [
+      {
+        id: 'operational-alert-12',
+        type: 'OPERATIONAL_ALERT',
+        priority: 'CRITICAL',
+        status: 'OPEN',
+        title: 'SLO API critique',
+        reason: 'P95 API au-dessus de la cible.',
+        requiredEvidence: ['Capture monitoring retour nominal'],
+        suggestedActions: ['resolve-alert'],
+        sourceReference: {
+          entity: 'OperationalAlert',
+          id: 12,
+          tenantId: 'tenant-a',
+          reference: 'slo:api:p95',
+        },
+        timestamps: {
+          createdAt: '2026-05-05T07:58:00.000Z',
+          updatedAt: '2026-05-05T08:01:00.000Z',
+          occurredAt: '2026-05-05T08:01:00.000Z',
+        },
+      },
+    ],
+  },
+  routines: {
+    available: false,
+    status: 'UNKNOWN',
+    title: 'Routines ops',
+    unavailableReason: 'Scripts disponibles côté exploitation.',
+    items: [
+      {
+        id: 'ops-routines',
+        label: 'Scheduler routines',
+        cadence: 'Quotidien',
+        command: 'npm run ops:routines -- --dry-run',
+        reportPattern: 'prod-reports/ops-routine-scheduler-YYYY-MM-DD.{md,json}',
+      },
+    ],
+  },
+  directionReports: {
+    available: true,
+    status: 'OK',
+    title: 'Rapports direction',
+    command: 'node scripts/management-business-report.mjs',
+    reportPattern:
+      'business-reports/management-business-report-YYYY-MM-DD.{md,json}',
+    reports: [
+      {
+        id: 77,
+        timestamp: '2026-05-05T08:04:00.000Z',
+        actorId: 42,
+        entityId: '2026-05',
+        blocked: false,
+        affected: 20,
+      },
+    ],
+  },
   gates: [
     { key: 'FREEZE', status: 'PASSED', source: 'manual' },
     { key: 'SMOKE', status: 'FAILED', source: 'ci' },
@@ -219,6 +282,7 @@ const buildSummary = (
 });
 
 const mockSummary = vi.mocked(opsApi.summary);
+const mockGetRunbook = vi.mocked(opsApi.getRunbook);
 const mockResolveAlert = vi.mocked(opsApi.resolveAlert);
 const mockRerunShiftCheck = vi.mocked(opsApi.rerunShiftCheck);
 const mockDeclareIncident = vi.mocked(opsApi.declareIncident);
@@ -238,6 +302,12 @@ describe('OpsDashboardPage', () => {
     expect(screen.getAllByText('Alertes ouvertes')).not.toHaveLength(0);
     expect(screen.getByText('Repos insuffisant sur le shift')).toBeInTheDocument();
     expect(screen.getByText('Notifications et escalade')).toBeInTheDocument();
+    expect(screen.getByText('Action-center')).toBeInTheDocument();
+    expect(screen.getByText('SLO API critique')).toBeInTheDocument();
+    expect(screen.getByText('Runbook ouvert')).toBeInTheDocument();
+    expect(screen.getByText('Scheduler routines')).toBeInTheDocument();
+    expect(screen.getByText('Rapports direction')).toBeInTheDocument();
+    expect(screen.getByText('Rapport #77')).toBeInTheDocument();
     expect(screen.getByText('Gate ou signoff bloquant')).toBeInTheDocument();
     expect(screen.getByText('SLA publication')).toBeInTheDocument();
     expect(screen.getAllByText('Backups')).not.toHaveLength(0);
@@ -288,6 +358,77 @@ describe('OpsDashboardPage', () => {
         impactedService: 'agent-alerts',
       }),
       { tenantId: 'tenant-a' },
+    );
+  });
+
+  it('ouvre un runbook depuis l’action-center et résout une alerte supportée', async () => {
+    const user = userEvent.setup();
+    mockSummary.mockResolvedValue(buildSummary());
+    mockGetRunbook.mockResolvedValue({
+      id: 'alert-12-runbook',
+      generatedAt: '2026-05-05T08:07:00.000Z',
+      reference: {
+        sourceType: 'ALERT',
+        id: 12,
+        tenantId: 'tenant-a',
+        title: 'SLO API critique',
+        status: 'OPEN',
+        severity: 'CRITICAL',
+        occurredAt: '2026-05-05T08:01:00.000Z',
+      },
+      why: 'SLO critique',
+      next: {
+        why: 'Preuve requise',
+        whatToDoNext: 'Vérifier le retour nominal puis résoudre.',
+        priority: 'CRITICAL',
+        recommendedActionId: 'resolve-alert',
+        waitingOn: ['evidence'],
+      },
+      steps: [
+        {
+          order: 1,
+          title: 'Vérifier monitoring',
+          why: 'Confirmer le signal',
+          instruction: 'Ouvrir le graphe P95 et capturer la valeur.',
+          requiredRole: 'Ops',
+          requiredPermission: 'operations:read',
+        },
+      ],
+      checks: [],
+      actions: [
+        {
+          id: 'resolve-alert',
+          label: 'Résoudre alerte',
+          method: 'PATCH',
+          endpoint: '/ops/alerts/12/resolve',
+          requiredPermission: 'operations:write',
+          enabled: true,
+          why: 'Après retour nominal.',
+        },
+      ],
+      expectedEvidence: [],
+    });
+    mockResolveAlert.mockResolvedValue({});
+
+    renderWithQueryClient(<OpsDashboardPage />);
+
+    await screen.findByText('SLO API critique');
+
+    await user.click(screen.getByRole('button', { name: /ouvrir runbook/i }));
+    expect(mockGetRunbook).toHaveBeenCalledWith(
+      expect.objectContaining({ entity: 'OperationalAlert', id: 12 }),
+      { tenantId: 'tenant-a' },
+    );
+    expect(
+      await screen.findByText(/vérifier monitoring/i),
+    ).toBeInTheDocument();
+
+    await user.click(
+      screen.getByRole('button', { name: /résoudre si supporté/i }),
+    );
+    expect(mockResolveAlert).toHaveBeenCalledWith(
+      { id: 12, sourceKind: 'OPERATIONAL_ALERT' },
+      expect.stringContaining('action-center ops'),
     );
   });
 

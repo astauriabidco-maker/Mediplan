@@ -27,12 +27,20 @@ import {
   RunOperationalEscalationDto,
 } from './dto/operation-incident.dto';
 import {
+  OperationRoutineRunQueryDto,
+  RecordOperationRoutineRunDto,
+} from './dto/operation-routine-run.dto';
+import {
   OperationIncident,
   OperationIncidentEvidence,
   OperationIncidentSeverity,
   OperationIncidentStatus,
   OperationIncidentTimelineEntry,
 } from './entities/operation-incident.entity';
+import {
+  OperationRoutineRun,
+  OperationRoutineRunStatus,
+} from './entities/operation-routine-run.entity';
 import {
   OperationalAlertFiltersDto,
   RaiseOperationalAlertDto,
@@ -70,6 +78,11 @@ import {
   OpsNotificationEventType,
   OpsNotificationStatus,
 } from './dto/ops-notification.dto';
+import {
+  OpsObservabilityMetricsResponse,
+  OpsObservabilityQueryDto,
+  OpsSeverityMetrics,
+} from './dto/ops-observability.dto';
 import {
   OpsActionCenterItem,
   OpsActionCenterItemType,
@@ -123,6 +136,11 @@ interface RunbookBuildContext {
   hasEvidence: boolean;
   ownerId: number | null;
   metadata: Record<string, unknown> | null;
+}
+
+interface ObservabilityPeriod {
+  from: Date | null;
+  to: Date | null;
 }
 
 export interface OperationalEscalationResult {
@@ -189,6 +207,8 @@ export class OperationsService {
     private readonly incidentRepository: Repository<OperationIncident>,
     @InjectRepository(OperationalAlert)
     private readonly alertRepository: Repository<OperationalAlert>,
+    @InjectRepository(OperationRoutineRun)
+    private readonly routineRunRepository: Repository<OperationRoutineRun>,
     private readonly auditService: AuditService,
     private readonly opsNotificationService: OpsNotificationService,
     private readonly preActionValidationService: OpsPreActionValidationService,
@@ -260,6 +280,177 @@ export class OperationsService {
       },
       items,
     };
+  }
+
+  listRoutineRuns(tenantId: string, filters: OperationRoutineRunQueryDto = {}) {
+    const where: FindOptionsWhere<OperationRoutineRun> = { tenantId };
+
+    if (filters.routine) where.routine = filters.routine;
+    if (filters.status) where.status = filters.status;
+
+    if (filters.from && filters.to) {
+      where.startedAt = Between(new Date(filters.from), new Date(filters.to));
+    } else if (filters.from) {
+      where.startedAt = MoreThanOrEqual(new Date(filters.from));
+    } else if (filters.to) {
+      where.startedAt = LessThanOrEqual(new Date(filters.to));
+    }
+
+    return this.routineRunRepository.find({
+      where,
+      order: { startedAt: 'DESC', id: 'DESC' },
+      take: Math.min(filters.limit || 100, 500),
+    });
+  }
+
+  async getRoutineRun(tenantId: string, id: number) {
+    const run = await this.routineRunRepository.findOne({
+      where: { tenantId, id },
+    });
+
+    if (!run) {
+      throw new NotFoundException(`Operation routine run ${id} not found`);
+    }
+
+    return run;
+  }
+
+  async getObservabilityMetrics(
+    tenantId: string,
+    filters: OpsObservabilityQueryDto = {},
+  ): Promise<OpsObservabilityMetricsResponse> {
+    const period = this.resolveObservabilityPeriod(filters);
+    const [alerts, incidents, journalEntries, routineRuns, actionCenter] =
+      await Promise.all([
+        this.alertRepository.find({
+          where: { tenantId },
+          order: { openedAt: 'DESC', id: 'DESC' },
+        }),
+        this.incidentRepository.find({
+          where: { tenantId },
+          order: { declaredAt: 'DESC', id: 'DESC' },
+        }),
+        this.journalRepository.find({
+          where: { tenantId, type: OperationsJournalEntryType.NOTIFICATION },
+          order: { occurredAt: 'DESC', id: 'DESC' },
+        }),
+        this.routineRunRepository.find({
+          where: { tenantId },
+          order: { startedAt: 'DESC', id: 'DESC' },
+        }),
+        this.getActionCenter(tenantId, { limit: 500 }),
+      ]);
+
+    const openAlerts = alerts.filter(
+      (alert) =>
+        alert.status === OperationalAlertStatus.OPEN &&
+        this.isActiveDuringPeriod(alert.openedAt, alert.resolvedAt, period),
+    );
+    const openBySeverity = this.emptySeverityMetrics();
+    for (const alert of openAlerts) {
+      openBySeverity[alert.severity] += 1;
+    }
+
+    const automaticIncidents = incidents.filter((incident) =>
+      this.isAutomaticIncident(incident),
+    );
+    const resolvedOrClosedIncidents = incidents.filter((incident) => {
+      const endedAt = incident.resolvedAt ?? incident.closedAt;
+      return Boolean(endedAt && this.isWithinPeriod(endedAt, period));
+    });
+    const mttrDurations = resolvedOrClosedIncidents
+      .map((incident) => {
+        const endedAt = incident.resolvedAt ?? incident.closedAt;
+        if (!incident.declaredAt || !endedAt) return null;
+        const minutes =
+          (endedAt.getTime() - incident.declaredAt.getTime()) / 60000;
+        return minutes >= 0 ? minutes : null;
+      })
+      .filter((duration): duration is number => duration !== null);
+    const notificationEntries = journalEntries.filter((entry) =>
+      this.isWithinPeriod(entry.occurredAt, period),
+    );
+
+    return {
+      tenantId,
+      generatedAt: new Date().toISOString(),
+      period: {
+        from: period.from?.toISOString() ?? null,
+        to: period.to?.toISOString() ?? null,
+      },
+      alerts: {
+        openBySeverity,
+        totalOpen: openAlerts.length,
+      },
+      incidents: {
+        automaticOpened: automaticIncidents.filter((incident) =>
+          this.isWithinPeriod(incident.declaredAt, period),
+        ).length,
+        automaticClosed: automaticIncidents.filter(
+          (incident) =>
+            incident.status === OperationIncidentStatus.CLOSED &&
+            this.isWithinPeriod(incident.closedAt, period),
+        ).length,
+        mttrApproxMinutes: mttrDurations.length
+          ? Math.round(
+              mttrDurations.reduce((total, duration) => total + duration, 0) /
+                mttrDurations.length,
+            )
+          : null,
+        resolvedOrClosed: resolvedOrClosedIncidents.length,
+      },
+      routines: {
+        failed: routineRuns.filter(
+          (run) =>
+            run.status === OperationRoutineRunStatus.FAILED &&
+            this.isWithinPeriod(run.startedAt, period),
+        ).length,
+      },
+      notifications: {
+        sent: notificationEntries.filter((entry) =>
+          this.hasNotificationStatus(entry, OpsNotificationStatus.SENT),
+        ).length,
+        failed: notificationEntries.filter((entry) =>
+          this.hasNotificationStatus(entry, OpsNotificationStatus.FAILED),
+        ).length,
+        throttled: notificationEntries.filter((entry) =>
+          this.hasNotificationStatus(entry, OpsNotificationStatus.THROTTLED),
+        ).length,
+        dryRun: notificationEntries.filter((entry) =>
+          this.hasNotificationStatus(entry, OpsNotificationStatus.DRY_RUN),
+        ).length,
+        partial: notificationEntries.filter((entry) =>
+          this.hasNotificationStatus(entry, OpsNotificationStatus.PARTIAL),
+        ).length,
+      },
+      actionCenter: {
+        total: actionCenter.total,
+      },
+    };
+  }
+
+  recordRoutineRun(tenantId: string, dto: RecordOperationRoutineRunDto) {
+    const startedAt = new Date(dto.startedAt);
+    const finishedAt = dto.finishedAt ? new Date(dto.finishedAt) : null;
+    const durationMs =
+      dto.durationMs ??
+      (finishedAt
+        ? Math.max(0, finishedAt.getTime() - startedAt.getTime())
+        : null);
+
+    const run = this.routineRunRepository.create({
+      tenantId,
+      routine: dto.routine,
+      status: dto.status,
+      startedAt,
+      finishedAt,
+      durationMs,
+      error: dto.error ?? null,
+      artifacts: dto.artifacts ?? null,
+      metadata: dto.metadata ?? null,
+    });
+
+    return this.routineRunRepository.save(run);
   }
 
   findJournalEntries(
@@ -2971,6 +3162,72 @@ export class OperationsService {
     });
 
     await this.journalRepository.save(entry);
+  }
+
+  private resolveObservabilityPeriod(
+    filters: OpsObservabilityQueryDto,
+  ): ObservabilityPeriod {
+    const from = filters.from ? new Date(filters.from) : null;
+    const to = filters.to ? new Date(filters.to) : null;
+
+    if (
+      (from && Number.isNaN(from.getTime())) ||
+      (to && Number.isNaN(to.getTime()))
+    ) {
+      throw new BadRequestException('Invalid observability period');
+    }
+    if (from && to && from.getTime() > to.getTime()) {
+      throw new BadRequestException(
+        'Observability period from must be before to',
+      );
+    }
+
+    return { from, to };
+  }
+
+  private emptySeverityMetrics(): OpsSeverityMetrics {
+    return {
+      LOW: 0,
+      MEDIUM: 0,
+      HIGH: 0,
+      CRITICAL: 0,
+    };
+  }
+
+  private isWithinPeriod(
+    value: Date | string | null | undefined,
+    period: ObservabilityPeriod,
+  ) {
+    if (!value) return false;
+    const date = value instanceof Date ? value : new Date(value);
+    const time = date.getTime();
+    if (Number.isNaN(time)) return false;
+    if (period.from && time < period.from.getTime()) return false;
+    if (period.to && time > period.to.getTime()) return false;
+    return true;
+  }
+
+  private isActiveDuringPeriod(
+    openedAt: Date,
+    resolvedAt: Date | null,
+    period: ObservabilityPeriod,
+  ) {
+    if (period.to && openedAt.getTime() > period.to.getTime()) return false;
+    if (
+      period.from &&
+      resolvedAt &&
+      resolvedAt.getTime() < period.from.getTime()
+    ) {
+      return false;
+    }
+    return true;
+  }
+
+  private hasNotificationStatus(
+    entry: OperationsJournalEntry,
+    status: OpsNotificationStatus,
+  ) {
+    return entry.metadata?.notificationStatus === status;
   }
 
   private toJournalSeverity(severity: OperationalAlertSeverity) {

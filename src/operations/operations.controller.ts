@@ -24,6 +24,12 @@ import {
   ResolveOperationIncidentDto,
   RunOperationalEscalationDto,
 } from './dto/operation-incident.dto';
+import { OperationRoutineRunQueryDto } from './dto/operation-routine-run.dto';
+import {
+  CreateOpsOnCallConfigDto,
+  OpsOnCallConfigQueryDto,
+  UpdateOpsOnCallConfigDto,
+} from './dto/ops-on-call-config.dto';
 import {
   OperationalAlertFiltersDto,
   OperationalAlertParamDto,
@@ -35,10 +41,14 @@ import {
   UpdateOperationsJournalEntryDto,
 } from './dto/operations-journal.dto';
 import { OpsActionCenterQueryDto } from './dto/ops-action-center.dto';
+import { RunOpsRoutineSchedulerDto } from './dto/ops-routine-scheduler.dto';
 import {
   OpsPreAction,
   OpsPreActionValidationService,
 } from './ops-pre-action-validation.service';
+import { OpsOnCallConfigService } from './ops-on-call-config.service';
+import { OpsObservabilityQueryDto } from './dto/ops-observability.dto';
+import { OpsRoutineSchedulerService } from './ops-routine-scheduler.service';
 import { OperationsService } from './operations.service';
 
 @Controller('ops')
@@ -47,7 +57,52 @@ export class OperationsController {
   constructor(
     private readonly operationsService: OperationsService,
     private readonly preActionValidationService: OpsPreActionValidationService,
+    private readonly onCallConfigService: OpsOnCallConfigService,
+    private readonly routineSchedulerService: OpsRoutineSchedulerService,
   ) {}
+
+  @Get('on-call-configs')
+  @Permissions('operations:read', 'audit:read')
+  findOnCallConfigs(
+    @Request() req: AuthenticatedRequest,
+    @Query() query: OpsOnCallConfigQueryDto,
+    @Query('tenantId') queryTenantId?: string,
+  ) {
+    return this.onCallConfigService.findTenantConfigs(
+      resolveTenantId(req, queryTenantId),
+      query,
+    );
+  }
+
+  @Post('on-call-configs')
+  @Permissions('operations:write')
+  createOnCallConfig(
+    @Request() req: AuthenticatedRequest,
+    @Body() dto: CreateOpsOnCallConfigDto,
+    @Query('tenantId') queryTenantId?: string,
+  ) {
+    return this.onCallConfigService.createTenantConfig(
+      resolveTenantId(req, queryTenantId),
+      dto,
+      req.user.id,
+    );
+  }
+
+  @Patch('on-call-configs/:id')
+  @Permissions('operations:write')
+  updateOnCallConfig(
+    @Request() req: AuthenticatedRequest,
+    @Param('id') id: number,
+    @Body() dto: UpdateOpsOnCallConfigDto,
+    @Query('tenantId') queryTenantId?: string,
+  ) {
+    return this.onCallConfigService.updateTenantConfig(
+      resolveTenantId(req, queryTenantId),
+      Number(id),
+      dto,
+      req.user.id,
+    );
+  }
 
   @Get('action-center')
   @Permissions('operations:read', 'audit:read')
@@ -59,6 +114,45 @@ export class OperationsController {
     return this.operationsService.getActionCenter(
       resolveTenantId(req, queryTenantId),
       filters,
+    );
+  }
+
+  @Get('observability')
+  @Permissions('operations:read', 'audit:read')
+  getObservabilityMetrics(
+    @Request() req: AuthenticatedRequest,
+    @Query() filters: OpsObservabilityQueryDto,
+    @Query('tenantId') queryTenantId?: string,
+  ) {
+    return this.operationsService.getObservabilityMetrics(
+      resolveTenantId(req, queryTenantId),
+      filters,
+    );
+  }
+
+  @Get('routine-runs')
+  @Permissions('operations:read', 'audit:read')
+  listRoutineRuns(
+    @Request() req: AuthenticatedRequest,
+    @Query() filters: OperationRoutineRunQueryDto,
+    @Query('tenantId') queryTenantId?: string,
+  ) {
+    return this.operationsService.listRoutineRuns(
+      resolveTenantId(req, queryTenantId),
+      filters,
+    );
+  }
+
+  @Get('routine-runs/:id')
+  @Permissions('operations:read', 'audit:read')
+  getRoutineRun(
+    @Request() req: AuthenticatedRequest,
+    @Param('id') id: number,
+    @Query('tenantId') queryTenantId?: string,
+  ) {
+    return this.operationsService.getRoutineRun(
+      resolveTenantId(req, queryTenantId),
+      Number(id),
     );
   }
 
@@ -339,6 +433,18 @@ export class OperationsController {
       dto,
       req.user.id,
     );
+  }
+
+  @Post('routines/run')
+  @Permissions('operations:write')
+  runOpsRoutines(
+    @Request() req: AuthenticatedRequest,
+    @Body() dto: RunOpsRoutineSchedulerDto,
+    @Query('tenantId') queryTenantId?: string,
+  ) {
+    const tenantId = resolveTenantId(req, queryTenantId);
+    this.validatePreAction('RUN_OPS_ROUTINES', req, tenantId);
+    return this.routineSchedulerService.runManual(tenantId, dto, req.user.id);
   }
 
   private validatePreAction(

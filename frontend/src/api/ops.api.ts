@@ -60,6 +60,9 @@ export interface OpsDashboardSummary {
   backups: OpsBackupPanel;
   incidents: OpsIncident[];
   notifications: OpsNotificationState;
+  actionCenter: OpsActionCenterPanel;
+  routines: OpsRoutineSurface;
+  directionReports: OpsDirectionReportSurface;
   gates: ProductionGateStatus[];
   gatesSummary: {
     passed: number;
@@ -153,6 +156,165 @@ export interface OpsNotificationState {
   pendingAlerts: number;
   escalatedIncidents: number;
   lastActivityAt?: string;
+}
+
+export type OpsActionCenterItemType =
+  | 'OPERATIONAL_ALERT'
+  | 'AUTO_INCIDENT'
+  | 'INCIDENT_ESCALATION'
+  | 'MISSING_EVIDENCE'
+  | 'DECISION_REQUIRED'
+  | 'JOURNAL_ACTION';
+
+export type OpsActionCenterStatus =
+  | 'OPEN'
+  | 'IN_PROGRESS'
+  | 'ESCALATED'
+  | 'WAITING_EVIDENCE'
+  | 'WAITING_DECISION';
+
+export type OpsActionCenterPriority = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+
+export interface OpsActionCenterSourceReference {
+  entity: 'OperationalAlert' | 'OperationIncident' | 'OperationsJournalEntry';
+  id: number;
+  tenantId: string;
+  reference: string;
+}
+
+export interface OpsActionCenterItem {
+  id: string;
+  type: OpsActionCenterItemType;
+  priority: OpsActionCenterPriority;
+  status: OpsActionCenterStatus;
+  title: string;
+  reason: string;
+  requiredEvidence: string[];
+  suggestedActions: string[];
+  sourceReference: OpsActionCenterSourceReference;
+  timestamps: {
+    createdAt: string | null;
+    updatedAt: string | null;
+    occurredAt: string;
+    lastSeenAt?: string | null;
+    escalatedAt?: string | null;
+    resolvedAt?: string | null;
+  };
+}
+
+export interface OpsActionCenterResponse {
+  tenantId: string;
+  generatedAt: string;
+  total: number;
+  filters: {
+    status: OpsActionCenterStatus | null;
+    type: OpsActionCenterItemType | null;
+    limit: number;
+  };
+  items: OpsActionCenterItem[];
+}
+
+export interface OpsActionCenterPanel {
+  available: boolean;
+  status: OpsSignalStatus;
+  generatedAt?: string;
+  total: number;
+  items: OpsActionCenterItem[];
+  unavailableReason?: string;
+}
+
+export interface OpsRunbookDto {
+  id: string;
+  generatedAt: string;
+  reference: {
+    sourceType: 'ALERT' | 'INCIDENT' | 'JOURNAL';
+    id: number;
+    tenantId: string;
+    title: string;
+    status: string;
+    severity: string;
+    occurredAt: string;
+    source?: string;
+    sourceReference?: string;
+    relatedReference?: string | null;
+    impactedService?: string | null;
+  };
+  why: string;
+  next: {
+    why: string;
+    whatToDoNext: string;
+    priority: OpsActionCenterPriority;
+    recommendedActionId: string | null;
+    waitingOn: string[];
+  };
+  steps: Array<{
+    order: number;
+    title: string;
+    why: string;
+    instruction: string;
+    requiredRole: string;
+    requiredPermission: 'operations:read' | 'operations:write' | 'audit:read';
+  }>;
+  checks: Array<{
+    id: string;
+    label: string;
+    expected: string;
+    blocking: boolean;
+  }>;
+  actions: Array<{
+    id: string;
+    label: string;
+    method: 'GET' | 'POST' | 'PATCH';
+    endpoint: string;
+    requiredPermission: 'operations:read' | 'operations:write';
+    enabled: boolean;
+    why: string;
+  }>;
+  expectedEvidence: Array<{
+    label: string;
+    expected: string;
+    requiredFor: string[];
+  }>;
+}
+
+export interface OpsRoutineSurface {
+  available: boolean;
+  status: OpsSignalStatus;
+  title: string;
+  items: Array<{
+    id: string;
+    label: string;
+    cadence: string;
+    command: string;
+    reportPattern: string;
+  }>;
+  unavailableReason?: string;
+}
+
+export interface OpsDirectionReportSurface {
+  available: boolean;
+  status: OpsSignalStatus;
+  title: string;
+  reports: OpsComplianceReport[];
+  command: string;
+  reportPattern: string;
+  unavailableReason?: string;
+}
+
+export interface OpsComplianceReport {
+  id: number;
+  timestamp: string;
+  actorId: number;
+  entityId: string;
+  blocked: boolean;
+  affected: number;
+  report?: {
+    publishable: boolean;
+    validatedShifts: number;
+    publishedShifts: number;
+    violations: unknown[];
+    warnings: unknown[];
+  };
 }
 
 interface OpsRawAgentAlert {
@@ -592,6 +754,82 @@ const buildNotifications = ({
   };
 };
 
+const buildActionCenterPanel = (
+  actionCenter: OpsActionCenterResponse | null,
+): OpsActionCenterPanel => {
+  if (!actionCenter || !Array.isArray(actionCenter.items)) {
+    return {
+      available: false,
+      status: 'UNKNOWN',
+      total: 0,
+      items: [],
+      unavailableReason: 'Endpoint action-center non exposé ou indisponible.',
+    };
+  }
+
+  const hasCritical = actionCenter.items.some(
+    (item) => item.priority === 'CRITICAL',
+  );
+  const hasHigh = actionCenter.items.some((item) => item.priority === 'HIGH');
+
+  return {
+    available: true,
+    status: hasCritical ? 'CRITICAL' : hasHigh ? 'WARNING' : 'OK',
+    generatedAt: actionCenter.generatedAt,
+    total: actionCenter.total,
+    items: actionCenter.items,
+  };
+};
+
+const buildRoutineSurface = (): OpsRoutineSurface => ({
+  available: false,
+  status: 'UNKNOWN',
+  title: 'Routines ops',
+  unavailableReason:
+    'Aucun endpoint de lancement routine exposé; commandes scripts disponibles côté exploitation.',
+  items: [
+    {
+      id: 'ops-routines',
+      label: 'Scheduler routines',
+      cadence: 'Quotidien / hebdomadaire / escalade',
+      command: 'npm run ops:routines -- --dry-run',
+      reportPattern: 'prod-reports/ops-routine-scheduler-YYYY-MM-DD.{md,json}',
+    },
+    {
+      id: 'ops-daily',
+      label: 'Runbook quotidien',
+      cadence: 'Quotidien',
+      command: 'npm run ops:daily',
+      reportPattern: 'preprod-reports/ops-daily-YYYY-MM-DD.{md,json}',
+    },
+    {
+      id: 'ops-incident',
+      label: 'Runbook incident',
+      cadence: 'Sur incident',
+      command: 'npm run ops:incident -- --incident-id INC-YYYY-NNN',
+      reportPattern: 'preprod-reports/ops-incident-YYYY-MM-DD.{md,json}',
+    },
+  ],
+});
+
+const buildDirectionReportSurface = (
+  reports: OpsComplianceReport[] | null,
+): OpsDirectionReportSurface => ({
+  available: Array.isArray(reports),
+  status: !Array.isArray(reports)
+    ? 'UNKNOWN'
+    : reports.some((report) => report.blocked)
+      ? 'WARNING'
+      : 'OK',
+  title: 'Rapports direction',
+  reports: Array.isArray(reports) ? reports.slice(0, 5) : [],
+  command: 'node scripts/management-business-report.mjs',
+  reportPattern: 'business-reports/management-business-report-YYYY-MM-DD.{md,json}',
+  unavailableReason: Array.isArray(reports)
+    ? undefined
+    : 'Aucun endpoint de rapport direction dédié exposé; rapports conformité et script direction référencés.',
+});
+
 const buildSla = ({
   observability,
   readiness,
@@ -707,6 +945,8 @@ const buildSummary = ({
   alertFeed,
   operationalAlertFeed,
   incidentFeed,
+  actionCenter,
+  complianceReports,
 }: {
   apiHealth: ReadyHealth | null;
   observability: ProductionObservabilityHealth | null;
@@ -716,6 +956,8 @@ const buildSummary = ({
   alertFeed: OpsRawAgentAlert[] | null;
   operationalAlertFeed: OpsRawOperationalAlert[] | null;
   incidentFeed: OpsRawIncident[] | null;
+  actionCenter: OpsActionCenterResponse | null;
+  complianceReports: OpsComplianceReport[] | null;
 }): OpsDashboardSummary => {
   const generatedAt = nowIso();
   const gates = readiness ? [readiness.gates.freeze, ...readiness.gates.checks] : [];
@@ -842,6 +1084,9 @@ const buildSummary = ({
     },
     incidents,
     notifications,
+    actionCenter: buildActionCenterPanel(actionCenter),
+    routines: buildRoutineSurface(),
+    directionReports: buildDirectionReportSurface(complianceReports),
     gates,
     gatesSummary,
   };
@@ -860,6 +1105,8 @@ export const opsApi = {
       alertFeed,
       operationalAlertFeed,
       incidentFeed,
+      actionCenter,
+      complianceReports,
     ] =
       await Promise.allSettled([
         api
@@ -899,6 +1146,24 @@ export const opsApi = {
             },
           })
           .then((response) => response.data),
+        api
+          .get<OpsActionCenterResponse>('/api/ops/action-center', {
+            params: {
+              tenantId: params?.tenantId,
+              limit: 8,
+            },
+          })
+          .then((response) => response.data),
+        api
+          .get<OpsComplianceReport[]>('/api/planning/compliance/reports', {
+            params: {
+              tenantId: params?.tenantId,
+              from: params?.from,
+              to: params?.to,
+              limit: 5,
+            },
+          })
+          .then((response) => response.data),
       ]);
 
     return buildSummary({
@@ -910,7 +1175,35 @@ export const opsApi = {
       alertFeed: settledValue(alertFeed),
       operationalAlertFeed: settledValue(operationalAlertFeed),
       incidentFeed: settledValue(incidentFeed),
+      actionCenter: settledValue(actionCenter),
+      complianceReports: settledValue(complianceReports),
     });
+  },
+  actionCenter: async (
+    params?: Pick<OpsDashboardParams, 'tenantId'> & {
+      limit?: number;
+      status?: OpsActionCenterStatus;
+      type?: OpsActionCenterItemType;
+    },
+  ): Promise<OpsActionCenterResponse> => {
+    const response = await api.get('/api/ops/action-center', { params });
+    return response.data;
+  },
+  getRunbook: async (
+    reference: Pick<OpsActionCenterSourceReference, 'entity' | 'id'>,
+    params?: Pick<OpsDashboardParams, 'tenantId'>,
+  ): Promise<OpsRunbookDto> => {
+    const endpointByEntity: Record<OpsActionCenterSourceReference['entity'], string> = {
+      OperationalAlert: `/api/ops/alerts/${reference.id}/runbook`,
+      OperationIncident: `/api/ops/incidents/${reference.id}/runbook`,
+      OperationsJournalEntry: `/api/ops/journal/${reference.id}/runbook`,
+    };
+    const response = await api.get(endpointByEntity[reference.entity], {
+      params: {
+        tenantId: params?.tenantId,
+      },
+    });
+    return response.data;
   },
   resolveAlert: async (alert: Pick<OpsAlert, 'id' | 'sourceKind'>, reason: string) => {
     if (alert.sourceKind === 'OPERATIONAL_ALERT') {

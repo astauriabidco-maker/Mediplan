@@ -12,6 +12,10 @@ import {
   OperationIncidentStatus,
 } from './entities/operation-incident.entity';
 import {
+  OperationRoutineRun,
+  OperationRoutineRunStatus,
+} from './entities/operation-routine-run.entity';
+import {
   OperationalAlert,
   OperationalAlertSeverity,
   OperationalAlertStatus,
@@ -27,6 +31,7 @@ import {
   OpsActionCenterItemType,
   OpsActionCenterStatus,
 } from './dto/ops-action-center.dto';
+import { OpsNotificationStatus } from './dto/ops-notification.dto';
 import { OpsNotificationService } from './ops-notification.service';
 import { OpsPreActionValidationService } from './ops-pre-action-validation.service';
 import { OperationsService } from './operations.service';
@@ -44,14 +49,20 @@ const createRepositoryMock = (): RepositoryMock => ({
   create: jest.fn(
     (
       entity: Partial<
-        OperationIncident | OperationsJournalEntry | OperationalAlert
+        | OperationIncident
+        | OperationsJournalEntry
+        | OperationalAlert
+        | OperationRoutineRun
       >,
     ) => entity,
   ),
   save: jest.fn(
     (
       entity: Partial<
-        OperationIncident | OperationsJournalEntry | OperationalAlert
+        | OperationIncident
+        | OperationsJournalEntry
+        | OperationalAlert
+        | OperationRoutineRun
       >,
     ) =>
       Promise.resolve({
@@ -59,7 +70,11 @@ const createRepositoryMock = (): RepositoryMock => ({
         createdAt: entity.createdAt ?? new Date('2026-05-07T08:00:00.000Z'),
         updatedAt: entity.updatedAt ?? new Date('2026-05-07T08:00:00.000Z'),
         ...entity,
-      } as OperationIncident | OperationsJournalEntry | OperationalAlert),
+      } as
+        | OperationIncident
+        | OperationsJournalEntry
+        | OperationalAlert
+        | OperationRoutineRun),
   ),
 });
 
@@ -151,11 +166,37 @@ const createJournalEntry = (
     ...overrides,
   }) as OperationsJournalEntry;
 
+const createRoutineRun = (
+  overrides: Partial<OperationRoutineRun> = {},
+): OperationRoutineRun =>
+  ({
+    id: 9,
+    tenantId: 'tenant-a',
+    routine: 'ops:daily',
+    status: OperationRoutineRunStatus.PASSED,
+    startedAt: new Date('2026-05-07T06:00:00.000Z'),
+    finishedAt: new Date('2026-05-07T06:01:00.000Z'),
+    durationMs: 60000,
+    error: null,
+    artifacts: [
+      {
+        type: 'REPORT',
+        label: 'Daily report',
+        url: 'https://reports.test/ops-daily-check-2026-05-07.md',
+      },
+    ],
+    metadata: { decision: 'POST_PROD_READY' },
+    createdAt: new Date('2026-05-07T06:01:00.000Z'),
+    updatedAt: new Date('2026-05-07T06:01:00.000Z'),
+    ...overrides,
+  }) as OperationRoutineRun;
+
 describe('OperationsService', () => {
   let service: OperationsService;
   let incidentRepository: RepositoryMock;
   let alertRepository: RepositoryMock;
   let journalRepository: RepositoryMock;
+  let routineRunRepository: RepositoryMock;
   let auditService: { log: jest.Mock };
   let opsNotificationService: {
     notifyIncidentDeclared: jest.Mock;
@@ -168,12 +209,15 @@ describe('OperationsService', () => {
     incidentRepository = createRepositoryMock();
     alertRepository = createRepositoryMock();
     journalRepository = createRepositoryMock();
+    routineRunRepository = createRepositoryMock();
     incidentRepository.find.mockResolvedValue([]);
     incidentRepository.findOne.mockResolvedValue(null);
     alertRepository.find.mockResolvedValue([]);
     alertRepository.findOne.mockResolvedValue(null);
     journalRepository.find.mockResolvedValue([]);
     journalRepository.findOne.mockResolvedValue(null);
+    routineRunRepository.find.mockResolvedValue([]);
+    routineRunRepository.findOne.mockResolvedValue(null);
     auditService = { log: jest.fn().mockResolvedValue({ id: 99 }) };
     opsNotificationService = {
       notifyIncidentDeclared: jest.fn().mockResolvedValue(undefined),
@@ -197,6 +241,10 @@ describe('OperationsService', () => {
           provide: getRepositoryToken(OperationsJournalEntry),
           useValue: journalRepository,
         },
+        {
+          provide: getRepositoryToken(OperationRoutineRun),
+          useValue: routineRunRepository,
+        },
         { provide: AuditService, useValue: auditService },
         { provide: OpsNotificationService, useValue: opsNotificationService },
         {
@@ -207,6 +255,195 @@ describe('OperationsService', () => {
     }).compile();
 
     service = moduleRef.get(OperationsService);
+  });
+
+  it('records an operation routine run with computed duration and report artifacts', async () => {
+    const run = await service.recordRoutineRun('tenant-a', {
+      routine: 'ops:weekly-report',
+      status: OperationRoutineRunStatus.PASSED,
+      startedAt: '2026-05-07T06:00:00.000Z',
+      finishedAt: '2026-05-07T06:02:30.000Z',
+      artifacts: [
+        {
+          type: 'REPORT',
+          label: 'Weekly JSON',
+          url: 'https://reports.test/ops-weekly-report-2026-05-07.json',
+        },
+      ],
+      metadata: { decision: 'POST_PROD_WEEKLY_STABLE' },
+    });
+
+    expect(routineRunRepository.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tenantId: 'tenant-a',
+        routine: 'ops:weekly-report',
+        status: OperationRoutineRunStatus.PASSED,
+        durationMs: 150000,
+        error: null,
+        artifacts: [
+          expect.objectContaining({
+            url: 'https://reports.test/ops-weekly-report-2026-05-07.json',
+          }),
+        ],
+      }),
+    );
+    expect(run).toEqual(
+      expect.objectContaining({
+        tenantId: 'tenant-a',
+        routine: 'ops:weekly-report',
+        durationMs: 150000,
+      }),
+    );
+  });
+
+  it('lists operation routine runs by tenant and filters', async () => {
+    const filters = {
+      routine: 'ops:daily',
+      status: OperationRoutineRunStatus.FAILED,
+      from: '2026-05-01T00:00:00.000Z',
+      to: '2026-05-07T23:59:59.000Z',
+      limit: 20,
+    };
+
+    await service.listRoutineRuns('tenant-a', filters);
+
+    expect(routineRunRepository.find).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          tenantId: 'tenant-a',
+          routine: 'ops:daily',
+          status: OperationRoutineRunStatus.FAILED,
+        }),
+        order: { startedAt: 'DESC', id: 'DESC' },
+        take: 20,
+      }),
+    );
+  });
+
+  it('reads operation routine run detail within the resolved tenant', async () => {
+    const expected = createRoutineRun();
+    routineRunRepository.findOne.mockResolvedValue(expected);
+
+    await expect(service.getRoutineRun('tenant-a', 9)).resolves.toBe(expected);
+    expect(routineRunRepository.findOne).toHaveBeenCalledWith({
+      where: { tenantId: 'tenant-a', id: 9 },
+    });
+
+    routineRunRepository.findOne.mockResolvedValue(null);
+    await expect(service.getRoutineRun('tenant-a', 404)).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+  });
+
+  it('aggregates observability metrics by tenant and period', async () => {
+    alertRepository.find
+      .mockResolvedValueOnce([
+        createAlert({
+          id: 1,
+          severity: OperationalAlertSeverity.CRITICAL,
+          openedAt: new Date('2026-05-06T06:00:00.000Z'),
+        }),
+        createAlert({
+          id: 2,
+          severity: OperationalAlertSeverity.HIGH,
+          status: OperationalAlertStatus.RESOLVED,
+          openedAt: new Date('2026-05-06T08:00:00.000Z'),
+          resolvedAt: new Date('2026-05-06T09:00:00.000Z'),
+        }),
+      ])
+      .mockResolvedValueOnce([createAlert({ id: 3 })]);
+    incidentRepository.find
+      .mockResolvedValueOnce([
+        createIncident({
+          id: 21,
+          status: OperationIncidentStatus.CLOSED,
+          declaredAt: new Date('2026-05-06T07:00:00.000Z'),
+          resolvedAt: new Date('2026-05-06T08:00:00.000Z'),
+          closedAt: new Date('2026-05-06T08:30:00.000Z'),
+          metadata: {
+            source: 'operations:auto-incident',
+            auto: { sourceType: 'BACKUP', reference: 'backup:nightly' },
+          },
+        }),
+        createIncident({
+          id: 22,
+          status: OperationIncidentStatus.RESOLVED,
+          declaredAt: new Date('2026-05-05T06:00:00.000Z'),
+          resolvedAt: new Date('2026-05-06T06:30:00.000Z'),
+        }),
+      ])
+      .mockResolvedValueOnce([]);
+    journalRepository.find
+      .mockResolvedValueOnce([
+        createJournalEntry({
+          id: 31,
+          type: OperationsJournalEntryType.NOTIFICATION,
+          occurredAt: new Date('2026-05-06T09:00:00.000Z'),
+          metadata: { notificationStatus: OpsNotificationStatus.SENT },
+        }),
+        createJournalEntry({
+          id: 32,
+          type: OperationsJournalEntryType.NOTIFICATION,
+          occurredAt: new Date('2026-05-06T09:05:00.000Z'),
+          metadata: { notificationStatus: OpsNotificationStatus.FAILED },
+        }),
+        createJournalEntry({
+          id: 33,
+          type: OperationsJournalEntryType.NOTIFICATION,
+          occurredAt: new Date('2026-05-06T09:10:00.000Z'),
+          metadata: { notificationStatus: OpsNotificationStatus.THROTTLED },
+        }),
+      ])
+      .mockResolvedValueOnce([]);
+    routineRunRepository.find.mockResolvedValueOnce([
+      createRoutineRun({
+        id: 41,
+        status: OperationRoutineRunStatus.FAILED,
+        startedAt: new Date('2026-05-06T05:00:00.000Z'),
+      }),
+      createRoutineRun({
+        id: 42,
+        status: OperationRoutineRunStatus.PASSED,
+        startedAt: new Date('2026-05-06T06:00:00.000Z'),
+      }),
+    ]);
+
+    const metrics = await service.getObservabilityMetrics('tenant-a', {
+      from: '2026-05-06T00:00:00.000Z',
+      to: '2026-05-06T23:59:59.000Z',
+    });
+
+    expect(metrics).toEqual(
+      expect.objectContaining({
+        tenantId: 'tenant-a',
+        alerts: {
+          openBySeverity: { LOW: 0, MEDIUM: 0, HIGH: 0, CRITICAL: 1 },
+          totalOpen: 1,
+        },
+        incidents: {
+          automaticOpened: 1,
+          automaticClosed: 1,
+          mttrApproxMinutes: 765,
+          resolvedOrClosed: 2,
+        },
+        routines: { failed: 1 },
+        notifications: {
+          sent: 1,
+          failed: 1,
+          throttled: 1,
+          dryRun: 0,
+          partial: 0,
+        },
+        actionCenter: { total: 1 },
+      }),
+    );
+    expect(alertRepository.find).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ where: { tenantId: 'tenant-a' } }),
+    );
+    expect(routineRunRepository.find).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { tenantId: 'tenant-a' } }),
+    );
   });
 
   it('declares a post-production incident with initial proof and audit', async () => {

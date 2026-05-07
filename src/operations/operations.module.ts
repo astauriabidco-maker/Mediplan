@@ -2,11 +2,15 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuditModule } from '../audit/audit.module';
 import { OperationIncident } from './entities/operation-incident.entity';
+import { OperationRoutineRun } from './entities/operation-routine-run.entity';
 import { OperationalAlert } from './entities/operational-alert.entity';
+import { OpsOnCallConfig } from './entities/ops-on-call-config.entity';
 import { OperationsJournalEntry } from './entities/operations-journal-entry.entity';
 import { OperationsController } from './operations.controller';
+import { OpsOnCallConfigService } from './ops-on-call-config.service';
 import { OpsPreActionValidationService } from './ops-pre-action-validation.service';
 import { OpsNotificationService } from './ops-notification.service';
+import { OpsRoutineSchedulerService } from './ops-routine-scheduler.service';
 import { OperationsService } from './operations.service';
 
 @Module({
@@ -15,6 +19,8 @@ import { OperationsService } from './operations.service';
       OperationsJournalEntry,
       OperationIncident,
       OperationalAlert,
+      OperationRoutineRun,
+      OpsOnCallConfig,
     ]),
     AuditModule,
   ],
@@ -22,6 +28,8 @@ import { OperationsService } from './operations.service';
   providers: [
     OperationsService,
     OpsNotificationService,
+    OpsOnCallConfigService,
+    OpsRoutineSchedulerService,
     OpsPreActionValidationService,
   ],
   exports: [OperationsService, OpsNotificationService],

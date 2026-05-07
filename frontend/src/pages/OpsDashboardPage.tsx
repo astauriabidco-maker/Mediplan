@@ -4,19 +4,23 @@ import {
   BellRing,
   CheckCircle2,
   DatabaseBackup,
+  ExternalLink,
   Gauge,
   History,
   Pause,
   Play,
   RefreshCw,
+  ScrollText,
   ServerCog,
   ShieldCheck,
 } from 'lucide-react';
 import React from 'react';
 import {
   opsApi,
+  OpsActionCenterItem,
   OpsAlert,
   OpsDashboardSummary,
+  OpsRunbookDto,
   OpsSignalStatus,
   OpsStatus,
 } from '../api/ops.api';
@@ -39,6 +43,12 @@ const statusLabel: Record<OpsSignalStatus, string> = {
   WARNING: 'À surveiller',
   CRITICAL: 'Critique',
   UNKNOWN: 'Inconnu',
+};
+
+const priorityStatus = (priority: OpsActionCenterItem['priority']) => {
+  if (priority === 'CRITICAL' || priority === 'HIGH') return 'CRITICAL';
+  if (priority === 'MEDIUM') return 'WARNING';
+  return 'OK';
 };
 
 const formatDateTime = (value?: string | null) => {
@@ -270,6 +280,189 @@ const AlertsPanel = ({
   </section>
 );
 
+const RunbookPanel = ({
+  runbook,
+  isLoading,
+  error,
+}: {
+  runbook?: OpsRunbookDto;
+  isLoading: boolean;
+  error: boolean;
+}) => (
+  <section className="rounded-lg border border-slate-800 bg-slate-950/50 p-5">
+    <div className="flex items-center gap-2">
+      <ScrollText size={18} className="text-cyan-300" />
+      <h2 className="text-lg font-bold text-white">Runbook ouvert</h2>
+    </div>
+    {isLoading ? (
+      <p className="mt-4 text-sm text-slate-400">Chargement du runbook...</p>
+    ) : error ? (
+      <p className="mt-4 text-sm text-amber-200">
+        Runbook indisponible pour cette référence.
+      </p>
+    ) : runbook ? (
+      <div className="mt-4 space-y-4">
+        <div>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="text-sm font-bold text-white">
+                {runbook.reference.title}
+              </p>
+              <p className="mt-1 text-xs text-slate-500">
+                {runbook.reference.sourceType} #{runbook.reference.id} ·{' '}
+                {formatDateTime(runbook.generatedAt)}
+              </p>
+            </div>
+            <StatusBadge
+              status={priorityStatus(runbook.next.priority)}
+              label={runbook.next.priority}
+            />
+          </div>
+          <p className="mt-3 text-sm text-slate-300">
+            {runbook.next.whatToDoNext}
+          </p>
+          <p className="mt-1 text-xs text-slate-500">{runbook.next.why}</p>
+        </div>
+
+        <ol className="space-y-2">
+          {runbook.steps.slice(0, 4).map((step) => (
+            <li
+              key={step.order}
+              className="rounded-md border border-slate-800 bg-slate-900 px-3 py-2"
+            >
+              <p className="text-sm font-bold text-white">
+                {step.order}. {step.title}
+              </p>
+              <p className="mt-1 text-xs text-slate-400">
+                {step.instruction}
+              </p>
+            </li>
+          ))}
+        </ol>
+
+        {runbook.actions.length > 0 && (
+          <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+            {runbook.actions.slice(0, 4).map((action) => (
+              <div
+                key={action.id}
+                className="rounded-md border border-slate-800 bg-slate-900 px-3 py-2"
+              >
+                <p className="text-xs font-bold text-white">
+                  {action.method} {action.label}
+                </p>
+                <p className="mt-1 truncate text-xs text-slate-500">
+                  {action.endpoint}
+                </p>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    ) : (
+      <p className="mt-4 text-sm text-slate-500">
+        Sélectionnez une action pour charger le runbook généré.
+      </p>
+    )}
+  </section>
+);
+
+const ActionCenterPanel = ({
+  summary,
+  isMutating,
+  onOpenRunbook,
+  onResolve,
+}: {
+  summary: OpsDashboardSummary;
+  isMutating: boolean;
+  onOpenRunbook: (item: OpsActionCenterItem) => void;
+  onResolve: (item: OpsActionCenterItem) => void;
+}) => (
+  <section className="space-y-3">
+    <div className="flex items-center justify-between gap-3">
+      <div className="flex items-center gap-2">
+        <ServerCog size={18} className="text-cyan-300" />
+        <h2 className="text-lg font-bold text-white">Action-center</h2>
+      </div>
+      <StatusBadge
+        status={summary.actionCenter.status}
+        label={
+          summary.actionCenter.available
+            ? `${summary.actionCenter.total} action`
+            : 'Indisponible'
+        }
+      />
+    </div>
+    {!summary.actionCenter.available ? (
+      <EmptyState
+        title="Action-center non exposé"
+        message={
+          summary.actionCenter.unavailableReason ??
+          'Le flux action-center ne répond pas pour ce tenant.'
+        }
+        icon={AlertTriangle}
+        tone="amber"
+        compact
+      />
+    ) : summary.actionCenter.items.length === 0 ? (
+      <EmptyState
+        title="Aucune action prioritaire"
+        message="L’action-center ne remonte aucune intervention active."
+        icon={CheckCircle2}
+        tone="emerald"
+        compact
+      />
+    ) : (
+      <ol className="space-y-3">
+        {summary.actionCenter.items.map((item) => (
+          <li
+            key={item.id}
+            className="rounded-lg border border-slate-800 bg-slate-900 p-4"
+          >
+            <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+              <div>
+                <p className="font-bold text-white">{item.title}</p>
+                <p className="mt-1 text-sm text-slate-400">{item.reason}</p>
+                <p className="mt-2 text-xs text-slate-500">
+                  {item.type} · {item.sourceReference.reference} ·{' '}
+                  {formatDateTime(item.timestamps.occurredAt)}
+                </p>
+              </div>
+              <div className="flex shrink-0 flex-wrap justify-end gap-2">
+                <StatusBadge
+                  status={priorityStatus(item.priority)}
+                  label={item.priority}
+                />
+                <StatusBadge status="WARNING" label={item.status} />
+              </div>
+            </div>
+            {item.requiredEvidence.length > 0 && (
+              <p className="mt-3 text-xs text-slate-500">
+                Preuves: {item.requiredEvidence.slice(0, 2).join(' · ')}
+              </p>
+            )}
+            <div className="mt-3 flex flex-wrap gap-2">
+              <AlertActionButton
+                disabled={isMutating}
+                onClick={() => onOpenRunbook(item)}
+              >
+                Ouvrir runbook
+              </AlertActionButton>
+              {item.sourceReference.entity === 'OperationalAlert' && (
+                <AlertActionButton
+                  disabled={isMutating}
+                  onClick={() => onResolve(item)}
+                >
+                  Résoudre si supporté
+                </AlertActionButton>
+              )}
+            </div>
+          </li>
+        ))}
+      </ol>
+    )}
+  </section>
+);
+
 const SlaPanel = ({ summary }: { summary: OpsDashboardSummary }) => (
   <section className="space-y-3">
     <div className="flex items-center gap-2">
@@ -467,6 +660,111 @@ const IncidentsPanel = ({ summary }: { summary: OpsDashboardSummary }) => (
   </section>
 );
 
+const RoutinesPanel = ({ summary }: { summary: OpsDashboardSummary }) => (
+  <section className="rounded-lg border border-slate-800 bg-slate-950/50 p-5">
+    <div className="flex items-center justify-between gap-3">
+      <div className="flex items-center gap-2">
+        <RefreshCw size={18} className="text-cyan-300" />
+        <h2 className="text-lg font-bold text-white">
+          {summary.routines.title}
+        </h2>
+      </div>
+      <StatusBadge
+        status={summary.routines.status}
+        label={summary.routines.available ? 'Exposé' : 'Scripts'}
+      />
+    </div>
+    {summary.routines.unavailableReason && (
+      <p className="mt-3 text-sm text-slate-400">
+        {summary.routines.unavailableReason}
+      </p>
+    )}
+    <div className="mt-4 space-y-2">
+      {summary.routines.items.map((routine) => (
+        <div
+          key={routine.id}
+          className="rounded-md border border-slate-800 bg-slate-900 px-3 py-2"
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-sm font-bold text-white">{routine.label}</p>
+              <p className="mt-1 text-xs text-slate-500">{routine.cadence}</p>
+            </div>
+            <ExternalLink size={14} className="mt-1 shrink-0 text-slate-500" />
+          </div>
+          <p className="mt-2 break-all rounded bg-slate-950 px-2 py-1 font-mono text-xs text-slate-300">
+            {routine.command}
+          </p>
+          <p className="mt-1 text-xs text-slate-500">
+            {routine.reportPattern}
+          </p>
+        </div>
+      ))}
+    </div>
+  </section>
+);
+
+const DirectionReportsPanel = ({
+  summary,
+}: {
+  summary: OpsDashboardSummary;
+}) => (
+  <section className="rounded-lg border border-slate-800 bg-slate-950/50 p-5">
+    <div className="flex items-center justify-between gap-3">
+      <div className="flex items-center gap-2">
+        <ScrollText size={18} className="text-violet-300" />
+        <h2 className="text-lg font-bold text-white">
+          {summary.directionReports.title}
+        </h2>
+      </div>
+      <StatusBadge
+        status={summary.directionReports.status}
+        label={summary.directionReports.available ? 'Rapports lus' : 'Fallback'}
+      />
+    </div>
+    <p className="mt-3 break-all rounded bg-slate-900 px-2 py-1 font-mono text-xs text-slate-300">
+      {summary.directionReports.command}
+    </p>
+    <p className="mt-1 text-xs text-slate-500">
+      {summary.directionReports.reportPattern}
+    </p>
+    {summary.directionReports.unavailableReason && (
+      <p className="mt-3 text-sm text-slate-400">
+        {summary.directionReports.unavailableReason}
+      </p>
+    )}
+    {summary.directionReports.reports.length > 0 ? (
+      <ol className="mt-4 space-y-2">
+        {summary.directionReports.reports.map((report) => (
+          <li
+            key={report.id}
+            className="rounded-md border border-slate-800 bg-slate-900 px-3 py-2"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-sm font-bold text-white">
+                  Rapport #{report.id}
+                </p>
+                <p className="mt-1 text-xs text-slate-500">
+                  {formatDateTime(report.timestamp)} · {report.affected} shift
+                </p>
+              </div>
+              <StatusBadge
+                status={report.blocked ? 'WARNING' : 'OK'}
+                label={report.blocked ? 'Bloqué' : 'Publié'}
+              />
+            </div>
+          </li>
+        ))}
+      </ol>
+    ) : (
+      <p className="mt-4 text-sm text-slate-500">
+        Aucun rapport conformité récent retourné.
+      </p>
+    )}
+  </section>
+);
+
 const GatesPanel = ({ summary }: { summary: OpsDashboardSummary }) => (
   <section className="rounded-lg border border-slate-800 bg-slate-950/50 p-5">
     <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
@@ -516,6 +814,10 @@ export const OpsDashboardPage = () => {
   const [pollingInterval, setPollingInterval] =
     React.useState<number>(30_000);
   const [actionMessage, setActionMessage] = React.useState<string | null>(null);
+  const [openedRunbook, setOpenedRunbook] = React.useState<
+    OpsRunbookDto | undefined
+  >();
+  const [runbookError, setRunbookError] = React.useState(false);
   const period = React.useMemo(
     () => ({
       ...buildDefaultPeriod(),
@@ -587,10 +889,44 @@ export const OpsDashboardPage = () => {
     },
   });
 
+  const openRunbookMutation = useMutation({
+    mutationFn: (item: OpsActionCenterItem) =>
+      opsApi.getRunbook(item.sourceReference, { tenantId: period.tenantId }),
+    onSuccess: (runbook) => {
+      setOpenedRunbook(runbook);
+      setRunbookError(false);
+      setActionMessage('Runbook chargé pour la référence action-center.');
+    },
+    onError: () => {
+      setRunbookError(true);
+      setActionMessage('Runbook indisponible pour cette référence.');
+    },
+  });
+
+  const resolveActionCenterItemMutation = useMutation({
+    mutationFn: (item: OpsActionCenterItem) =>
+      opsApi.resolveAlert(
+        {
+          id: item.sourceReference.id,
+          sourceKind: 'OPERATIONAL_ALERT',
+        },
+        'Résolution depuis l’action-center ops.',
+      ),
+    onSuccess: async () => {
+      setActionMessage('Action-center: alerte résolue.');
+      await refreshOps();
+    },
+    onError: () => {
+      setActionMessage('Action-center: résolution indisponible.');
+    },
+  });
+
   const isActionMutating =
     resolveAlertMutation.isPending ||
     rerunCheckMutation.isPending ||
-    openIncidentMutation.isPending;
+    openIncidentMutation.isPending ||
+    openRunbookMutation.isPending ||
+    resolveActionCenterItemMutation.isPending;
 
   if (summaryQuery.isLoading) {
     return <PageSkeleton title="Chargement tableau ops" rows={4} sidePanel />;
@@ -712,6 +1048,17 @@ export const OpsDashboardPage = () => {
 
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(420px,0.85fr)]">
         <div className="space-y-6">
+          <ActionCenterPanel
+            summary={summary}
+            isMutating={isActionMutating}
+            onOpenRunbook={(item) => openRunbookMutation.mutate(item)}
+            onResolve={(item) => resolveActionCenterItemMutation.mutate(item)}
+          />
+          <RunbookPanel
+            runbook={openedRunbook}
+            isLoading={openRunbookMutation.isPending}
+            error={runbookError}
+          />
           <AlertsPanel
             summary={summary}
             isMutating={isActionMutating}
@@ -727,6 +1074,8 @@ export const OpsDashboardPage = () => {
           <NotificationPanel summary={summary} />
           <BackupPanel summary={summary} />
           <IncidentsPanel summary={summary} />
+          <RoutinesPanel summary={summary} />
+          <DirectionReportsPanel summary={summary} />
         </div>
       </div>
     </main>

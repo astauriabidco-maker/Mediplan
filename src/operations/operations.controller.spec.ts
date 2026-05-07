@@ -3,6 +3,7 @@ import {
   OperationIncidentSeverity,
   OperationIncidentStatus,
 } from './entities/operation-incident.entity';
+import { OperationRoutineRunStatus } from './entities/operation-routine-run.entity';
 import {
   OperationalAlertSeverity,
   OperationalAlertStatus,
@@ -18,7 +19,9 @@ import {
   OpsActionCenterStatus,
 } from './dto/ops-action-center.dto';
 import { OperationsController } from './operations.controller';
+import { OpsOnCallConfigService } from './ops-on-call-config.service';
 import { OpsPreActionValidationService } from './ops-pre-action-validation.service';
+import { OpsRoutineSchedulerService } from './ops-routine-scheduler.service';
 import { OperationsService } from './operations.service';
 
 type RequestOverrides = Partial<AuthenticatedRequest['user']>;
@@ -26,6 +29,7 @@ type OperationsServiceMock = jest.Mocked<
   Pick<
     OperationsService,
     | 'getActionCenter'
+    | 'getObservabilityMetrics'
     | 'findIncidents'
     | 'findIncident'
     | 'declareIncident'
@@ -33,6 +37,8 @@ type OperationsServiceMock = jest.Mocked<
     | 'escalateIncident'
     | 'resolveIncident'
     | 'closeIncident'
+    | 'listRoutineRuns'
+    | 'getRoutineRun'
     | 'findJournalEntries'
     | 'getJournalEntry'
     | 'createJournalEntry'
@@ -64,6 +70,7 @@ const createRequest = (overrides: RequestOverrides = {}) =>
 
 const createServiceMock = (): OperationsServiceMock => ({
   getActionCenter: jest.fn(),
+  getObservabilityMetrics: jest.fn(),
   findIncidents: jest.fn(),
   findIncident: jest.fn(),
   declareIncident: jest.fn(),
@@ -71,6 +78,8 @@ const createServiceMock = (): OperationsServiceMock => ({
   escalateIncident: jest.fn(),
   resolveIncident: jest.fn(),
   closeIncident: jest.fn(),
+  listRoutineRuns: jest.fn(),
+  getRoutineRun: jest.fn(),
   findJournalEntries: jest.fn(),
   getJournalEntry: jest.fn(),
   createJournalEntry: jest.fn(),
@@ -88,15 +97,31 @@ describe('OperationsController', () => {
   let controller: OperationsController;
   let operationsService: OperationsServiceMock;
   let preActionValidationService: { assertAllowed: jest.Mock };
+  let onCallConfigService: {
+    findTenantConfigs: jest.Mock;
+    createTenantConfig: jest.Mock;
+    updateTenantConfig: jest.Mock;
+  };
+  let routineSchedulerService: { runManual: jest.Mock };
 
   beforeEach(() => {
     operationsService = createServiceMock();
     preActionValidationService = {
       assertAllowed: jest.fn().mockReturnValue({ allowed: true }),
     };
+    onCallConfigService = {
+      findTenantConfigs: jest.fn(),
+      createTenantConfig: jest.fn(),
+      updateTenantConfig: jest.fn(),
+    };
+    routineSchedulerService = {
+      runManual: jest.fn(),
+    };
     controller = new OperationsController(
       operationsService as unknown as OperationsService,
       preActionValidationService as unknown as OpsPreActionValidationService,
+      onCallConfigService as unknown as OpsOnCallConfigService,
+      routineSchedulerService as unknown as OpsRoutineSchedulerService,
     );
   });
 
@@ -140,6 +165,58 @@ describe('OperationsController', () => {
     );
   });
 
+  it('resolves tenants and period filters for observability metrics', async () => {
+    const req = createRequest({ role: 'ADMIN' });
+    const filters = {
+      from: '2026-05-01T00:00:00.000Z',
+      to: '2026-05-07T23:59:59.000Z',
+    };
+
+    await controller.getObservabilityMetrics(req, filters, 'tenant-b');
+
+    expect(operationsService.getObservabilityMetrics).toHaveBeenCalledWith(
+      'tenant-a',
+      filters,
+    );
+  });
+
+  it('resolves tenants for on-call config reads and writes', async () => {
+    const req = createRequest({ id: 77, role: 'ADMIN' });
+    const query = {
+      role: 'ON_CALL',
+      activeAt: '2026-05-08T10:00:00.000Z',
+    };
+    const createDto = {
+      role: 'ON_CALL',
+      recipients: ['astreinte@tenant-a.test'],
+      priority: 10,
+    };
+    const updateDto = {
+      recipients: ['ops-l2@tenant-a.test'],
+      enabled: false,
+    };
+
+    await controller.findOnCallConfigs(req, query, 'tenant-b');
+    await controller.createOnCallConfig(req, createDto, 'tenant-b');
+    await controller.updateOnCallConfig(req, 44, updateDto, 'tenant-b');
+
+    expect(onCallConfigService.findTenantConfigs).toHaveBeenCalledWith(
+      'tenant-a',
+      query,
+    );
+    expect(onCallConfigService.createTenantConfig).toHaveBeenCalledWith(
+      'tenant-a',
+      createDto,
+      77,
+    );
+    expect(onCallConfigService.updateTenantConfig).toHaveBeenCalledWith(
+      'tenant-a',
+      44,
+      updateDto,
+      77,
+    );
+  });
+
   it('resolves tenants for journal reads', async () => {
     const req = createRequest({ role: 'ADMIN' });
     const query = {
@@ -158,6 +235,24 @@ describe('OperationsController', () => {
       'tenant-a',
       4,
     );
+  });
+
+  it('resolves tenants for routine run reads', async () => {
+    const req = createRequest({ role: 'ADMIN' });
+    const query = {
+      routine: 'ops:daily',
+      status: OperationRoutineRunStatus.PASSED,
+      limit: 25,
+    };
+
+    await controller.listRoutineRuns(req, query, 'tenant-b');
+    await controller.getRoutineRun(req, 9, 'tenant-b');
+
+    expect(operationsService.listRoutineRuns).toHaveBeenCalledWith(
+      'tenant-a',
+      query,
+    );
+    expect(operationsService.getRoutineRun).toHaveBeenCalledWith('tenant-a', 9);
   });
 
   it('resolves tenants for alert reads and resolution', async () => {
@@ -327,6 +422,23 @@ describe('OperationsController', () => {
     await controller.runOperationalEscalation(req, dto, 'tenant-b');
 
     expect(operationsService.runOperationalEscalation).toHaveBeenCalledWith(
+      'tenant-a',
+      dto,
+      77,
+    );
+  });
+
+  it('runs ops routines manually with the resolved tenant and actor', async () => {
+    const req = createRequest({ id: 77 });
+    const dto = {
+      routines: ['daily', 'slo'] as const,
+      mode: 'dry-run' as const,
+      date: '2026-05-08',
+    };
+
+    await controller.runOpsRoutines(req, dto, 'tenant-b');
+
+    expect(routineSchedulerService.runManual).toHaveBeenCalledWith(
       'tenant-a',
       dto,
       77,

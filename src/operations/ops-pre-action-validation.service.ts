@@ -15,7 +15,8 @@ export type OpsPreAction =
   | 'ESCALATE_INCIDENT'
   | 'RESOLVE_INCIDENT'
   | 'CLOSE_INCIDENT'
-  | 'RUN_OPERATIONAL_ESCALATION';
+  | 'RUN_OPERATIONAL_ESCALATION'
+  | 'RUN_OPS_ROUTINES';
 
 export interface OpsPreActionActor {
   tenantId: string;
@@ -139,6 +140,11 @@ const ACTION_RULES: Record<
     requiredPermission: Permission.OperationsWrite,
     requiredEvidence: ['tenantId', 'rules'],
     expectedState: 'ESCALATED_ELIGIBLE_ITEMS',
+  },
+  RUN_OPS_ROUTINES: {
+    requiredPermission: Permission.OperationsWrite,
+    requiredEvidence: [],
+    expectedState: 'OPS_ROUTINES_TRIGGERED',
   },
 };
 

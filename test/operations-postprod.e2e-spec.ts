@@ -18,14 +18,21 @@ import {
   OperationIncidentStatus,
 } from '../src/operations/entities/operation-incident.entity';
 import {
+  OperationRoutineRun,
+  OperationRoutineRunStatus,
+} from '../src/operations/entities/operation-routine-run.entity';
+import {
   OperationalAlert,
   OperationalAlertSeverity,
   OperationalAlertStatus,
   OperationalAlertType,
 } from '../src/operations/entities/operational-alert.entity';
+import { OpsOnCallConfig } from '../src/operations/entities/ops-on-call-config.entity';
 import { OperationsJournalEntry } from '../src/operations/entities/operations-journal-entry.entity';
+import { OpsOnCallConfigService } from '../src/operations/ops-on-call-config.service';
 import { OpsNotificationService } from '../src/operations/ops-notification.service';
 import { OpsPreActionValidationService } from '../src/operations/ops-pre-action-validation.service';
+import { OpsRoutineSchedulerService } from '../src/operations/ops-routine-scheduler.service';
 import { OperationsController } from '../src/operations/operations.controller';
 import { OperationsService } from '../src/operations/operations.service';
 
@@ -78,6 +85,18 @@ class MemoryRepository<T extends MemoryEntity> {
     options: { where?: any; order?: Record<string, 'ASC' | 'DESC'> } = {},
   ) {
     return (await this.find(options))[0] || null;
+  }
+
+  createQueryBuilder() {
+    const repository = this;
+    const qb = {
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      orderBy: jest.fn().mockReturnThis(),
+      addOrderBy: jest.fn().mockReturnThis(),
+      getMany: jest.fn(async () => repository.all()),
+    };
+    return qb;
   }
 
   all() {
@@ -146,15 +165,43 @@ describe('Sprint 23 post-production operations (e2e)', () => {
   let app: INestApplication;
   let operationsService: OperationsService;
   let incidentRepository: MemoryRepository<OperationIncident>;
+  let routineRunRepository: MemoryRepository<OperationRoutineRun>;
   let alertRepository: MemoryRepository<OperationalAlert>;
+  let onCallConfigRepository: MemoryRepository<OpsOnCallConfig>;
   let journalRepository: MemoryRepository<OperationsJournalEntry>;
   let auditRepository: MemoryRepository<AuditLog>;
+  let routineSchedulerService: { runManual: jest.Mock };
 
   beforeEach(async () => {
     incidentRepository = new MemoryRepository<OperationIncident>();
+    routineRunRepository = new MemoryRepository<OperationRoutineRun>();
     alertRepository = new MemoryRepository<OperationalAlert>();
+    onCallConfigRepository = new MemoryRepository<OpsOnCallConfig>();
     journalRepository = new MemoryRepository<OperationsJournalEntry>();
     auditRepository = new MemoryRepository<AuditLog>();
+    routineSchedulerService = {
+      runManual: jest.fn(async (tenantId, dto, actorId) => {
+        await operationsService.recordRoutineRun(tenantId, {
+          routine: dto.routines?.[0] ?? 'daily',
+          status: OperationRoutineRunStatus.PASSED,
+          startedAt: '2026-05-08T08:00:00.000Z',
+          finishedAt: '2026-05-08T08:01:00.000Z',
+          durationMs: 60000,
+          metadata: { trigger: 'manual', mode: dto.mode, actorId },
+        });
+        return {
+          trigger: 'manual',
+          status: 'PASSED',
+          mode: dto.mode ?? 'dry-run',
+          routines: dto.routines ?? ['daily'],
+          tenantId,
+          actorId,
+          startedAt: '2026-05-08T08:00:00.000Z',
+          finishedAt: '2026-05-08T08:01:00.000Z',
+          exitCode: 0,
+        };
+      }),
+    };
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
       controllers: [OperationsController, AuditController],
@@ -166,16 +213,29 @@ describe('Sprint 23 post-production operations (e2e)', () => {
           useValue: incidentRepository,
         },
         {
+          provide: getRepositoryToken(OperationRoutineRun),
+          useValue: routineRunRepository,
+        },
+        {
           provide: getRepositoryToken(OperationalAlert),
           useValue: alertRepository,
+        },
+        {
+          provide: getRepositoryToken(OpsOnCallConfig),
+          useValue: onCallConfigRepository,
         },
         {
           provide: getRepositoryToken(OperationsJournalEntry),
           useValue: journalRepository,
         },
         { provide: getRepositoryToken(AuditLog), useValue: auditRepository },
+        OpsOnCallConfigService,
         OpsNotificationService,
         OpsPreActionValidationService,
+        {
+          provide: OpsRoutineSchedulerService,
+          useValue: routineSchedulerService,
+        },
         {
           provide: ConfigService,
           useValue: { get: jest.fn().mockReturnValue(undefined) },
@@ -536,6 +596,96 @@ describe('Sprint 23 post-production operations (e2e)', () => {
       .expect(200)
       .expect(({ body }) => {
         expect(body.status).toBe(OperationalAlertStatus.RESOLVED);
+      });
+  });
+
+  it('industrializes ops with routine run history, observability and manual scheduler', async () => {
+    await request(app.getHttpServer())
+      .post('/ops/on-call-configs')
+      .send({
+        role: 'OPS',
+        recipients: ['ops-l1@mediplan.test'],
+        priority: 1,
+      })
+      .expect(201)
+      .expect(({ body }) => {
+        expect(body).toEqual(
+          expect.objectContaining({
+            tenantId: 'tenant-ops-a',
+            role: 'OPS',
+            recipients: ['ops-l1@mediplan.test'],
+          }),
+        );
+      });
+
+    await operationsService.recordRoutineRun('tenant-ops-a', {
+      routine: 'backup',
+      status: OperationRoutineRunStatus.FAILED,
+      startedAt: '2026-05-08T07:00:00.000Z',
+      finishedAt: '2026-05-08T07:01:00.000Z',
+      error: 'Backup stale during drill',
+      metadata: { trigger: 'scheduled' },
+    });
+
+    await operationsService.syncOperationalAlert(
+      'tenant-ops-a',
+      {
+        type: OperationalAlertType.BACKUP_STALE,
+        source: 'ops.resilience-drill',
+        reference: 'drill:backup-stale',
+        checkStatus: 'KO',
+        severity: OperationalAlertSeverity.CRITICAL,
+        message: 'Drill backup stale détecté.',
+        metadata: { drill: true },
+      },
+      9001,
+    );
+
+    await request(app.getHttpServer())
+      .post('/ops/routines/run')
+      .send({ routines: ['daily'], mode: 'dry-run', date: '2026-05-08' })
+      .expect(201)
+      .expect(({ body }) => {
+        expect(body).toEqual(
+          expect.objectContaining({
+            trigger: 'manual',
+            status: 'PASSED',
+            tenantId: 'tenant-ops-a',
+          }),
+        );
+      });
+
+    const runs = await request(app.getHttpServer())
+      .get('/ops/routine-runs')
+      .expect(200);
+    expect(runs.body).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          routine: 'backup',
+          status: OperationRoutineRunStatus.FAILED,
+        }),
+        expect.objectContaining({
+          routine: 'daily',
+          status: OperationRoutineRunStatus.PASSED,
+        }),
+      ]),
+    );
+
+    await request(app.getHttpServer())
+      .get(`/ops/routine-runs/${runs.body[0].id}`)
+      .expect(200);
+
+    await request(app.getHttpServer())
+      .get('/ops/observability')
+      .query({
+        from: '2026-05-08T00:00:00.000Z',
+        to: '2026-05-09T00:00:00.000Z',
+      })
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.routines.failed).toBeGreaterThanOrEqual(1);
+        expect(body.alerts.openBySeverity.CRITICAL).toBeGreaterThanOrEqual(1);
+        expect(body.actionCenter.total).toBeGreaterThanOrEqual(1);
       });
   });
 });
