@@ -5,6 +5,7 @@ import type {
 } from './planning.api';
 import type { CompliancePeriodParams } from './manager.api';
 import type { ProductionReadinessTenantParams } from './production-readiness.api';
+import type { OpsDashboardParams } from './ops.api';
 
 const MINUTE = 60 * 1000;
 
@@ -28,6 +29,12 @@ const timelineFilters = (filters: PlanningTimelineFilters) => ({
 });
 
 const tenantParams = (params?: ProductionReadinessTenantParams) => ({
+  tenantId: params?.tenantId,
+});
+
+const opsParams = (params?: OpsDashboardParams) => ({
+  from: params?.from,
+  to: params?.to,
   tenantId: params?.tenantId,
 });
 
@@ -124,6 +131,15 @@ export const productionReadinessQueryKeys = {
         ...productionReadinessQueryKeys.decision.all(),
         tenantParams(params),
       ] as const,
+  },
+};
+
+export const opsQueryKeys = {
+  all: ['ops'] as const,
+  dashboard: {
+    all: () => [...opsQueryKeys.all, 'dashboard'] as const,
+    summary: (params?: OpsDashboardParams) =>
+      [...opsQueryKeys.dashboard.all(), opsParams(params)] as const,
   },
 };
 

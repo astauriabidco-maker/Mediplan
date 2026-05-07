@@ -3,6 +3,7 @@ import {
   agentsQueryKeys,
   invalidatePlanningResolutionQueries,
   managerQueryKeys,
+  opsQueryKeys,
   planningQueryKeys,
   productionReadinessQueryKeys,
   queryCacheProfiles,
@@ -103,6 +104,20 @@ describe('queryKeys', () => {
     expect(productionReadinessQueryKeys.decision.detail(params)).toEqual([
       'production-readiness',
       'decision',
+      params,
+    ]);
+  });
+
+  it('groups ops dashboard summary by period and tenant', () => {
+    const params = {
+      tenantId: 'tenant-a',
+      from: '2026-05-01T00:00:00.000Z',
+      to: '2026-05-07T00:00:00.000Z',
+    };
+
+    expect(opsQueryKeys.dashboard.summary(params)).toEqual([
+      'ops',
+      'dashboard',
       params,
     ]);
   });

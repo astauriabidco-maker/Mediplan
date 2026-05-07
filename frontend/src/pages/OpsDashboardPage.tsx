@@ -1,0 +1,446 @@
+import { useQuery } from '@tanstack/react-query';
+import {
+  AlertTriangle,
+  CheckCircle2,
+  DatabaseBackup,
+  Gauge,
+  History,
+  RefreshCw,
+  ServerCog,
+  ShieldCheck,
+} from 'lucide-react';
+import React from 'react';
+import {
+  opsApi,
+  OpsDashboardSummary,
+  OpsSignalStatus,
+  OpsStatus,
+} from '../api/ops.api';
+import { opsQueryKeys, queryCacheProfiles } from '../api/queryKeys';
+import { ApiErrorState, EmptyState, PageSkeleton } from '../components/UIStates';
+import { useAuth } from '../store/useAuth';
+import { cn } from '../utils/cn';
+
+const statusTone: Record<OpsSignalStatus | OpsStatus, string> = {
+  OK: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-100',
+  OPERATIONAL: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-100',
+  WARNING: 'border-amber-500/30 bg-amber-500/10 text-amber-100',
+  DEGRADED: 'border-amber-500/30 bg-amber-500/10 text-amber-100',
+  CRITICAL: 'border-rose-500/30 bg-rose-500/10 text-rose-100',
+  UNKNOWN: 'border-slate-700 bg-slate-900 text-slate-300',
+};
+
+const statusLabel: Record<OpsSignalStatus, string> = {
+  OK: 'OK',
+  WARNING: 'À surveiller',
+  CRITICAL: 'Critique',
+  UNKNOWN: 'Inconnu',
+};
+
+const formatDateTime = (value?: string | null) => {
+  if (!value) return 'Non daté';
+  return new Intl.DateTimeFormat('fr-FR', {
+    dateStyle: 'short',
+    timeStyle: 'short',
+  }).format(new Date(value));
+};
+
+const buildDefaultPeriod = () => {
+  const to = new Date();
+  const from = new Date(to);
+  from.setDate(from.getDate() - 7);
+  return {
+    from: from.toISOString(),
+    to: to.toISOString(),
+  };
+};
+
+const StatusBadge = ({
+  status,
+  label,
+}: {
+  status: OpsSignalStatus | OpsStatus;
+  label?: string;
+}) => (
+  <span
+    className={cn(
+      'inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs font-black',
+      statusTone[status],
+    )}
+  >
+    {status === 'OK' || status === 'OPERATIONAL' ? (
+      <CheckCircle2 size={13} />
+    ) : (
+      <AlertTriangle size={13} />
+    )}
+    {label ?? status}
+  </span>
+);
+
+const KpiStrip = ({ summary }: { summary: OpsDashboardSummary }) => (
+  <section className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+    {summary.kpis.map((kpi) => (
+      <article
+        key={kpi.key}
+        className="rounded-lg border border-slate-800 bg-slate-900 p-4"
+      >
+        <div className="flex items-start justify-between gap-3">
+          <p className="text-xs font-bold uppercase tracking-wide text-slate-500">
+            {kpi.label}
+          </p>
+          <StatusBadge status={kpi.status} label={statusLabel[kpi.status]} />
+        </div>
+        <p className="mt-3 text-2xl font-black text-white">{kpi.value}</p>
+        <p className="mt-1 text-sm text-slate-400">{kpi.detail}</p>
+      </article>
+    ))}
+  </section>
+);
+
+const SlaPanel = ({ summary }: { summary: OpsDashboardSummary }) => (
+  <section className="space-y-3">
+    <div className="flex items-center gap-2">
+      <Gauge size={18} className="text-cyan-300" />
+      <h2 className="text-lg font-bold text-white">SLA exploitation</h2>
+    </div>
+    <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+      {summary.sla.map((sla) => (
+        <article
+          key={sla.id}
+          className="rounded-lg border border-slate-800 bg-slate-950/50 p-4"
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h3 className="font-bold text-white">{sla.label}</h3>
+              <p className="mt-1 text-xs text-slate-500">Cible: {sla.target}</p>
+            </div>
+            <StatusBadge status={sla.status} label={statusLabel[sla.status]} />
+          </div>
+          <p className="mt-3 text-xl font-black text-white">{sla.current}</p>
+          <p className="mt-1 text-sm text-slate-400">{sla.detail}</p>
+        </article>
+      ))}
+    </div>
+  </section>
+);
+
+const AnomaliesPanel = ({ summary }: { summary: OpsDashboardSummary }) => (
+  <section className="space-y-3">
+    <div className="flex items-center justify-between gap-3">
+      <div className="flex items-center gap-2">
+        <AlertTriangle size={18} className="text-amber-300" />
+        <h2 className="text-lg font-bold text-white">Anomalies récentes</h2>
+      </div>
+      <span className="text-xs font-bold uppercase tracking-wide text-slate-500">
+        {summary.anomalies.length} signal
+      </span>
+    </div>
+    {summary.anomalies.length === 0 ? (
+      <EmptyState
+        title="Aucune anomalie active"
+        message="Les signaux post-prod agrégés ne remontent pas de blocage récent."
+        icon={CheckCircle2}
+        tone="emerald"
+        compact
+      />
+    ) : (
+      <ol className="space-y-3">
+        {summary.anomalies.map((anomaly) => (
+          <li
+            key={anomaly.id}
+            className="rounded-lg border border-slate-800 bg-slate-900 p-4"
+          >
+            <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+              <div>
+                <p className="font-bold text-white">{anomaly.title}</p>
+                <p className="mt-1 text-sm text-slate-400">{anomaly.detail}</p>
+              </div>
+              <StatusBadge
+                status={
+                  anomaly.severity === 'HIGH'
+                    ? 'CRITICAL'
+                    : anomaly.severity === 'MEDIUM'
+                      ? 'WARNING'
+                      : 'OK'
+                }
+                label={anomaly.severity}
+              />
+            </div>
+            <p className="mt-3 text-xs text-slate-500">
+              {anomaly.source} · {formatDateTime(anomaly.detectedAt)}
+            </p>
+          </li>
+        ))}
+      </ol>
+    )}
+  </section>
+);
+
+const BackupPanel = ({ summary }: { summary: OpsDashboardSummary }) => {
+  const topDatasets = Object.entries(summary.backups.datasetCounts).slice(0, 6);
+
+  return (
+    <section className="rounded-lg border border-slate-800 bg-slate-950/50 p-5">
+      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+        <div className="flex items-center gap-2">
+          <DatabaseBackup size={18} className="text-violet-300" />
+          <h2 className="text-lg font-bold text-white">Backups</h2>
+        </div>
+        <StatusBadge
+          status={summary.backups.status}
+          label={statusLabel[summary.backups.status]}
+        />
+      </div>
+
+      <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
+        <div className="rounded-md border border-slate-800 bg-slate-900 p-3">
+          <p className="text-xs font-bold uppercase tracking-wide text-slate-500">
+            Snapshot
+          </p>
+          <p className="mt-2 font-bold text-white">
+            {summary.backups.exportable ? 'Exportable' : 'Non exportable'}
+          </p>
+          <p className="mt-1 text-xs text-slate-500">
+            {formatDateTime(summary.backups.generatedAt)}
+          </p>
+        </div>
+        <div className="rounded-md border border-slate-800 bg-slate-900 p-3">
+          <p className="text-xs font-bold uppercase tracking-wide text-slate-500">
+            Schéma
+          </p>
+          <p className="mt-2 font-bold text-white">
+            {summary.backups.schemaVersion ?? 'N/A'}
+          </p>
+          <p className="mt-1 text-xs text-slate-500">
+            {Object.keys(summary.backups.datasetCounts).length} datasets
+          </p>
+        </div>
+        <div className="rounded-md border border-slate-800 bg-slate-900 p-3">
+          <p className="text-xs font-bold uppercase tracking-wide text-slate-500">
+            Gate BACKUP
+          </p>
+          <p className="mt-2 font-bold text-white">
+            {summary.backups.gate?.status ?? 'Absent'}
+          </p>
+          <p className="mt-1 text-xs text-slate-500">
+            {summary.backups.gate?.source ?? 'Aucune source'}
+          </p>
+        </div>
+      </div>
+
+      {topDatasets.length > 0 && (
+        <dl className="mt-4 grid grid-cols-2 gap-2 md:grid-cols-3">
+          {topDatasets.map(([name, count]) => (
+            <div key={name} className="rounded-md bg-slate-900 px-3 py-2">
+              <dt className="truncate text-xs text-slate-500">{name}</dt>
+              <dd className="mt-1 text-sm font-black text-white">{count}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
+    </section>
+  );
+};
+
+const IncidentsPanel = ({ summary }: { summary: OpsDashboardSummary }) => (
+  <section className="rounded-lg border border-slate-800 bg-slate-950/50 p-5">
+    <div className="flex items-center justify-between gap-3">
+      <div className="flex items-center gap-2">
+        <History size={18} className="text-rose-300" />
+        <h2 className="text-lg font-bold text-white">Incidents</h2>
+      </div>
+      <span className="text-xs font-bold uppercase tracking-wide text-slate-500">
+        {summary.incidents.length} ouvert
+      </span>
+    </div>
+
+    {summary.incidents.length === 0 ? (
+      <p className="mt-4 text-sm text-slate-500">
+        Aucun incident post-prod ouvert.
+      </p>
+    ) : (
+      <ol className="mt-4 space-y-3">
+        {summary.incidents.map((incident) => (
+          <li
+            key={incident.id}
+            className="rounded-md border border-slate-800 bg-slate-900 px-3 py-2"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-sm font-bold text-white">
+                  {incident.title}
+                </p>
+                <p className="mt-1 text-xs text-slate-400">
+                  {incident.detail}
+                </p>
+              </div>
+              <StatusBadge
+                status={incident.status}
+                label={statusLabel[incident.status]}
+              />
+            </div>
+            <p className="mt-2 text-xs text-slate-500">
+              {incident.source} · {formatDateTime(incident.openedAt)}
+            </p>
+          </li>
+        ))}
+      </ol>
+    )}
+  </section>
+);
+
+const GatesPanel = ({ summary }: { summary: OpsDashboardSummary }) => (
+  <section className="rounded-lg border border-slate-800 bg-slate-950/50 p-5">
+    <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+      <div className="flex items-center gap-2">
+        <ShieldCheck size={18} className="text-emerald-300" />
+        <h2 className="text-lg font-bold text-white">Gates post-prod</h2>
+      </div>
+      <p className="text-xs font-bold uppercase tracking-wide text-slate-500">
+        {summary.gatesSummary.passed}/{summary.gatesSummary.total} passés
+      </p>
+    </div>
+    <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+      {summary.gates.map((gate) => (
+        <article
+          key={`${gate.key}-${gate.source}`}
+          className="rounded-md border border-slate-800 bg-slate-900 p-3"
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-bold text-white">{gate.key}</h3>
+              <p className="mt-1 text-xs text-slate-500">{gate.source}</p>
+            </div>
+            <StatusBadge
+              status={
+                gate.status === 'PASSED'
+                  ? 'OK'
+                  : gate.status === 'FAILED'
+                    ? 'CRITICAL'
+                    : 'UNKNOWN'
+              }
+              label={gate.status}
+            />
+          </div>
+          <p className="mt-3 text-xs text-slate-500">
+            Dernier contrôle: {formatDateTime(gate.checkedAt)}
+          </p>
+        </article>
+      ))}
+    </div>
+  </section>
+);
+
+export const OpsDashboardPage = () => {
+  const { impersonatedTenantId } = useAuth();
+  const period = React.useMemo(
+    () => ({
+      ...buildDefaultPeriod(),
+      tenantId: impersonatedTenantId ?? undefined,
+    }),
+    [impersonatedTenantId],
+  );
+
+  const summaryQuery = useQuery({
+    queryKey: opsQueryKeys.dashboard.summary(period),
+    queryFn: () => opsApi.summary(period),
+    ...queryCacheProfiles.live,
+  });
+
+  if (summaryQuery.isLoading) {
+    return <PageSkeleton title="Chargement tableau ops" rows={4} sidePanel />;
+  }
+
+  if (summaryQuery.isError) {
+    return (
+      <ApiErrorState
+        title="Tableau ops indisponible"
+        message="Impossible de charger la synthèse exploitation."
+        onRetry={() => summaryQuery.refetch()}
+        isRetrying={summaryQuery.isFetching}
+      />
+    );
+  }
+
+  const summary = summaryQuery.data;
+
+  if (!summary) {
+    return (
+      <EmptyState
+        title="Synthèse ops vide"
+        message="Aucun signal d'exploitation n'a été retourné."
+        icon={AlertTriangle}
+        tone="amber"
+        compact
+      />
+    );
+  }
+
+  return (
+    <main className="mx-auto max-w-[1500px] space-y-6 pb-16">
+      <header className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+        <div>
+          <p className="text-xs font-bold uppercase tracking-widest text-cyan-300">
+            Exploitation post-prod
+          </p>
+          <h1 className="mt-2 text-3xl font-black text-white">
+            Tableau de bord ops
+          </h1>
+          <p className="mt-2 text-sm text-slate-500">
+            {summary.tenantId} · {formatDateTime(summary.generatedAt)}
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <StatusBadge status={summary.status} label={summary.statusLabel} />
+          <button
+            type="button"
+            onClick={() => summaryQuery.refetch()}
+            disabled={summaryQuery.isFetching}
+            className="inline-flex items-center gap-2 rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm font-bold text-slate-100 hover:bg-slate-800 disabled:cursor-wait disabled:opacity-70"
+          >
+            <RefreshCw
+              size={16}
+              className={cn(summaryQuery.isFetching && 'animate-spin')}
+            />
+            Rafraîchir
+          </button>
+        </div>
+      </header>
+
+      <section
+        className={cn(
+          'rounded-lg border p-5',
+          statusTone[summary.status],
+        )}
+      >
+        <div className="flex items-start gap-3">
+          <ServerCog size={22} className="mt-0.5 shrink-0" />
+          <div>
+            <h2 className="text-lg font-black text-white">
+              Statut global: {summary.statusLabel}
+            </h2>
+            <p className="mt-1 text-sm opacity-90">
+              API {summary.health.api?.status ?? 'N/A'} · Observabilité{' '}
+              {summary.health.observability?.status ?? 'N/A'} · Readiness{' '}
+              {summary.health.readiness?.status ?? 'N/A'}
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <KpiStrip summary={summary} />
+
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(420px,0.85fr)]">
+        <div className="space-y-6">
+          <AnomaliesPanel summary={summary} />
+          <SlaPanel summary={summary} />
+          <GatesPanel summary={summary} />
+        </div>
+        <div className="space-y-5">
+          <BackupPanel summary={summary} />
+          <IncidentsPanel summary={summary} />
+        </div>
+      </div>
+    </main>
+  );
+};

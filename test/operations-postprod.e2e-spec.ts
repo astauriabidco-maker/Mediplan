@@ -1,0 +1,280 @@
+import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { Test, TestingModule } from '@nestjs/testing';
+import { getRepositoryToken } from '@nestjs/typeorm';
+import request from 'supertest';
+import { AuditController } from '../src/audit/audit.controller';
+import { AuditService } from '../src/audit/audit.service';
+import {
+  AuditAction,
+  AuditEntityType,
+  AuditLog,
+} from '../src/audit/entities/audit-log.entity';
+import { JwtAuthGuard } from '../src/auth/jwt-auth.guard';
+import { RolesGuard } from '../src/auth/roles.guard';
+import { OperationIncident } from '../src/operations/entities/operation-incident.entity';
+import { OperationsJournalEntry } from '../src/operations/entities/operations-journal-entry.entity';
+import { OperationsController } from '../src/operations/operations.controller';
+import { OperationsService } from '../src/operations/operations.service';
+
+type MemoryEntity = Record<string, any> & { id?: number; tenantId?: string };
+
+class MemoryRepository<T extends MemoryEntity> {
+  private nextId = 1;
+
+  constructor(private readonly rows: T[] = []) {}
+
+  create(data: Partial<T>) {
+    return { ...data } as T;
+  }
+
+  async save(data: T | T[]) {
+    if (Array.isArray(data)) {
+      return Promise.all(data.map((entry) => this.save(entry))) as Promise<T[]>;
+    }
+
+    if (!data.id) data.id = this.nextId++;
+    const now = new Date();
+    if (!data.timestamp) data.timestamp = now;
+    if (!data.createdAt) data.createdAt = now;
+    data.updatedAt = now;
+
+    const index = this.rows.findIndex((row) => row.id === data.id);
+    if (index >= 0) {
+      this.rows[index] = { ...this.rows[index], ...data };
+    } else {
+      this.rows.push(data);
+    }
+
+    return data;
+  }
+
+  async find(
+    options: {
+      where?: any;
+      order?: Record<string, 'ASC' | 'DESC'>;
+      take?: number;
+    } = {},
+  ) {
+    const filtered = this.rows.filter((row) =>
+      this.matchesWhere(row, options.where),
+    );
+    return this.sortRows(filtered, options.order).slice(0, options.take);
+  }
+
+  async findOne(
+    options: { where?: any; order?: Record<string, 'ASC' | 'DESC'> } = {},
+  ) {
+    return (await this.find(options))[0] || null;
+  }
+
+  all() {
+    return this.rows;
+  }
+
+  private matchesWhere(row: T, where: any): boolean {
+    if (!where) return true;
+    if (Array.isArray(where)) {
+      return where.some((entry) => this.matchesWhere(row, entry));
+    }
+
+    return Object.entries(where).every(([key, value]) => {
+      if (this.isNotNullFindOperator(value)) {
+        return row[key] !== null && row[key] !== undefined;
+      }
+      if (value && typeof value === 'object' && !(value instanceof Date)) {
+        return this.matchesWhere(row[key] || {}, value);
+      }
+      return row[key] === value;
+    });
+  }
+
+  private isNotNullFindOperator(value: unknown): boolean {
+    return (
+      Boolean(value) &&
+      typeof value === 'object' &&
+      (value as { _type?: string; _value?: { _type?: string } })._type ===
+        'not' &&
+      (value as { _value?: { _type?: string } })._value?._type === 'isNull'
+    );
+  }
+
+  private sortRows(rows: T[], order?: Record<string, 'ASC' | 'DESC'>) {
+    if (!order) return [...rows];
+    const entries = Object.entries(order);
+    return [...rows].sort((left, right) => {
+      for (const [key, direction] of entries) {
+        const leftValue =
+          left[key] instanceof Date ? left[key].getTime() : left[key];
+        const rightValue =
+          right[key] instanceof Date ? right[key].getTime() : right[key];
+        if (leftValue === rightValue) continue;
+        return (
+          (leftValue > rightValue ? 1 : -1) * (direction === 'ASC' ? 1 : -1)
+        );
+      }
+      return 0;
+    });
+  }
+}
+
+describe('Sprint 23 post-production operations (e2e)', () => {
+  let app: INestApplication;
+  let incidentRepository: MemoryRepository<OperationIncident>;
+  let journalRepository: MemoryRepository<OperationsJournalEntry>;
+  let auditRepository: MemoryRepository<AuditLog>;
+
+  beforeEach(async () => {
+    incidentRepository = new MemoryRepository<OperationIncident>();
+    journalRepository = new MemoryRepository<OperationsJournalEntry>();
+    auditRepository = new MemoryRepository<AuditLog>();
+
+    const moduleFixture: TestingModule = await Test.createTestingModule({
+      controllers: [OperationsController, AuditController],
+      providers: [
+        OperationsService,
+        AuditService,
+        {
+          provide: getRepositoryToken(OperationIncident),
+          useValue: incidentRepository,
+        },
+        {
+          provide: getRepositoryToken(OperationsJournalEntry),
+          useValue: journalRepository,
+        },
+        { provide: getRepositoryToken(AuditLog), useValue: auditRepository },
+      ],
+    })
+      .overrideGuard(JwtAuthGuard)
+      .useValue({
+        canActivate: (context) => {
+          const req = context.switchToHttp().getRequest();
+          req.user = {
+            id: 9001,
+            email: 'ops@sprint23.test',
+            tenantId: 'tenant-ops-a',
+            role: 'ADMIN',
+            permissions: ['operations:read', 'operations:write', 'audit:read'],
+          };
+          return true;
+        },
+      })
+      .overrideGuard(RolesGuard)
+      .useValue({ canActivate: () => true })
+      .compile();
+
+    app = moduleFixture.createNestApplication();
+    app.useGlobalPipes(
+      new ValidationPipe({ transform: true, whitelist: true }),
+    );
+    await app.init();
+  });
+
+  afterEach(async () => {
+    await app?.close();
+  });
+
+  it('detects, assigns, escalates, resolves, audits and closes an incident', async () => {
+    const declared = await request(app.getHttpServer())
+      .post('/ops/incidents')
+      .send({
+        title: 'Publication planning bloquée',
+        description: 'Le contrôle post-prod signale une violation bloquante.',
+        severity: 'HIGH',
+        impactedService: 'planning',
+        evidenceUrl: 'https://evidence.sprint23.test/detection',
+        evidenceLabel: 'Rapport daily ops',
+      })
+      .expect(201);
+
+    expect(declared.body).toEqual(
+      expect.objectContaining({
+        id: 1,
+        tenantId: 'tenant-ops-a',
+        status: 'DECLARED',
+      }),
+    );
+
+    await request(app.getHttpServer())
+      .patch('/ops/incidents/1/assign')
+      .send({ assignedToId: 9010, note: 'Astreinte applicative' })
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.status).toBe('ASSIGNED');
+        expect(body.assignedToId).toBe(9010);
+      });
+
+    await request(app.getHttpServer())
+      .patch('/ops/incidents/1/escalate')
+      .send({
+        escalatedToId: 9020,
+        reason: 'Risque publication refusée',
+        evidenceUrl: 'https://evidence.sprint23.test/escalation',
+      })
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.status).toBe('ESCALATED');
+        expect(body.escalatedToId).toBe(9020);
+      });
+
+    await request(app.getHttpServer())
+      .patch('/ops/incidents/1/resolve')
+      .send({
+        resolutionSummary: 'Réassignation appliquée et validation relancée.',
+        evidenceUrl: 'https://evidence.sprint23.test/resolution',
+      })
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.status).toBe('RESOLVED');
+        expect(body.resolvedById).toBe(9001);
+      });
+
+    await request(app.getHttpServer())
+      .patch('/ops/incidents/1/close')
+      .send({
+        closureSummary: 'Contrôle post-correction conforme.',
+        evidenceUrl: 'https://evidence.sprint23.test/closure',
+      })
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.status).toBe('CLOSED');
+        expect(body.evidence).toHaveLength(4);
+        expect(body.timeline.map((entry: any) => entry.action)).toEqual([
+          'DECLARE_INCIDENT',
+          'ASSIGN_INCIDENT',
+          'ESCALATE_INCIDENT',
+          'RESOLVE_INCIDENT',
+          'CLOSE_INCIDENT',
+        ]);
+      });
+
+    const incidents = await request(app.getHttpServer())
+      .get('/ops/incidents')
+      .query({ status: 'CLOSED' })
+      .expect(200);
+    expect(incidents.body).toHaveLength(1);
+
+    const audit = await request(app.getHttpServer())
+      .get('/audit')
+      .query({
+        entityType: AuditEntityType.OPERATION_INCIDENT,
+        entityId: 'operation-incident:1',
+      })
+      .expect(200);
+    expect(audit.body).toHaveLength(5);
+    expect(audit.body[0].details.action).toBe('CLOSE_INCIDENT');
+
+    await request(app.getHttpServer())
+      .get('/audit/verify')
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body).toEqual(
+          expect.objectContaining({
+            tenantId: 'tenant-ops-a',
+            total: 5,
+            valid: true,
+            issues: [],
+          }),
+        );
+      });
+  });
+});

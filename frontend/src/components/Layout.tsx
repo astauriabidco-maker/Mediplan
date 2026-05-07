@@ -21,6 +21,7 @@ import {
   ClipboardCheck,
   AlertTriangle,
   FileText,
+  ServerCog,
 } from 'lucide-react';
 import { useAppConfig } from '../store/useAppConfig';
 import { useAuth } from '../store/useAuth';
@@ -315,6 +316,14 @@ export const Layout = () => {
               to="/admin/release"
               icon={ShieldCheck}
               label="Release readiness"
+              themeColor={themeColor}
+            />
+          )}
+          {!isAgent && hasPermission('release:read') && (
+            <SidebarItem
+              to="/ops"
+              icon={ServerCog}
+              label="Ops post-prod"
               themeColor={themeColor}
             />
           )}

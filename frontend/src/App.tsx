@@ -113,6 +113,11 @@ const ReleaseReadinessPage = lazy(() =>
     default: module.ReleaseReadinessPage,
   })),
 );
+const OpsDashboardPage = lazy(() =>
+  import('./pages/OpsDashboardPage').then((module) => ({
+    default: module.OpsDashboardPage,
+  })),
+);
 const SyncPage = lazy(() =>
   import('./pages/PlaceholderPages').then((module) => ({
     default: module.SyncPage,
@@ -201,6 +206,7 @@ function App() {
                   path="admin/release"
                   element={<ReleaseReadinessPage />}
                 />
+                <Route path="ops" element={<OpsDashboardPage />} />
                 <Route path="sync" element={<SyncPage />} />
                 <Route path="whatsapp-inbox" element={<WhatsAppInbox />} />
                 <Route path="settings" element={<SettingsPage />} />

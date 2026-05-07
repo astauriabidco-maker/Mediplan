@@ -14,6 +14,17 @@ node scripts/ops-routine-scheduler.mjs --dry-run
 node scripts/ops-routine-scheduler.mjs --mock --report-dir preprod-reports
 ```
 
+Depuis Sprint 23 Phase 6, les paquets runbook automatises sont exposes via:
+
+```bash
+npm run ops:daily
+npm run ops:incident
+npm run ops:weekly-report
+```
+
+Ces commandes generent uniquement des rapports Markdown/JSON. Elles ne lancent
+pas les controles operationnels listes dans les runbooks.
+
 Il produit:
 
 - `preprod-reports/ops-routine-scheduler-YYYY-MM-DD.md`;
@@ -154,6 +165,8 @@ REPORT_DIR=/private/tmp/mediplan-ops-routine-reports node scripts/ops-routine-sc
 
 - Runbook exploitation Sprint 17:
   `docs/ops/SPRINT_17_EXPLOITATION_RUNBOOK.md`
+- Runbook automatise Sprint 23 Phase 6:
+  `docs/ops/SPRINT_23_PHASE_6_RUNBOOK_AUTOMATISE.md`
 - Readiness exploitation: `scripts/preprod-ops-readiness.mjs`
 - Synthese operationnelle: `scripts/preprod-operational-summary.mjs`
 - Backup/restore drill: `scripts/preprod-backup-restore.mjs`

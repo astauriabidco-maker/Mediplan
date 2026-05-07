@@ -15,6 +15,7 @@ import type { AuthenticatedRequest } from '../auth/authenticated-request';
 import { resolveTenantId } from '../auth/tenant-context';
 import {
   ProductionGateParamDto,
+  SlaSloQueryDto,
   ProductionSignoffParamDto,
   UpsertProductionGateDto,
   UpsertProductionSignoffDto,
@@ -101,6 +102,21 @@ export class ProductionReadinessController {
   ) {
     return this.productionReadinessService.getDecision(
       resolveTenantId(req, queryTenantId),
+    );
+  }
+
+  @Get('sla-slo')
+  @Permissions('release:read', 'audit:read')
+  getSlaSloContract(
+    @Request() req: AuthenticatedRequest,
+    @Query() query: SlaSloQueryDto & { tenantId?: string },
+  ) {
+    return this.productionReadinessService.getSlaSloContract(
+      resolveTenantId(req, query.tenantId),
+      {
+        from: query.from ? new Date(query.from) : undefined,
+        to: query.to ? new Date(query.to) : undefined,
+      },
     );
   }
 }

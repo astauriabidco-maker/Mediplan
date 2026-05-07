@@ -41,6 +41,7 @@ import { SettingsModule } from './settings/settings.module';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { BackupModule } from './backup/backup.module';
 import { ProductionReadinessModule } from './production-readiness/production-readiness.module';
+import { OperationsModule } from './operations/operations.module';
 
 @Module({
   imports: [
@@ -115,6 +116,7 @@ import { ProductionReadinessModule } from './production-readiness/production-rea
     AnalyticsModule,
     BackupModule,
     ProductionReadinessModule,
+    OperationsModule,
   ],
   controllers: [AppController],
   providers: [

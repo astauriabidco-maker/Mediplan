@@ -90,3 +90,13 @@ export class ProductionGateParamDto {
   @IsEnum(ProductionGateKey)
   key: ProductionGateKey;
 }
+
+export class SlaSloQueryDto {
+  @IsOptional()
+  @IsDateString()
+  from?: string;
+
+  @IsOptional()
+  @IsDateString()
+  to?: string;
+}

@@ -20,6 +20,7 @@ type ProductionReadinessServiceMock = jest.Mocked<
     | 'upsertGate'
     | 'getDecision'
     | 'getSignoffHistory'
+    | 'getSlaSloContract'
   >
 >;
 
@@ -45,6 +46,7 @@ const createServiceMock = (): ProductionReadinessServiceMock => ({
   upsertGate: jest.fn(),
   getDecision: jest.fn(),
   getSignoffHistory: jest.fn(),
+  getSlaSloContract: jest.fn(),
 });
 
 describe('ProductionReadinessController', () => {
@@ -65,6 +67,7 @@ describe('ProductionReadinessController', () => {
     await controller.findGates(req, 'tenant-b');
     await controller.getDecision(req, 'tenant-b');
     await controller.getSignoffHistory(req, 'tenant-b');
+    await controller.getSlaSloContract(req, { tenantId: 'tenant-b' });
 
     expect(productionReadinessService.findSignoffs).toHaveBeenCalledWith(
       'tenant-a',
@@ -77,6 +80,13 @@ describe('ProductionReadinessController', () => {
     );
     expect(productionReadinessService.getSignoffHistory).toHaveBeenCalledWith(
       'tenant-a',
+    );
+    expect(productionReadinessService.getSlaSloContract).toHaveBeenCalledWith(
+      'tenant-a',
+      {
+        from: undefined,
+        to: undefined,
+      },
     );
   });
 
@@ -133,6 +143,24 @@ describe('ProductionReadinessController', () => {
       ProductionGateKey.SMOKE,
       dto,
       77,
+    );
+  });
+
+  it('passes SLA/SLO window filters to the production contract reader', async () => {
+    const req = createRequest();
+
+    await controller.getSlaSloContract(req, {
+      tenantId: 'tenant-b',
+      from: '2026-05-06T00:00:00.000Z',
+      to: '2026-05-07T00:00:00.000Z',
+    });
+
+    expect(productionReadinessService.getSlaSloContract).toHaveBeenCalledWith(
+      'tenant-a',
+      {
+        from: new Date('2026-05-06T00:00:00.000Z'),
+        to: new Date('2026-05-07T00:00:00.000Z'),
+      },
     );
   });
 });

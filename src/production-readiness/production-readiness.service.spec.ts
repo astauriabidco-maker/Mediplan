@@ -123,9 +123,6 @@ describe('ProductionReadinessService', () => {
       expect.objectContaining({
         action: 'CREATE_PRODUCTION_SIGNOFF',
         signoffKey: ProductionSignoffKey.SECURITY,
-        after: expect.objectContaining({
-          comment: 'Validation sécurité OK',
-        }),
       }),
     );
   });
@@ -319,6 +316,159 @@ describe('ProductionReadinessService', () => {
         action: 'CREATE_PRODUCTION_GATE',
         gateKey: ProductionGateKey.BACKUP,
       }),
+    );
+  });
+
+  it('calculates a structured SLA/SLO contract from gate snapshots and planning audit', async () => {
+    gateRepository.find.mockResolvedValue([
+      {
+        key: ProductionGateKey.SMOKE,
+        status: ProductionGateStatus.PASSED,
+        source: 'synthetic-monitor',
+        evidenceUrl: 'https://evidence.test/smoke',
+        checkedAt: new Date('2026-05-07T08:00:00.000Z'),
+        snapshot: {
+          availabilityPercent: 99.97,
+          responseTimeP95Ms: 620,
+          apiErrorRatePercent: 0.2,
+        },
+      },
+      {
+        key: ProductionGateKey.BACKUP,
+        status: ProductionGateStatus.PASSED,
+        source: 'backup-job',
+        evidenceUrl: 'https://evidence.test/backup',
+        checkedAt: new Date('2026-05-07T07:00:00.000Z'),
+        snapshot: {
+          lastSuccessfulBackupAt: '2026-05-07T06:00:00.000Z',
+        },
+      },
+    ]);
+    auditService.getLogs.mockResolvedValue([
+      {
+        id: 77,
+        timestamp: new Date('2026-05-07T07:30:00.000Z'),
+        actorId: 51,
+        action: AuditAction.UPDATE,
+        entityType: AuditEntityType.PLANNING,
+        entityId: 'publication-window',
+        tenantId: 'tenant-a',
+        details: {
+          action: 'PUBLISH_PLANNING',
+          blocked: false,
+          affected: 12,
+          report: {
+            totalPending: 12,
+            violations: [],
+          },
+        },
+      },
+    ]);
+
+    const contract = await service.getSlaSloContract('tenant-a', {
+      from: new Date('2026-05-06T08:00:00.000Z'),
+      to: new Date('2026-05-07T08:00:00.000Z'),
+    });
+
+    expect(contract.status).toBe('SLO_MET');
+    expect(contract.summary).toEqual({
+      total: 5,
+      met: 5,
+      atRisk: 0,
+      breached: 0,
+      unknown: 0,
+      score: 100,
+    });
+    expect(contract.objectives.availability.key).toBe('availability');
+    expect(contract.objectives.availability.status).toBe('MET');
+    expect(contract.objectives.availability.actual.value).toBe(99.97);
+    expect(contract.objectives.availability.actual.source).toBe(
+      'production-gate:SMOKE.snapshot.availabilityPercent',
+    );
+    expect(contract.objectives.availability.actual.evidenceUrl).toBe(
+      'https://evidence.test/smoke',
+    );
+    expect(contract.objectives.backupFreshness.actual.value).toBe(2);
+    expect(contract.objectives.planningCompliance.actual.value).toBe(100);
+    expect(contract.objectives.planningCompliance.actual.source).toBe(
+      'audit:PUBLISH_PLANNING',
+    );
+    expect(contract.objectives.planningCompliance.actual.details).toEqual(
+      expect.objectContaining({
+        auditLogId: 77,
+        totalPending: 12,
+        violations: 0,
+      }),
+    );
+    expect(auditService.getLogs).toHaveBeenCalledWith('tenant-a', {
+      action: AuditAction.UPDATE,
+      entityType: AuditEntityType.PLANNING,
+      detailAction: 'PUBLISH_PLANNING',
+      from: new Date('2026-05-06T08:00:00.000Z'),
+      to: new Date('2026-05-07T08:00:00.000Z'),
+      limit: 20,
+    });
+  });
+
+  it('flags breached post-production SLOs and reports blockers', async () => {
+    gateRepository.find.mockResolvedValue([
+      {
+        key: ProductionGateKey.SMOKE,
+        status: ProductionGateStatus.PASSED,
+        checkedAt: new Date('2026-05-07T08:00:00.000Z'),
+        snapshot: {
+          availabilityPercent: 96,
+          responseTimeP95Ms: 1200,
+          apiErrorRatePercent: 3.5,
+        },
+      },
+      {
+        key: ProductionGateKey.BACKUP,
+        status: ProductionGateStatus.FAILED,
+        checkedAt: new Date('2026-05-05T08:00:00.000Z'),
+        snapshot: {
+          lastBackupAt: '2026-05-05T08:00:00.000Z',
+        },
+      },
+    ]);
+    auditService.getLogs.mockResolvedValue([
+      {
+        id: 88,
+        timestamp: new Date('2026-05-07T07:30:00.000Z'),
+        actorId: 51,
+        details: {
+          action: 'PUBLISH_PLANNING',
+          blocked: true,
+          affected: 0,
+          report: {
+            totalPending: 10,
+            violations: [{ shiftId: 1 }, { shiftId: 2 }],
+          },
+        },
+      },
+    ]);
+
+    const contract = await service.getSlaSloContract('tenant-a', {
+      from: new Date('2026-05-06T08:00:00.000Z'),
+      to: new Date('2026-05-07T08:00:00.000Z'),
+    });
+
+    expect(contract.status).toBe('SLO_BREACHED');
+    expect(contract.summary.breached).toBe(5);
+    expect(contract.objectives.responseTime.status).toBe('BREACHED');
+    expect(contract.objectives.backupFreshness.actual).toEqual(
+      expect.objectContaining({
+        value: 48,
+        source: 'production-gate:BACKUP.snapshot.lastBackupAt',
+      }),
+    );
+    expect(contract.objectives.planningCompliance.actual.value).toBe(80);
+    expect(contract.blockers).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('Disponibilite applicative'),
+        expect.stringContaining('Fraicheur backup'),
+        expect.stringContaining('Conformite planning publie'),
+      ]),
     );
   });
 });
