@@ -21,12 +21,14 @@ import {
   OperationRoutineRun,
   OperationRoutineRunStatus,
 } from '../src/operations/entities/operation-routine-run.entity';
+import { OperationRunbookTemplate } from '../src/operations/entities/operation-runbook-template.entity';
 import {
   OperationalAlert,
   OperationalAlertSeverity,
   OperationalAlertStatus,
   OperationalAlertType,
 } from '../src/operations/entities/operational-alert.entity';
+import { OpsActionCenterWorkflowMutation } from '../src/operations/entities/ops-action-center-workflow-mutation.entity';
 import { OpsOnCallConfig } from '../src/operations/entities/ops-on-call-config.entity';
 import { OperationsJournalEntry } from '../src/operations/entities/operations-journal-entry.entity';
 import { OpsOnCallConfigService } from '../src/operations/ops-on-call-config.service';
@@ -90,11 +92,23 @@ class MemoryRepository<T extends MemoryEntity> {
   createQueryBuilder() {
     const repository = this;
     const qb = {
+      select: jest.fn().mockReturnThis(),
+      distinct: jest.fn().mockReturnThis(),
       where: jest.fn().mockReturnThis(),
       andWhere: jest.fn().mockReturnThis(),
       orderBy: jest.fn().mockReturnThis(),
       addOrderBy: jest.fn().mockReturnThis(),
       getMany: jest.fn(async () => repository.all()),
+      getRawMany: jest.fn(async () =>
+        Array.from(
+          new Set(
+            repository
+              .all()
+              .map((row) => row.tenantId)
+              .filter((tenantId): tenantId is string => Boolean(tenantId)),
+          ),
+        ).map((tenantId) => ({ tenantId })),
+      ),
     };
     return qb;
   }
@@ -168,6 +182,8 @@ describe('Sprint 23 post-production operations (e2e)', () => {
   let routineRunRepository: MemoryRepository<OperationRoutineRun>;
   let alertRepository: MemoryRepository<OperationalAlert>;
   let onCallConfigRepository: MemoryRepository<OpsOnCallConfig>;
+  let runbookTemplateRepository: MemoryRepository<OperationRunbookTemplate>;
+  let actionCenterWorkflowRepository: MemoryRepository<OpsActionCenterWorkflowMutation>;
   let journalRepository: MemoryRepository<OperationsJournalEntry>;
   let auditRepository: MemoryRepository<AuditLog>;
   let routineSchedulerService: { runManual: jest.Mock };
@@ -177,6 +193,9 @@ describe('Sprint 23 post-production operations (e2e)', () => {
     routineRunRepository = new MemoryRepository<OperationRoutineRun>();
     alertRepository = new MemoryRepository<OperationalAlert>();
     onCallConfigRepository = new MemoryRepository<OpsOnCallConfig>();
+    runbookTemplateRepository = new MemoryRepository<OperationRunbookTemplate>();
+    actionCenterWorkflowRepository =
+      new MemoryRepository<OpsActionCenterWorkflowMutation>();
     journalRepository = new MemoryRepository<OperationsJournalEntry>();
     auditRepository = new MemoryRepository<AuditLog>();
     routineSchedulerService = {
@@ -228,6 +247,14 @@ describe('Sprint 23 post-production operations (e2e)', () => {
           provide: getRepositoryToken(OperationsJournalEntry),
           useValue: journalRepository,
         },
+        {
+          provide: getRepositoryToken(OperationRunbookTemplate),
+          useValue: runbookTemplateRepository,
+        },
+        {
+          provide: getRepositoryToken(OpsActionCenterWorkflowMutation),
+          useValue: actionCenterWorkflowRepository,
+        },
         { provide: getRepositoryToken(AuditLog), useValue: auditRepository },
         OpsOnCallConfigService,
         OpsNotificationService,
@@ -247,10 +274,10 @@ describe('Sprint 23 post-production operations (e2e)', () => {
         canActivate: (context) => {
           const req = context.switchToHttp().getRequest();
           req.user = {
-            id: 9001,
+            id: Number(req.headers['x-test-user-id'] ?? 9001),
             email: 'ops@sprint23.test',
-            tenantId: 'tenant-ops-a',
-            role: 'ADMIN',
+            tenantId: req.headers['x-test-tenant-id'] ?? 'tenant-ops-a',
+            role: req.headers['x-test-role'] ?? 'ADMIN',
             permissions: ['operations:read', 'operations:write', 'audit:read'],
           };
           return true;
@@ -686,6 +713,104 @@ describe('Sprint 23 post-production operations (e2e)', () => {
         expect(body.routines.failed).toBeGreaterThanOrEqual(1);
         expect(body.alerts.openBySeverity.CRITICAL).toBeGreaterThanOrEqual(1);
         expect(body.actionCenter.total).toBeGreaterThanOrEqual(1);
+      });
+  });
+
+  it('isolates tenant operations while allowing super-admin consolidation', async () => {
+    await operationsService.syncOperationalAlert(
+      'tenant-ops-a',
+      {
+        type: OperationalAlertType.SLO_BREACH,
+        source: 'ops.sprint27',
+        reference: 'sprint27:tenant-a:slo',
+        checkStatus: 'KO',
+        severity: OperationalAlertSeverity.CRITICAL,
+        message: 'Tenant A en violation critique.',
+        metadata: { sprint: 27 },
+      },
+      9001,
+    );
+
+    await operationsService.recordRoutineRun('tenant-ops-b', {
+      routine: 'backup',
+      status: OperationRoutineRunStatus.PASSED,
+      startedAt: '2026-05-08T07:00:00.000Z',
+      finishedAt: '2026-05-08T07:05:00.000Z',
+      durationMs: 300000,
+      metadata: { sprint: 27 },
+    });
+
+    await request(app.getHttpServer())
+      .get('/ops/multi-tenant-summary')
+      .query({ tenantId: 'tenant-ops-b' })
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.scope).toEqual(
+          expect.objectContaining({
+            tenantId: 'tenant-ops-a',
+            allTenants: false,
+          }),
+        );
+        expect(body.tenants).toHaveLength(1);
+        expect(body.tenants[0]).toEqual(
+          expect.objectContaining({
+            tenantId: 'tenant-ops-a',
+            status: 'CRITICAL',
+          }),
+        );
+      });
+
+    await request(app.getHttpServer())
+      .get('/ops/multi-tenant-summary')
+      .set('x-test-role', 'SUPER_ADMIN')
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.scope.allTenants).toBe(true);
+        expect(body.totals.tenants).toBe(2);
+        expect(body.tenants).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              tenantId: 'tenant-ops-a',
+              status: 'CRITICAL',
+              alerts: expect.objectContaining({ critical: 1 }),
+            }),
+            expect.objectContaining({
+              tenantId: 'tenant-ops-b',
+              status: 'OK',
+              lastBackup: expect.objectContaining({
+                status: OperationRoutineRunStatus.PASSED,
+              }),
+            }),
+          ]),
+        );
+      });
+
+    await request(app.getHttpServer())
+      .get('/ops/action-center')
+      .set('x-test-role', 'SUPER_ADMIN')
+      .query({ tenantId: 'tenant-ops-b' })
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.tenantId).toBe('tenant-ops-b');
+        expect(body.items).toHaveLength(0);
+      });
+
+    await request(app.getHttpServer())
+      .get('/ops/action-center')
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.tenantId).toBe('tenant-ops-a');
+        expect(body.items).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              type: 'OPERATIONAL_ALERT',
+              priority: 'CRITICAL',
+              sourceReference: expect.objectContaining({
+                tenantId: 'tenant-ops-a',
+              }),
+            }),
+          ]),
+        );
       });
   });
 });

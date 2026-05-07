@@ -1,6 +1,11 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Brackets, Repository } from 'typeorm';
+import { AuditService } from '../audit/audit.service';
+import {
+  AuditAction,
+  AuditEntityType,
+} from '../audit/entities/audit-log.entity';
 import {
   CreateOpsOnCallConfigDto,
   OpsOnCallConfigQueryDto,
@@ -13,6 +18,7 @@ export class OpsOnCallConfigService {
   constructor(
     @InjectRepository(OpsOnCallConfig)
     private readonly onCallConfigRepository: Repository<OpsOnCallConfig>,
+    private readonly auditService: AuditService,
   ) {}
 
   findTenantConfigs(tenantId: string, query: OpsOnCallConfigQueryDto = {}) {
@@ -35,7 +41,7 @@ export class OpsOnCallConfigService {
     return qb.getMany();
   }
 
-  createTenantConfig(
+  async createTenantConfig(
     tenantId: string,
     dto: CreateOpsOnCallConfigDto,
     actorId: number,
@@ -52,7 +58,22 @@ export class OpsOnCallConfigService {
       updatedById: null,
     });
 
-    return this.onCallConfigRepository.save(config);
+    const savedConfig = await this.onCallConfigRepository.save(config);
+    await this.auditService.log(
+      tenantId,
+      actorId,
+      AuditAction.CREATE,
+      AuditEntityType.PLANNING,
+      `ops-on-call-config:${savedConfig.id}`,
+      {
+        action: 'CREATE_OPS_ON_CALL_CONFIG',
+        onCallConfigId: savedConfig.id,
+        before: null,
+        after: this.toAuditSnapshot(savedConfig),
+      },
+    );
+
+    return savedConfig;
   }
 
   async updateTenantConfig(
@@ -68,6 +89,8 @@ export class OpsOnCallConfigService {
     if (!config) {
       throw new NotFoundException('Ops on-call config not found');
     }
+
+    const before = this.toAuditSnapshot(config);
 
     if (dto.role !== undefined) {
       config.role = this.normalizeRole(dto.role);
@@ -89,7 +112,22 @@ export class OpsOnCallConfigService {
     }
     config.updatedById = actorId;
 
-    return this.onCallConfigRepository.save(config);
+    const savedConfig = await this.onCallConfigRepository.save(config);
+    await this.auditService.log(
+      tenantId,
+      actorId,
+      AuditAction.UPDATE,
+      AuditEntityType.PLANNING,
+      `ops-on-call-config:${savedConfig.id}`,
+      {
+        action: 'UPDATE_OPS_ON_CALL_CONFIG',
+        onCallConfigId: savedConfig.id,
+        before,
+        after: this.toAuditSnapshot(savedConfig),
+      },
+    );
+
+    return savedConfig;
   }
 
   async resolveRecipients(
@@ -159,5 +197,20 @@ export class OpsOnCallConfigService {
 
   private toDateOrNull(value?: string | null) {
     return value ? new Date(value) : null;
+  }
+
+  private toAuditSnapshot(config: Partial<OpsOnCallConfig>) {
+    return {
+      id: config.id,
+      role: config.role,
+      priority: config.priority,
+      enabled: config.enabled,
+      activeFrom: config.activeFrom?.toISOString?.() ?? config.activeFrom ?? null,
+      activeUntil:
+        config.activeUntil?.toISOString?.() ?? config.activeUntil ?? null,
+      recipientCount: config.recipients?.length ?? 0,
+      createdById: config.createdById ?? null,
+      updatedById: config.updatedById ?? null,
+    };
   }
 }

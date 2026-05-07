@@ -16,6 +16,7 @@ import {
 } from './entities/operations-journal-entry.entity';
 import {
   OpsActionCenterItemType,
+  OpsActionCenterPriority,
   OpsActionCenterStatus,
 } from './dto/ops-action-center.dto';
 import { OperationsController } from './operations.controller';
@@ -29,7 +30,9 @@ type OperationsServiceMock = jest.Mocked<
   Pick<
     OperationsService,
     | 'getActionCenter'
+    | 'getMultiTenantSummary'
     | 'getObservabilityMetrics'
+    | 'getSloObjectives'
     | 'findIncidents'
     | 'findIncident'
     | 'declareIncident'
@@ -50,6 +53,11 @@ type OperationsServiceMock = jest.Mocked<
     | 'generateIncidentRunbook'
     | 'generateJournalRunbook'
     | 'runOperationalEscalation'
+    | 'assignActionCenterItem'
+    | 'commentActionCenterItem'
+    | 'prioritizeActionCenterItem'
+    | 'transitionActionCenterItem'
+    | 'resolveActionCenterItem'
   >
 >;
 
@@ -70,7 +78,9 @@ const createRequest = (overrides: RequestOverrides = {}) =>
 
 const createServiceMock = (): OperationsServiceMock => ({
   getActionCenter: jest.fn(),
+  getMultiTenantSummary: jest.fn(),
   getObservabilityMetrics: jest.fn(),
+  getSloObjectives: jest.fn(),
   findIncidents: jest.fn(),
   findIncident: jest.fn(),
   declareIncident: jest.fn(),
@@ -91,6 +101,11 @@ const createServiceMock = (): OperationsServiceMock => ({
   generateIncidentRunbook: jest.fn(),
   generateJournalRunbook: jest.fn(),
   runOperationalEscalation: jest.fn(),
+  assignActionCenterItem: jest.fn(),
+  commentActionCenterItem: jest.fn(),
+  prioritizeActionCenterItem: jest.fn(),
+  transitionActionCenterItem: jest.fn(),
+  resolveActionCenterItem: jest.fn(),
 });
 
 describe('OperationsController', () => {
@@ -162,7 +177,100 @@ describe('OperationsController', () => {
     expect(operationsService.getActionCenter).toHaveBeenCalledWith(
       'tenant-a',
       filters,
+      42,
     );
+  });
+
+  it('passes actor id and resolved tenant to action-center workflow mutations', async () => {
+    const req = createRequest({ id: 77, role: 'ADMIN' });
+    const itemId = 'operations-journal:71:action';
+
+    await controller.assignActionCenterItem(
+      req,
+      { itemId },
+      { assignedToId: 88, comment: 'Pris en charge' },
+      'tenant-b',
+    );
+    await controller.commentActionCenterItem(
+      req,
+      { itemId },
+      { comment: 'Controle en cours' },
+      'tenant-b',
+    );
+    await controller.prioritizeActionCenterItem(
+      req,
+      { itemId },
+      { priority: OpsActionCenterPriority.CRITICAL },
+      'tenant-b',
+    );
+    await controller.transitionActionCenterItem(
+      req,
+      { itemId },
+      { status: OpsActionCenterStatus.IN_PROGRESS },
+      'tenant-b',
+    );
+    await controller.resolveActionCenterItem(
+      req,
+      { itemId },
+      { summary: 'Traite' },
+      'tenant-b',
+    );
+
+    expect(operationsService.assignActionCenterItem).toHaveBeenCalledWith(
+      'tenant-a',
+      itemId,
+      { assignedToId: 88, comment: 'Pris en charge' },
+      77,
+    );
+    expect(operationsService.commentActionCenterItem).toHaveBeenCalledWith(
+      'tenant-a',
+      itemId,
+      { comment: 'Controle en cours' },
+      77,
+    );
+    expect(operationsService.prioritizeActionCenterItem).toHaveBeenCalledWith(
+      'tenant-a',
+      itemId,
+      { priority: OpsActionCenterPriority.CRITICAL },
+      77,
+    );
+    expect(operationsService.transitionActionCenterItem).toHaveBeenCalledWith(
+      'tenant-a',
+      itemId,
+      { status: OpsActionCenterStatus.IN_PROGRESS },
+      77,
+    );
+    expect(operationsService.resolveActionCenterItem).toHaveBeenCalledWith(
+      'tenant-a',
+      itemId,
+      { summary: 'Traite' },
+      77,
+    );
+  });
+
+  it('scopes multi-tenant summary to the current tenant for non-super-admin users', async () => {
+    const req = createRequest({ role: 'ADMIN' });
+
+    await controller.getMultiTenantSummary(req, { tenantId: 'tenant-b' });
+
+    expect(operationsService.getMultiTenantSummary).toHaveBeenCalledWith([
+      'tenant-a',
+    ]);
+  });
+
+  it('allows SUPER_ADMIN users to consolidate all tenants or target one tenant', async () => {
+    const req = createRequest({ role: 'SUPER_ADMIN', tenantId: 'platform' });
+
+    await controller.getMultiTenantSummary(req, {});
+    await controller.getMultiTenantSummary(req, { tenantId: 'tenant-b' });
+
+    expect(operationsService.getMultiTenantSummary).toHaveBeenNthCalledWith(
+      1,
+      undefined,
+    );
+    expect(operationsService.getMultiTenantSummary).toHaveBeenNthCalledWith(2, [
+      'tenant-b',
+    ]);
   });
 
   it('resolves tenants and period filters for observability metrics', async () => {
@@ -175,6 +283,22 @@ describe('OperationsController', () => {
     await controller.getObservabilityMetrics(req, filters, 'tenant-b');
 
     expect(operationsService.getObservabilityMetrics).toHaveBeenCalledWith(
+      'tenant-a',
+      filters,
+      42,
+    );
+  });
+
+  it('resolves tenants and period filters for SLO objectives', async () => {
+    const req = createRequest({ role: 'ADMIN' });
+    const filters = {
+      from: '2026-05-01T00:00:00.000Z',
+      to: '2026-05-07T23:59:59.000Z',
+    };
+
+    await controller.getSloObjectives(req, filters, 'tenant-b');
+
+    expect(operationsService.getSloObjectives).toHaveBeenCalledWith(
       'tenant-a',
       filters,
     );
@@ -291,14 +415,17 @@ describe('OperationsController', () => {
     expect(operationsService.generateAlertRunbook).toHaveBeenCalledWith(
       'tenant-a',
       44,
+      42,
     );
     expect(operationsService.generateIncidentRunbook).toHaveBeenCalledWith(
       'tenant-a',
       12,
+      42,
     );
     expect(operationsService.generateJournalRunbook).toHaveBeenCalledWith(
       'tenant-a',
       4,
+      42,
     );
   });
 

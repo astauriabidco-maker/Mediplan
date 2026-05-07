@@ -27,6 +27,7 @@ jest.mock('axios', () => ({
 type RepositoryMock = {
   create: jest.Mock;
   save: jest.Mock;
+  findOne: jest.Mock;
 };
 type OnCallConfigServiceMock = {
   resolveRecipients: jest.Mock;
@@ -37,6 +38,7 @@ const createRepositoryMock = (): RepositoryMock => ({
   save: jest.fn((entity: Partial<OperationsJournalEntry>) =>
     Promise.resolve({ id: entity.id ?? 21, ...entity }),
   ),
+  findOne: jest.fn(),
 });
 
 const createConfigService = (values: Record<string, unknown> = {}) => ({
@@ -275,7 +277,7 @@ describe('OpsNotificationService', () => {
     expect(axios.post).toHaveBeenCalledWith(
       'https://ops.example.test/hook',
       expect.objectContaining({
-        metadata: { incidentId: 12 },
+        metadata: expect.objectContaining({ incidentId: 12 }),
         recipients: ['user:88'],
       }),
       expect.objectContaining({
@@ -396,6 +398,207 @@ describe('OpsNotificationService', () => {
     const repeated = await service.notify(payload);
     expect(repeated.status).toBe(OpsNotificationStatus.SENT);
     expect(axios.post).toHaveBeenCalledTimes(2);
+    nowSpy.mockRestore();
+  });
+
+  it('defers non-critical notifications during quiet hours without sending transport spam', async () => {
+    const quietNight = new Date(2026, 0, 1, 23, 15, 0, 0).getTime();
+    const nowSpy = jest.spyOn(Date, 'now').mockReturnValue(quietNight);
+    (axios.post as jest.Mock).mockResolvedValue({ status: 200 });
+    configService = createConfigService({
+      OPS_NOTIFICATION_HIGH_CHANNELS: 'webhook',
+      OPS_NOTIFICATION_HIGH_QUIET_HOURS: '22:00-06:00',
+      OPS_NOTIFICATION_WEBHOOK_URL: 'https://ops.example.test/hook',
+    });
+
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        OpsNotificationService,
+        {
+          provide: getRepositoryToken(OperationsJournalEntry),
+          useValue: journalRepository,
+        },
+        { provide: ConfigService, useValue: configService },
+        { provide: OpsOnCallConfigService, useValue: onCallConfigService },
+      ],
+    }).compile();
+    service = moduleRef.get(OpsNotificationService);
+
+    const result = await service.notify({
+      tenant: 'tenant-a',
+      severity: OperationIncidentSeverity.HIGH,
+      eventType: OpsNotificationEventType.ALERT,
+      title: 'Batch retard',
+      message: 'Traitement degrade',
+      source: 'batch',
+      reference: 'nightly',
+    });
+
+    expect(result.status).toBe(OpsNotificationStatus.THROTTLED);
+    expect(result.suppressedUntil).toBe(
+      new Date(2026, 0, 2, 6, 0, 0, 0).toISOString(),
+    );
+    expect(result.attempts[0].message).toContain('quiet hours');
+    expect(axios.post).not.toHaveBeenCalled();
+    expect(journalRepository.save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          notificationStatus: OpsNotificationStatus.THROTTLED,
+          notificationPolicy: expect.objectContaining({
+            quietHours: {
+              start: '22:00',
+              end: '06:00',
+              timezone: 'local',
+            },
+          }),
+          notificationProof: expect.objectContaining({
+            status: OpsNotificationStatus.THROTTLED,
+          }),
+        }),
+      }),
+    );
+
+    nowSpy.mockRestore();
+  });
+
+  it('sends reminders to the next escalation level after the reminder delay', async () => {
+    const nowSpy = jest.spyOn(Date, 'now').mockReturnValue(1_000);
+    (axios.post as jest.Mock).mockResolvedValue({ status: 200 });
+    configService = createConfigService({
+      OPS_NOTIFICATION_HIGH_CHANNELS: 'webhook',
+      OPS_NOTIFICATION_HIGH_RECIPIENT_ROLES: 'OPS',
+      OPS_NOTIFICATION_HIGH_THROTTLE_WINDOW_MS: 0,
+      OPS_NOTIFICATION_HIGH_DEDUPE_WINDOW_MS: 0,
+      OPS_NOTIFICATION_HIGH_REMINDER_DELAY_MS: 1000,
+      OPS_NOTIFICATION_HIGH_ESCALATION_LEVELS: '1:0:OPS,2:1000:ON_CALL+MANAGER',
+      OPS_NOTIFICATION_RECIPIENTS_OPS: 'ops@mediplan.test',
+      OPS_NOTIFICATION_RECIPIENTS_ON_CALL: 'l2@mediplan.test',
+      OPS_NOTIFICATION_RECIPIENTS_MANAGER: 'manager@mediplan.test',
+      OPS_NOTIFICATION_WEBHOOK_URL: 'https://ops.example.test/hook',
+    });
+
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        OpsNotificationService,
+        {
+          provide: getRepositoryToken(OperationsJournalEntry),
+          useValue: journalRepository,
+        },
+        { provide: ConfigService, useValue: configService },
+        { provide: OpsOnCallConfigService, useValue: onCallConfigService },
+      ],
+    }).compile();
+    service = moduleRef.get(OpsNotificationService);
+
+    const payload = {
+      tenant: 'tenant-a',
+      severity: OperationIncidentSeverity.HIGH,
+      eventType: OpsNotificationEventType.ALERT,
+      title: 'Saturation file',
+      message: 'La file depasse le seuil',
+      source: 'monitoring',
+      reference: 'queue-a',
+    };
+
+    const first = await service.notify(payload);
+    nowSpy.mockReturnValue(2_500);
+    const reminder = await service.notify(payload);
+
+    expect(first.policy.activeEscalationLevel).toEqual(
+      expect.objectContaining({ level: 1, recipientRoles: ['OPS'] }),
+    );
+    expect(reminder.status).toBe(OpsNotificationStatus.SENT);
+    expect(reminder.reminder).toEqual(
+      expect.objectContaining({ isReminder: true, reminderCount: 1 }),
+    );
+    expect(reminder.policy.activeEscalationLevel).toEqual(
+      expect.objectContaining({
+        level: 2,
+        recipientRoles: ['ON_CALL', 'MANAGER'],
+      }),
+    );
+    expect(axios.post).toHaveBeenLastCalledWith(
+      'https://ops.example.test/hook',
+      expect.objectContaining({
+        recipients: [
+          'ops@mediplan.test',
+          'l2@mediplan.test',
+          'manager@mediplan.test',
+        ],
+        metadata: expect.objectContaining({
+          escalationLevel: 2,
+          reminder: expect.objectContaining({ isReminder: true }),
+        }),
+      }),
+      expect.any(Object),
+    );
+    expect(journalRepository.save).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          escalationLevel: expect.objectContaining({ level: 2 }),
+          reminder: expect.objectContaining({
+            isReminder: true,
+            reminderCount: 1,
+          }),
+          notificationProof: expect.objectContaining({
+            escalationLevel: 2,
+          }),
+        }),
+      }),
+    );
+
+    nowSpy.mockRestore();
+  });
+
+  it('records notification acknowledgements with the original proof id', async () => {
+    const nowSpy = jest.spyOn(Date, 'now').mockReturnValue(3_000);
+    journalRepository.findOne.mockResolvedValue({
+      id: 21,
+      tenantId: 'tenant-a',
+      type: OperationsJournalEntryType.NOTIFICATION,
+      status: OperationsJournalEntryStatus.IN_PROGRESS,
+      resolvedAt: null,
+      updatedById: null,
+      metadata: {
+        notificationStatus: OpsNotificationStatus.SENT,
+        notificationProof: {
+          proofId: 'ops-notification-proof:tenant-a:alert:1',
+        },
+      },
+    });
+
+    const result = await service.acknowledgeNotification({
+      tenant: 'tenant-a',
+      journalEntryId: 21,
+      acknowledgedById: 42,
+      note: 'Pris en charge par astreinte L2',
+    });
+
+    expect(result).toEqual({
+      status: OpsNotificationStatus.ACKNOWLEDGED,
+      journalEntryId: 21,
+      acknowledgedAt: new Date(3_000).toISOString(),
+      acknowledgedById: 42,
+      proof: {
+        proofId: 'ops-notification-proof:tenant-a:alert:1',
+        acknowledgedAt: new Date(3_000).toISOString(),
+      },
+    });
+    expect(journalRepository.save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: OperationsJournalEntryStatus.RESOLVED,
+        resolvedAt: new Date(3_000),
+        updatedById: 42,
+        metadata: expect.objectContaining({
+          notificationStatus: OpsNotificationStatus.ACKNOWLEDGED,
+          acknowledgement: expect.objectContaining({
+            acknowledgedById: 42,
+            proofId: 'ops-notification-proof:tenant-a:alert:1',
+          }),
+        }),
+      }),
+    );
+
     nowSpy.mockRestore();
   });
 

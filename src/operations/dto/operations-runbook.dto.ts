@@ -2,6 +2,7 @@ export type OperationsRunbookSourceType = 'ALERT' | 'INCIDENT' | 'JOURNAL';
 
 export interface OperationsRunbookReference {
   sourceType: OperationsRunbookSourceType;
+  type?: string | null;
   id: number;
   tenantId: string;
   title: string;
@@ -66,6 +67,13 @@ export interface OperationsRunbookNext {
 export interface OperationsRunbookDto {
   id: string;
   generatedAt: string;
+  template: {
+    id: number;
+    version: number;
+    tenantId: string | null;
+    service: string | null;
+    type: string | null;
+  } | null;
   reference: OperationsRunbookReference;
   requiredPermissions: OperationsRunbookRequirement[];
   why: string;

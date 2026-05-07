@@ -9,6 +9,7 @@ import {
   Request,
   UseGuards,
 } from '@nestjs/common';
+import { UserRole } from '../agents/entities/agent.entity';
 import type { AuthenticatedRequest } from '../auth/authenticated-request';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { Permissions } from '../auth/permissions.decorator';
@@ -40,8 +41,18 @@ import {
   OperationsJournalQueryDto,
   UpdateOperationsJournalEntryDto,
 } from './dto/operations-journal.dto';
-import { OpsActionCenterQueryDto } from './dto/ops-action-center.dto';
+import {
+  AssignOpsActionCenterItemDto,
+  CommentOpsActionCenterItemDto,
+  OpsActionCenterItemParamDto,
+  OpsActionCenterQueryDto,
+  PrioritizeOpsActionCenterItemDto,
+  ResolveOpsActionCenterItemDto,
+  TransitionOpsActionCenterItemDto,
+} from './dto/ops-action-center.dto';
+import { OpsMultiTenantSummaryQueryDto } from './dto/ops-multi-tenant-summary.dto';
 import { RunOpsRoutineSchedulerDto } from './dto/ops-routine-scheduler.dto';
+import { OpsSloQueryDto } from './dto/ops-slo.dto';
 import {
   OpsPreAction,
   OpsPreActionValidationService,
@@ -114,7 +125,122 @@ export class OperationsController {
     return this.operationsService.getActionCenter(
       resolveTenantId(req, queryTenantId),
       filters,
+      req.user.id,
     );
+  }
+
+  @Patch('action-center/:itemId/assign')
+  @Permissions('operations:write')
+  assignActionCenterItem(
+    @Request() req: AuthenticatedRequest,
+    @Param() params: OpsActionCenterItemParamDto,
+    @Body() dto: AssignOpsActionCenterItemDto,
+    @Query('tenantId') queryTenantId?: string,
+  ) {
+    const tenantId = resolveTenantId(req, queryTenantId);
+    this.validatePreAction('MUTATE_ACTION_CENTER_ITEM', req, tenantId, {
+      hasRequiredEvidence: Boolean(dto.assignedToId),
+    });
+    return this.operationsService.assignActionCenterItem(
+      tenantId,
+      params.itemId,
+      dto,
+      req.user.id,
+    );
+  }
+
+  @Post('action-center/:itemId/comments')
+  @Permissions('operations:write')
+  commentActionCenterItem(
+    @Request() req: AuthenticatedRequest,
+    @Param() params: OpsActionCenterItemParamDto,
+    @Body() dto: CommentOpsActionCenterItemDto,
+    @Query('tenantId') queryTenantId?: string,
+  ) {
+    const tenantId = resolveTenantId(req, queryTenantId);
+    this.validatePreAction('MUTATE_ACTION_CENTER_ITEM', req, tenantId, {
+      hasRequiredEvidence: Boolean(dto.comment),
+    });
+    return this.operationsService.commentActionCenterItem(
+      tenantId,
+      params.itemId,
+      dto,
+      req.user.id,
+    );
+  }
+
+  @Patch('action-center/:itemId/priority')
+  @Permissions('operations:write')
+  prioritizeActionCenterItem(
+    @Request() req: AuthenticatedRequest,
+    @Param() params: OpsActionCenterItemParamDto,
+    @Body() dto: PrioritizeOpsActionCenterItemDto,
+    @Query('tenantId') queryTenantId?: string,
+  ) {
+    const tenantId = resolveTenantId(req, queryTenantId);
+    this.validatePreAction('MUTATE_ACTION_CENTER_ITEM', req, tenantId, {
+      hasRequiredEvidence: Boolean(dto.priority),
+    });
+    return this.operationsService.prioritizeActionCenterItem(
+      tenantId,
+      params.itemId,
+      dto,
+      req.user.id,
+    );
+  }
+
+  @Patch('action-center/:itemId/status')
+  @Permissions('operations:write')
+  transitionActionCenterItem(
+    @Request() req: AuthenticatedRequest,
+    @Param() params: OpsActionCenterItemParamDto,
+    @Body() dto: TransitionOpsActionCenterItemDto,
+    @Query('tenantId') queryTenantId?: string,
+  ) {
+    const tenantId = resolveTenantId(req, queryTenantId);
+    this.validatePreAction('MUTATE_ACTION_CENTER_ITEM', req, tenantId, {
+      hasRequiredEvidence: Boolean(dto.status),
+    });
+    return this.operationsService.transitionActionCenterItem(
+      tenantId,
+      params.itemId,
+      dto,
+      req.user.id,
+    );
+  }
+
+  @Patch('action-center/:itemId/resolve')
+  @Permissions('operations:write')
+  resolveActionCenterItem(
+    @Request() req: AuthenticatedRequest,
+    @Param() params: OpsActionCenterItemParamDto,
+    @Body() dto: ResolveOpsActionCenterItemDto,
+    @Query('tenantId') queryTenantId?: string,
+  ) {
+    const tenantId = resolveTenantId(req, queryTenantId);
+    this.validatePreAction('MUTATE_ACTION_CENTER_ITEM', req, tenantId, {
+      hasRequiredEvidence: Boolean(dto.summary),
+    });
+    return this.operationsService.resolveActionCenterItem(
+      tenantId,
+      params.itemId,
+      dto,
+      req.user.id,
+    );
+  }
+
+  @Get('multi-tenant-summary')
+  @Permissions('operations:read', 'audit:read')
+  getMultiTenantSummary(
+    @Request() req: AuthenticatedRequest,
+    @Query() query: OpsMultiTenantSummaryQueryDto,
+  ) {
+    const scopedTenantIds =
+      req.user.role === UserRole.SUPER_ADMIN && !query.tenantId
+        ? undefined
+        : [resolveTenantId(req, query.tenantId)];
+
+    return this.operationsService.getMultiTenantSummary(scopedTenantIds);
   }
 
   @Get('observability')
@@ -125,6 +251,20 @@ export class OperationsController {
     @Query('tenantId') queryTenantId?: string,
   ) {
     return this.operationsService.getObservabilityMetrics(
+      resolveTenantId(req, queryTenantId),
+      filters,
+      req.user.id,
+    );
+  }
+
+  @Get('slo')
+  @Permissions('operations:read', 'audit:read')
+  getSloObjectives(
+    @Request() req: AuthenticatedRequest,
+    @Query() filters: OpsSloQueryDto,
+    @Query('tenantId') queryTenantId?: string,
+  ) {
+    return this.operationsService.getSloObjectives(
       resolveTenantId(req, queryTenantId),
       filters,
     );
@@ -205,6 +345,7 @@ export class OperationsController {
     return this.operationsService.generateAlertRunbook(
       resolveTenantId(req, queryTenantId),
       params.id,
+      req.user.id,
     );
   }
 
@@ -251,6 +392,7 @@ export class OperationsController {
     return this.operationsService.generateJournalRunbook(
       resolveTenantId(req, queryTenantId),
       Number(id),
+      req.user.id,
     );
   }
 
@@ -320,6 +462,7 @@ export class OperationsController {
     return this.operationsService.generateIncidentRunbook(
       resolveTenantId(req, queryTenantId),
       params.id,
+      req.user.id,
     );
   }
 

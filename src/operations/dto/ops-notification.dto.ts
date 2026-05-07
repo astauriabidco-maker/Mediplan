@@ -1,10 +1,12 @@
 import {
   IsArray,
   IsEnum,
+  IsInt,
   IsObject,
   IsOptional,
   IsString,
   MaxLength,
+  Min,
 } from 'class-validator';
 import { OperationIncidentSeverity } from '../entities/operation-incident.entity';
 
@@ -30,6 +32,7 @@ export enum OpsNotificationStatus {
   PARTIAL = 'PARTIAL',
   FAILED = 'FAILED',
   THROTTLED = 'THROTTLED',
+  ACKNOWLEDGED = 'ACKNOWLEDGED',
 }
 
 export class OpsNotificationPayloadDto {
@@ -85,12 +88,33 @@ export class OpsNotificationPayloadDto {
   status?: OpsNotificationStatus;
 }
 
+export class OpsNotificationAckDto {
+  @IsString()
+  @MaxLength(120)
+  tenant: string;
+
+  @IsInt()
+  @Min(1)
+  journalEntryId: number;
+
+  @IsInt()
+  @Min(1)
+  acknowledgedById: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  note?: string;
+}
+
 export interface OpsNotificationResult {
   status: OpsNotificationStatus;
   channels: OpsNotificationChannel[];
   attempts: OpsNotificationAttempt[];
   journalEntryId: number | null;
   suppressedUntil?: string;
+  reminder: OpsNotificationReminderState;
+  proof: OpsNotificationProof;
   policy: OpsNotificationResolvedPolicy;
 }
 
@@ -105,7 +129,51 @@ export interface OpsNotificationResolvedPolicy {
   tenant: string;
   channels: OpsNotificationChannel[];
   recipientRoles: string[];
+  activeRecipientRoles: string[];
   throttleWindowMs: number;
   dedupeWindowMs: number;
   repeatDelayMs: number;
+  reminderDelayMs: number;
+  quietHours: OpsNotificationQuietHours | null;
+  quietHoursBypassSeverities: OperationIncidentSeverity[];
+  escalationLevels: OpsNotificationEscalationLevel[];
+  activeEscalationLevel: OpsNotificationEscalationLevel;
+}
+
+export interface OpsNotificationQuietHours {
+  start: string;
+  end: string;
+  timezone: 'local';
+}
+
+export interface OpsNotificationEscalationLevel {
+  level: number;
+  delayMs: number;
+  recipientRoles: string[];
+}
+
+export interface OpsNotificationReminderState {
+  isReminder: boolean;
+  reminderCount: number;
+  nextReminderAt: string | null;
+}
+
+export interface OpsNotificationProof {
+  proofId: string;
+  generatedAt: string;
+  reference: string | null;
+  channels: OpsNotificationChannel[];
+  status: OpsNotificationStatus;
+  escalationLevel: number;
+}
+
+export interface OpsNotificationAckResult {
+  status: OpsNotificationStatus.ACKNOWLEDGED;
+  journalEntryId: number;
+  acknowledgedAt: string;
+  acknowledgedById: number;
+  proof: {
+    proofId: string;
+    acknowledgedAt: string;
+  };
 }

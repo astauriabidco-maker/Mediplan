@@ -1,5 +1,14 @@
 import { Type } from 'class-transformer';
-import { IsEnum, IsInt, IsOptional, Max, Min } from 'class-validator';
+import {
+  IsEnum,
+  IsInt,
+  IsOptional,
+  IsString,
+  IsUrl,
+  Max,
+  MaxLength,
+  Min,
+} from 'class-validator';
 
 export enum OpsActionCenterItemType {
   OPERATIONAL_ALERT = 'OPERATIONAL_ALERT',
@@ -16,6 +25,8 @@ export enum OpsActionCenterStatus {
   ESCALATED = 'ESCALATED',
   WAITING_EVIDENCE = 'WAITING_EVIDENCE',
   WAITING_DECISION = 'WAITING_DECISION',
+  RESOLVED = 'RESOLVED',
+  CLOSED = 'CLOSED',
 }
 
 export enum OpsActionCenterPriority {
@@ -23,6 +34,14 @@ export enum OpsActionCenterPriority {
   MEDIUM = 'MEDIUM',
   HIGH = 'HIGH',
   CRITICAL = 'CRITICAL',
+}
+
+export enum OpsActionCenterWorkflowAction {
+  ASSIGN = 'ASSIGN',
+  COMMENT = 'COMMENT',
+  PRIORITY = 'PRIORITY',
+  STATUS = 'STATUS',
+  RESOLVE = 'RESOLVE',
 }
 
 export class OpsActionCenterQueryDto {
@@ -58,6 +77,23 @@ export interface OpsActionCenterTimestamps {
   resolvedAt?: string | null;
 }
 
+export interface OpsActionCenterWorkflowComment {
+  id: number;
+  comment: string;
+  actorId: number;
+  createdAt: string;
+}
+
+export interface OpsActionCenterWorkflowState {
+  assignedToId: number | null;
+  priorityOverride: OpsActionCenterPriority | null;
+  statusOverride: OpsActionCenterStatus | null;
+  commentsCount: number;
+  lastComment: OpsActionCenterWorkflowComment | null;
+  updatedAt: string | null;
+  updatedById: number | null;
+}
+
 export interface OpsActionCenterItem {
   id: string;
   type: OpsActionCenterItemType;
@@ -69,6 +105,7 @@ export interface OpsActionCenterItem {
   suggestedActions: string[];
   sourceReference: OpsActionCenterSourceReference;
   timestamps: OpsActionCenterTimestamps;
+  workflow: OpsActionCenterWorkflowState;
 }
 
 export interface OpsActionCenterResponse {
@@ -81,4 +118,68 @@ export interface OpsActionCenterResponse {
     limit: number;
   };
   items: OpsActionCenterItem[];
+}
+
+export class OpsActionCenterItemParamDto {
+  @IsString()
+  @MaxLength(240)
+  itemId: string;
+}
+
+export class AssignOpsActionCenterItemDto {
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  assignedToId: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  comment?: string;
+}
+
+export class CommentOpsActionCenterItemDto {
+  @IsString()
+  @MaxLength(2000)
+  comment: string;
+}
+
+export class PrioritizeOpsActionCenterItemDto {
+  @IsEnum(OpsActionCenterPriority)
+  priority: OpsActionCenterPriority;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  comment?: string;
+}
+
+export class TransitionOpsActionCenterItemDto {
+  @IsEnum(OpsActionCenterStatus)
+  status: OpsActionCenterStatus;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  comment?: string;
+}
+
+export class ResolveOpsActionCenterItemDto {
+  @IsOptional()
+  @IsEnum(OpsActionCenterStatus)
+  status?: OpsActionCenterStatus.RESOLVED | OpsActionCenterStatus.CLOSED;
+
+  @IsString()
+  @MaxLength(2000)
+  summary: string;
+
+  @IsOptional()
+  @IsUrl({ require_tld: false })
+  @MaxLength(500)
+  evidenceUrl?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(160)
+  evidenceLabel?: string;
 }

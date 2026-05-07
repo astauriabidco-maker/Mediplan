@@ -1,13 +1,18 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import axios from 'axios';
 import { Repository } from 'typeorm';
 import {
   OpsNotificationAttempt,
+  OpsNotificationAckDto,
+  OpsNotificationAckResult,
   OpsNotificationChannel,
+  OpsNotificationEscalationLevel,
   OpsNotificationEventType,
   OpsNotificationPayloadDto,
+  OpsNotificationProof,
+  OpsNotificationReminderState,
   OpsNotificationResolvedPolicy,
   OpsNotificationResult,
   OpsNotificationStatus,
@@ -29,6 +34,9 @@ const SECRET_KEY_PATTERN =
 const SECRET_VALUE_PATTERN =
   /(bearer\s+[a-z0-9._~+/=-]+|basic\s+[a-z0-9+/=-]+|api[_-]?key=|token=|password=|secret=|https?:\/\/\S*(token|secret|password|api[_-]?key)\S*)/i;
 const DEFAULT_RECIPIENT_ROLE = 'OPS';
+const DEFAULT_QUIET_HOURS_BYPASS_SEVERITIES = [
+  OperationIncidentSeverity.CRITICAL,
+];
 const DEFAULT_NOTIFICATION_POLICY: Record<
   OperationIncidentSeverity,
   Omit<OpsNotificationResolvedPolicy, 'severity' | 'tenant'>
@@ -39,6 +47,18 @@ const DEFAULT_NOTIFICATION_POLICY: Record<
     throttleWindowMs: 15 * 60 * 1000,
     dedupeWindowMs: 15 * 60 * 1000,
     repeatDelayMs: 6 * 60 * 60 * 1000,
+    reminderDelayMs: 6 * 60 * 60 * 1000,
+    quietHours: null,
+    quietHoursBypassSeverities: DEFAULT_QUIET_HOURS_BYPASS_SEVERITIES,
+    escalationLevels: [
+      { level: 1, delayMs: 0, recipientRoles: [DEFAULT_RECIPIENT_ROLE] },
+    ],
+    activeRecipientRoles: [DEFAULT_RECIPIENT_ROLE],
+    activeEscalationLevel: {
+      level: 1,
+      delayMs: 0,
+      recipientRoles: [DEFAULT_RECIPIENT_ROLE],
+    },
   },
   [OperationIncidentSeverity.MEDIUM]: {
     channels: [OpsNotificationChannel.DRY_RUN],
@@ -46,6 +66,18 @@ const DEFAULT_NOTIFICATION_POLICY: Record<
     throttleWindowMs: 10 * 60 * 1000,
     dedupeWindowMs: 10 * 60 * 1000,
     repeatDelayMs: 2 * 60 * 60 * 1000,
+    reminderDelayMs: 2 * 60 * 60 * 1000,
+    quietHours: null,
+    quietHoursBypassSeverities: DEFAULT_QUIET_HOURS_BYPASS_SEVERITIES,
+    escalationLevels: [
+      { level: 1, delayMs: 0, recipientRoles: [DEFAULT_RECIPIENT_ROLE] },
+    ],
+    activeRecipientRoles: [DEFAULT_RECIPIENT_ROLE],
+    activeEscalationLevel: {
+      level: 1,
+      delayMs: 0,
+      recipientRoles: [DEFAULT_RECIPIENT_ROLE],
+    },
   },
   [OperationIncidentSeverity.HIGH]: {
     channels: [OpsNotificationChannel.DRY_RUN],
@@ -53,6 +85,22 @@ const DEFAULT_NOTIFICATION_POLICY: Record<
     throttleWindowMs: 5 * 60 * 1000,
     dedupeWindowMs: 5 * 60 * 1000,
     repeatDelayMs: 30 * 60 * 1000,
+    reminderDelayMs: 30 * 60 * 1000,
+    quietHours: null,
+    quietHoursBypassSeverities: DEFAULT_QUIET_HOURS_BYPASS_SEVERITIES,
+    escalationLevels: [
+      {
+        level: 1,
+        delayMs: 0,
+        recipientRoles: [DEFAULT_RECIPIENT_ROLE, 'MANAGER'],
+      },
+    ],
+    activeRecipientRoles: [DEFAULT_RECIPIENT_ROLE, 'MANAGER'],
+    activeEscalationLevel: {
+      level: 1,
+      delayMs: 0,
+      recipientRoles: [DEFAULT_RECIPIENT_ROLE, 'MANAGER'],
+    },
   },
   [OperationIncidentSeverity.CRITICAL]: {
     channels: [OpsNotificationChannel.DRY_RUN],
@@ -60,16 +108,41 @@ const DEFAULT_NOTIFICATION_POLICY: Record<
     throttleWindowMs: 60 * 1000,
     dedupeWindowMs: 60 * 1000,
     repeatDelayMs: 10 * 60 * 1000,
+    reminderDelayMs: 10 * 60 * 1000,
+    quietHours: null,
+    quietHoursBypassSeverities: DEFAULT_QUIET_HOURS_BYPASS_SEVERITIES,
+    escalationLevels: [
+      {
+        level: 1,
+        delayMs: 0,
+        recipientRoles: [DEFAULT_RECIPIENT_ROLE, 'MANAGER', 'ON_CALL'],
+      },
+    ],
+    activeRecipientRoles: [DEFAULT_RECIPIENT_ROLE, 'MANAGER', 'ON_CALL'],
+    activeEscalationLevel: {
+      level: 1,
+      delayMs: 0,
+      recipientRoles: [DEFAULT_RECIPIENT_ROLE, 'MANAGER', 'ON_CALL'],
+    },
   },
 };
 
 type NotificationSuppression = {
   suppressedUntil: Date;
+  reason: 'ANTI_SPAM' | 'QUIET_HOURS';
 };
 
 type NotificationWindowState = {
+  firstSentAt: number;
   lastSentAt: number;
   nextRepeatAt: number;
+  reminderCount: number;
+  escalationLevel: number;
+};
+
+type NotificationDeliveryContext = {
+  policy: OpsNotificationResolvedPolicy;
+  reminder: OpsNotificationReminderState;
 };
 
 @Injectable()
@@ -95,7 +168,16 @@ export class OpsNotificationService {
       ...payload,
       status: payload.status ?? OpsNotificationStatus.PENDING,
     };
-    const policy = this.resolvePolicy(normalizedPayload);
+    const deliveryContext = this.resolveDeliveryContext(
+      normalizedPayload,
+      this.resolvePolicy(normalizedPayload),
+    );
+    const policy = deliveryContext.policy;
+    normalizedPayload.metadata = {
+      ...(normalizedPayload.metadata ?? {}),
+      escalationLevel: policy.activeEscalationLevel.level,
+      reminder: deliveryContext.reminder,
+    };
     const channels = this.resolveChannels(normalizedPayload.channels, policy);
     normalizedPayload.recipients = await this.resolveRecipients(
       normalizedPayload,
@@ -113,7 +195,10 @@ export class OpsNotificationService {
         ...channels.map((channel) => ({
           channel,
           status: OpsNotificationStatus.THROTTLED,
-          message: `Notification suppressed until ${suppression.suppressedUntil.toISOString()}`,
+          message:
+            suppression.reason === 'QUIET_HOURS'
+              ? `Notification deferred by quiet hours until ${suppression.suppressedUntil.toISOString()}`
+              : `Notification suppressed until ${suppression.suppressedUntil.toISOString()}`,
         })),
       );
     } else {
@@ -123,12 +208,15 @@ export class OpsNotificationService {
     }
 
     const status = this.resolveStatus(attempts);
+    const proof = this.buildProof(normalizedPayload, status, channels, policy);
     const journalEntry = await this.writeJournalEntry(normalizedPayload, {
       status,
       channels,
       attempts,
       journalEntryId: null,
       suppressedUntil: suppression?.suppressedUntil.toISOString(),
+      reminder: deliveryContext.reminder,
+      proof,
       policy,
     });
 
@@ -138,11 +226,13 @@ export class OpsNotificationService {
       attempts,
       journalEntryId: journalEntry?.id ?? null,
       suppressedUntil: suppression?.suppressedUntil.toISOString(),
+      reminder: deliveryContext.reminder,
+      proof,
       policy,
     };
 
     if (!suppression && this.shouldTrackNotificationWindow(status)) {
-      this.trackNotificationWindow(normalizedPayload, policy);
+      this.trackNotificationWindow(normalizedPayload, policy, deliveryContext);
     }
 
     if (status === OpsNotificationStatus.FAILED) {
@@ -201,6 +291,59 @@ export class OpsNotificationService {
     });
   }
 
+  async acknowledgeNotification(
+    dto: OpsNotificationAckDto,
+  ): Promise<OpsNotificationAckResult> {
+    const entry = await this.journalRepository.findOne({
+      where: {
+        id: dto.journalEntryId,
+        tenantId: dto.tenant,
+        type: OperationsJournalEntryType.NOTIFICATION,
+      },
+    });
+
+    if (!entry) {
+      throw new NotFoundException('Ops notification journal entry not found');
+    }
+
+    const acknowledgedAt = new Date(Date.now()).toISOString();
+    const metadata = (entry.metadata ?? {}) as Record<string, unknown>;
+    const notificationProof = this.safeRecord(metadata.notificationProof);
+    const proofId =
+      typeof notificationProof.proofId === 'string'
+        ? notificationProof.proofId
+        : `ops-notification-proof:${entry.id}`;
+    const acknowledgement = this.redactSecrets({
+      status: OpsNotificationStatus.ACKNOWLEDGED,
+      acknowledgedAt,
+      acknowledgedById: dto.acknowledgedById,
+      note: dto.note ?? null,
+      proofId,
+    }) as Record<string, unknown>;
+
+    entry.status = OperationsJournalEntryStatus.RESOLVED;
+    entry.resolvedAt = new Date(acknowledgedAt);
+    entry.updatedById = dto.acknowledgedById;
+    entry.metadata = {
+      ...metadata,
+      notificationStatus: OpsNotificationStatus.ACKNOWLEDGED,
+      acknowledgement,
+    };
+
+    await this.journalRepository.save(entry);
+
+    return {
+      status: OpsNotificationStatus.ACKNOWLEDGED,
+      journalEntryId: entry.id,
+      acknowledgedAt,
+      acknowledgedById: dto.acknowledgedById,
+      proof: {
+        proofId,
+        acknowledgedAt,
+      },
+    };
+  }
+
   private resolvePolicy(
     payload: OpsNotificationPayloadDto,
   ): OpsNotificationResolvedPolicy {
@@ -220,6 +363,34 @@ export class OpsNotificationService {
     const tenantRoles = this.stringListConfig(
       `OPS_NOTIFICATION_TENANT_${tenantKey}_${severityKey}_RECIPIENT_ROLES`,
     );
+    const recipientRoles = tenantRoles.length
+      ? tenantRoles
+      : globalRoles.length
+        ? globalRoles
+        : base.recipientRoles;
+    const quietHours =
+      this.quietHoursConfig(
+        `OPS_NOTIFICATION_TENANT_${tenantKey}_${severityKey}_QUIET_HOURS`,
+      ) ??
+      this.quietHoursConfig(`OPS_NOTIFICATION_${severityKey}_QUIET_HOURS`) ??
+      this.quietHoursConfig(
+        `OPS_NOTIFICATION_TENANT_${tenantKey}_QUIET_HOURS`,
+      ) ??
+      this.quietHoursConfig('OPS_NOTIFICATION_QUIET_HOURS') ??
+      base.quietHours;
+    const escalationLevels = this.escalationLevelsConfig(
+      `OPS_NOTIFICATION_TENANT_${tenantKey}_${severityKey}_ESCALATION_LEVELS`,
+    ) ??
+      this.escalationLevelsConfig(
+        `OPS_NOTIFICATION_${severityKey}_ESCALATION_LEVELS`,
+      ) ?? [{ level: 1, delayMs: 0, recipientRoles }];
+    const repeatDelayMs = this.numberConfig(
+      `OPS_NOTIFICATION_TENANT_${tenantKey}_${severityKey}_REPEAT_DELAY_MS`,
+      this.numberConfig(
+        `OPS_NOTIFICATION_${severityKey}_REPEAT_DELAY_MS`,
+        base.repeatDelayMs,
+      ),
+    );
 
     return {
       severity: payload.severity,
@@ -231,11 +402,8 @@ export class OpsNotificationService {
           : legacyChannels.length
             ? legacyChannels
             : base.channels,
-      recipientRoles: tenantRoles.length
-        ? tenantRoles
-        : globalRoles.length
-          ? globalRoles
-          : base.recipientRoles,
+      recipientRoles,
+      activeRecipientRoles: recipientRoles,
       throttleWindowMs: this.numberConfig(
         `OPS_NOTIFICATION_TENANT_${tenantKey}_${severityKey}_THROTTLE_WINDOW_MS`,
         this.numberConfig(
@@ -250,13 +418,57 @@ export class OpsNotificationService {
           base.dedupeWindowMs,
         ),
       ),
-      repeatDelayMs: this.numberConfig(
-        `OPS_NOTIFICATION_TENANT_${tenantKey}_${severityKey}_REPEAT_DELAY_MS`,
+      repeatDelayMs,
+      reminderDelayMs: this.numberConfig(
+        `OPS_NOTIFICATION_TENANT_${tenantKey}_${severityKey}_REMINDER_DELAY_MS`,
         this.numberConfig(
-          `OPS_NOTIFICATION_${severityKey}_REPEAT_DELAY_MS`,
-          base.repeatDelayMs,
+          `OPS_NOTIFICATION_${severityKey}_REMINDER_DELAY_MS`,
+          repeatDelayMs,
         ),
       ),
+      quietHours,
+      quietHoursBypassSeverities: this.severityListConfig(
+        `OPS_NOTIFICATION_QUIET_HOURS_BYPASS_SEVERITIES`,
+        base.quietHoursBypassSeverities,
+      ),
+      escalationLevels,
+      activeEscalationLevel: escalationLevels[0],
+    };
+  }
+
+  private resolveDeliveryContext(
+    payload: OpsNotificationPayloadDto,
+    policy: OpsNotificationResolvedPolicy,
+  ): NotificationDeliveryContext {
+    const state = this.notificationWindows.get(this.notificationKey(payload));
+    const now = Date.now();
+    const reminderCount = state?.reminderCount ?? 0;
+    const isReminder = Boolean(state && now >= state.nextRepeatAt);
+    const elapsedMs = state ? now - state.firstSentAt : 0;
+    const activeEscalationLevel = this.resolveEscalationLevel(
+      policy.escalationLevels,
+      elapsedMs,
+    );
+    const activeRecipientRoles = Array.from(
+      new Set([
+        ...policy.recipientRoles,
+        ...activeEscalationLevel.recipientRoles,
+      ]),
+    );
+
+    return {
+      policy: {
+        ...policy,
+        activeRecipientRoles,
+        activeEscalationLevel,
+      },
+      reminder: {
+        isReminder,
+        reminderCount: isReminder ? reminderCount + 1 : reminderCount,
+        nextReminderAt: state
+          ? new Date(now + policy.reminderDelayMs).toISOString()
+          : null,
+      },
     };
   }
 
@@ -281,7 +493,7 @@ export class OpsNotificationService {
     policy: OpsNotificationResolvedPolicy,
   ) {
     const policyRoles = [
-      ...policy.recipientRoles,
+      ...policy.activeRecipientRoles,
       ...(payload.recipientRoles ?? []),
     ];
     const configuredRecipients =
@@ -316,6 +528,14 @@ export class OpsNotificationService {
     payload: OpsNotificationPayloadDto,
     policy: OpsNotificationResolvedPolicy,
   ): NotificationSuppression | null {
+    const quietHoursUntil = this.resolveQuietHoursSuppression(payload, policy);
+    if (quietHoursUntil) {
+      return {
+        suppressedUntil: quietHoursUntil,
+        reason: 'QUIET_HOURS',
+      };
+    }
+
     const key = this.notificationKey(payload);
     const state = this.notificationWindows.get(key);
 
@@ -335,6 +555,7 @@ export class OpsNotificationService {
     if (now < suppressedUntil) {
       return {
         suppressedUntil: new Date(suppressedUntil),
+        reason: 'ANTI_SPAM',
       };
     }
 
@@ -352,11 +573,18 @@ export class OpsNotificationService {
   private trackNotificationWindow(
     payload: OpsNotificationPayloadDto,
     policy: OpsNotificationResolvedPolicy,
+    deliveryContext: NotificationDeliveryContext,
   ) {
     const now = Date.now();
+    const previous = this.notificationWindows.get(
+      this.notificationKey(payload),
+    );
     this.notificationWindows.set(this.notificationKey(payload), {
+      firstSentAt: previous?.firstSentAt ?? now,
       lastSentAt: now,
-      nextRepeatAt: now + policy.repeatDelayMs,
+      nextRepeatAt: now + policy.reminderDelayMs,
+      reminderCount: deliveryContext.reminder.reminderCount,
+      escalationLevel: policy.activeEscalationLevel.level,
     });
   }
 
@@ -443,8 +671,12 @@ export class OpsNotificationService {
       attempts: result.attempts,
       recipients: payload.recipients ?? [],
       recipientRoles: payload.recipientRoles ?? [],
+      activeRecipientRoles: result.policy.activeRecipientRoles,
       notificationPolicy: result.policy,
       suppressedUntil: result.suppressedUntil ?? null,
+      reminder: result.reminder,
+      escalationLevel: result.policy.activeEscalationLevel,
+      notificationProof: result.proof,
       payloadMetadata: payload.metadata ?? {},
     }) as Record<string, unknown>;
     const entry = this.journalRepository.create({
@@ -517,6 +749,8 @@ export class OpsNotificationService {
       metadata: payload.metadata ?? {},
       recipients: payload.recipients ?? [],
       recipientRoles: payload.recipientRoles ?? [],
+      escalationLevel: payload.metadata?.escalationLevel,
+      reminder: payload.metadata?.reminder,
       source: payload.source,
       reference: payload.reference,
       status: payload.status ?? OpsNotificationStatus.PENDING,
@@ -580,6 +814,157 @@ export class OpsNotificationService {
     return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
   }
 
+  private quietHoursConfig(key: string) {
+    const value = this.configService.get<string>(key);
+    if (!value) {
+      return null;
+    }
+
+    const match = value
+      .trim()
+      .match(/^([01]\d|2[0-3]):([0-5]\d)-([01]\d|2[0-3]):([0-5]\d)$/);
+    if (!match) {
+      return null;
+    }
+
+    return {
+      start: `${match[1]}:${match[2]}`,
+      end: `${match[3]}:${match[4]}`,
+      timezone: 'local' as const,
+    };
+  }
+
+  private severityListConfig(
+    key: string,
+    fallback: OperationIncidentSeverity[],
+  ) {
+    const values = this.stringListConfig(key)
+      .map((value) => value.toUpperCase())
+      .filter((value): value is OperationIncidentSeverity =>
+        Object.values(OperationIncidentSeverity).includes(
+          value as OperationIncidentSeverity,
+        ),
+      );
+
+    return values.length ? values : fallback;
+  }
+
+  private escalationLevelsConfig(key: string) {
+    const raw = this.configService.get<string>(key);
+    if (!raw) {
+      return null;
+    }
+
+    const levels = raw
+      .split(',')
+      .map((part) => part.trim())
+      .filter(Boolean)
+      .map((part) => {
+        const [levelValue, delayValue, rolesValue] = part.split(':');
+        const level = Number(levelValue);
+        const delayMs = Number(delayValue);
+        const recipientRoles = (rolesValue ?? '')
+          .split('+')
+          .map((role) => role.trim().toUpperCase())
+          .filter(Boolean);
+
+        if (
+          !Number.isInteger(level) ||
+          level < 1 ||
+          !Number.isFinite(delayMs) ||
+          delayMs < 0 ||
+          !recipientRoles.length
+        ) {
+          return null;
+        }
+
+        return { level, delayMs, recipientRoles };
+      })
+      .filter((level): level is OpsNotificationEscalationLevel =>
+        Boolean(level),
+      )
+      .sort(
+        (left, right) =>
+          left.delayMs - right.delayMs || left.level - right.level,
+      );
+
+    return levels.length ? levels : null;
+  }
+
+  private resolveEscalationLevel(
+    levels: OpsNotificationEscalationLevel[],
+    elapsedMs: number,
+  ) {
+    return levels.reduce(
+      (active, level) => (elapsedMs >= level.delayMs ? level : active),
+      levels[0],
+    );
+  }
+
+  private resolveQuietHoursSuppression(
+    payload: OpsNotificationPayloadDto,
+    policy: OpsNotificationResolvedPolicy,
+  ) {
+    if (
+      !policy.quietHours ||
+      policy.quietHoursBypassSeverities.includes(payload.severity)
+    ) {
+      return null;
+    }
+
+    const now = new Date(Date.now());
+    const currentMinutes = now.getHours() * 60 + now.getMinutes();
+    const startMinutes = this.timeToMinutes(policy.quietHours.start);
+    const endMinutes = this.timeToMinutes(policy.quietHours.end);
+    const crossesMidnight = startMinutes > endMinutes;
+    const inQuietHours = crossesMidnight
+      ? currentMinutes >= startMinutes || currentMinutes < endMinutes
+      : currentMinutes >= startMinutes && currentMinutes < endMinutes;
+
+    if (!inQuietHours) {
+      return null;
+    }
+
+    const quietEnd = new Date(now);
+    quietEnd.setHours(Math.floor(endMinutes / 60), endMinutes % 60, 0, 0);
+    if (crossesMidnight && currentMinutes >= startMinutes) {
+      quietEnd.setDate(quietEnd.getDate() + 1);
+    }
+
+    return quietEnd;
+  }
+
+  private timeToMinutes(value: string) {
+    const [hours, minutes] = value.split(':').map(Number);
+    return hours * 60 + minutes;
+  }
+
+  private buildProof(
+    payload: OpsNotificationPayloadDto,
+    status: OpsNotificationStatus,
+    channels: OpsNotificationChannel[],
+    policy: OpsNotificationResolvedPolicy,
+  ): OpsNotificationProof {
+    const generatedAt = new Date(Date.now()).toISOString();
+    return {
+      proofId: [
+        'ops-notification-proof',
+        this.notificationKey(payload),
+        generatedAt,
+      ].join(':'),
+      generatedAt,
+      reference: this.safeJournalReference(
+        payload.reference ??
+          (typeof payload.metadata?.incidentId === 'number'
+            ? `operation-incident:${payload.metadata.incidentId}`
+            : null),
+      ),
+      channels,
+      status,
+      escalationLevel: policy.activeEscalationLevel.level,
+    };
+  }
+
   private notificationKey(payload: OpsNotificationPayloadDto) {
     const metadataReference =
       payload.metadata?.reference ??
@@ -622,7 +1007,8 @@ export class OpsNotificationService {
     if (
       status === OpsNotificationStatus.SENT ||
       status === OpsNotificationStatus.DRY_RUN ||
-      status === OpsNotificationStatus.THROTTLED
+      status === OpsNotificationStatus.THROTTLED ||
+      status === OpsNotificationStatus.ACKNOWLEDGED
     ) {
       return OperationsJournalEntryStatus.RESOLVED;
     }
@@ -654,6 +1040,12 @@ export class OpsNotificationService {
     }
 
     return this.safeJournalText(value);
+  }
+
+  private safeRecord(value: unknown) {
+    return value && typeof value === 'object' && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : {};
   }
 
   private redactSecrets(value: unknown): unknown {

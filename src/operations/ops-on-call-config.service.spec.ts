@@ -1,6 +1,11 @@
 import { NotFoundException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
+import { AuditService } from '../audit/audit.service';
+import {
+  AuditAction,
+  AuditEntityType,
+} from '../audit/entities/audit-log.entity';
 import { OpsOnCallConfig } from './entities/ops-on-call-config.entity';
 import { OpsOnCallConfigService } from './ops-on-call-config.service';
 
@@ -50,9 +55,11 @@ const createRepositoryMock = (
 describe('OpsOnCallConfigService', () => {
   let service: OpsOnCallConfigService;
   let repository: RepositoryMock;
+  let auditService: { log: jest.Mock };
 
   const buildService = async (queryRows: Partial<OpsOnCallConfig>[] = []) => {
     repository = createRepositoryMock(queryRows);
+    auditService = { log: jest.fn().mockResolvedValue({ id: 99 }) };
 
     const moduleRef = await Test.createTestingModule({
       providers: [
@@ -61,6 +68,7 @@ describe('OpsOnCallConfigService', () => {
           provide: getRepositoryToken(OpsOnCallConfig),
           useValue: repository,
         },
+        { provide: AuditService, useValue: auditService },
       ],
     }).compile();
 
@@ -94,6 +102,24 @@ describe('OpsOnCallConfigService', () => {
       }),
     );
     expect(result).toEqual(expect.objectContaining({ id: 12 }));
+    expect(auditService.log).toHaveBeenCalledWith(
+      'tenant-a',
+      77,
+      AuditAction.CREATE,
+      AuditEntityType.PLANNING,
+      'ops-on-call-config:12',
+      expect.objectContaining({
+        action: 'CREATE_OPS_ON_CALL_CONFIG',
+        before: null,
+        after: expect.objectContaining({
+          role: 'ON_CALL',
+          recipientCount: 1,
+        }),
+      }),
+    );
+    expect(auditService.log.mock.calls[0][5].after).not.toHaveProperty(
+      'recipients',
+    );
   });
 
   it('updates only configs owned by the resolved tenant', async () => {
@@ -130,6 +156,24 @@ describe('OpsOnCallConfigService', () => {
         updatedById: 77,
       }),
     );
+    expect(auditService.log).toHaveBeenCalledWith(
+      'tenant-a',
+      77,
+      AuditAction.UPDATE,
+      AuditEntityType.PLANNING,
+      'ops-on-call-config:44',
+      expect.objectContaining({
+        action: 'UPDATE_OPS_ON_CALL_CONFIG',
+        before: expect.objectContaining({
+          role: 'OPS',
+          recipientCount: 1,
+        }),
+        after: expect.objectContaining({
+          enabled: false,
+          recipientCount: 1,
+        }),
+      }),
+    );
   });
 
   it('rejects cross-tenant updates by returning not found', async () => {
@@ -138,6 +182,7 @@ describe('OpsOnCallConfigService', () => {
     await expect(
       service.updateTenantConfig('tenant-a', 44, { enabled: false }, 77),
     ).rejects.toBeInstanceOf(NotFoundException);
+    expect(auditService.log).not.toHaveBeenCalled();
   });
 
   it('resolves active recipients by role using priority order and de-duplicates', async () => {

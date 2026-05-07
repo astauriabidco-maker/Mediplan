@@ -6,8 +6,10 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import {
   Between,
+  FindOperator,
   FindOptionsWhere,
   In,
+  IsNull,
   LessThanOrEqual,
   MoreThanOrEqual,
   Repository,
@@ -41,6 +43,7 @@ import {
   OperationRoutineRun,
   OperationRoutineRunStatus,
 } from './entities/operation-routine-run.entity';
+import { OperationRunbookTemplate } from './entities/operation-runbook-template.entity';
 import {
   OperationalAlertFiltersDto,
   RaiseOperationalAlertDto,
@@ -84,13 +87,36 @@ import {
   OpsSeverityMetrics,
 } from './dto/ops-observability.dto';
 import {
+  OpsSloObjectiveDto,
+  OpsSloObjectiveId,
+  OpsSloQueryDto,
+  OpsSloResponseDto,
+  OpsSloStatus,
+} from './dto/ops-slo.dto';
+import {
+  AssignOpsActionCenterItemDto,
+  CommentOpsActionCenterItemDto,
   OpsActionCenterItem,
   OpsActionCenterItemType,
   OpsActionCenterPriority,
   OpsActionCenterQueryDto,
   OpsActionCenterResponse,
   OpsActionCenterStatus,
+  OpsActionCenterWorkflowAction,
+  PrioritizeOpsActionCenterItemDto,
+  ResolveOpsActionCenterItemDto,
+  TransitionOpsActionCenterItemDto,
 } from './dto/ops-action-center.dto';
+import {
+  OpsActionCenterSourceEntity,
+  OpsActionCenterWorkflowMutation,
+} from './entities/ops-action-center-workflow-mutation.entity';
+import {
+  OpsMultiTenantSummaryResponse,
+  OpsTenantLastBackupSummary,
+  OpsTenantOperationalStatus,
+  OpsTenantSummary,
+} from './dto/ops-multi-tenant-summary.dto';
 import { OpsPreActionValidationService } from './ops-pre-action-validation.service';
 import { OpsNotificationService } from './ops-notification.service';
 
@@ -135,6 +161,8 @@ interface RunbookBuildContext {
   isResolved: boolean;
   hasEvidence: boolean;
   ownerId: number | null;
+  service: string | null;
+  type: string | null;
   metadata: Record<string, unknown> | null;
 }
 
@@ -142,6 +170,70 @@ interface ObservabilityPeriod {
   from: Date | null;
   to: Date | null;
 }
+
+type ActionCenterWorkflowSnapshot = {
+  assignedToId: number | null;
+  priorityOverride: OpsActionCenterPriority | null;
+  statusOverride: OpsActionCenterStatus | null;
+  commentsCount: number;
+  lastComment: {
+    id: number;
+    comment: string;
+    actorId: number;
+    createdAt: string;
+  } | null;
+  updatedAt: string | null;
+  updatedById: number | null;
+};
+
+const OPS_SLO_THRESHOLDS: Record<
+  OpsSloObjectiveId,
+  OpsSloObjectiveDto['thresholds']
+> = {
+  alert_resolution_delay: {
+    pass: 60,
+    warning: 120,
+    unit: 'minutes',
+    direction: 'lte',
+  },
+  open_alert_age: {
+    pass: 60,
+    warning: 240,
+    unit: 'minutes',
+    direction: 'lte',
+  },
+  incident_mttr: {
+    pass: 240,
+    warning: 480,
+    unit: 'minutes',
+    direction: 'lte',
+  },
+  backup_freshness: {
+    pass: 24,
+    warning: 36,
+    unit: 'hours',
+    direction: 'lte',
+  },
+  routine_success_rate: {
+    pass: 95,
+    warning: 90,
+    unit: 'percent',
+    direction: 'gte',
+  },
+  notification_delivery: {
+    pass: 99,
+    warning: 95,
+    unit: 'percent',
+    direction: 'gte',
+  },
+};
+
+const TERMINAL_ROUTINE_STATUSES = [
+  OperationRoutineRunStatus.PASSED,
+  OperationRoutineRunStatus.FAILED,
+  OperationRoutineRunStatus.SKIPPED,
+  OperationRoutineRunStatus.CANCELLED,
+];
 
 export interface OperationalEscalationResult {
   escalatedIncidents: OperationIncident[];
@@ -209,6 +301,10 @@ export class OperationsService {
     private readonly alertRepository: Repository<OperationalAlert>,
     @InjectRepository(OperationRoutineRun)
     private readonly routineRunRepository: Repository<OperationRoutineRun>,
+    @InjectRepository(OperationRunbookTemplate)
+    private readonly runbookTemplateRepository: Repository<OperationRunbookTemplate>,
+    @InjectRepository(OpsActionCenterWorkflowMutation)
+    private readonly actionCenterWorkflowRepository: Repository<OpsActionCenterWorkflowMutation>,
     private readonly auditService: AuditService,
     private readonly opsNotificationService: OpsNotificationService,
     private readonly preActionValidationService: OpsPreActionValidationService,
@@ -217,6 +313,7 @@ export class OperationsService {
   async getActionCenter(
     tenantId: string,
     filters: OpsActionCenterQueryDto = {},
+    actorId?: number,
   ): Promise<OpsActionCenterResponse> {
     const limit = Math.min(filters.limit || 100, 500);
     const [alerts, incidents, journalEntries] = await Promise.all([
@@ -255,7 +352,7 @@ export class OperationsService {
       }),
     ]);
 
-    const items = [
+    const projectedItems = [
       ...alerts.map((alert) => this.toAlertActionCenterItem(alert)),
       ...incidents.flatMap((incident) =>
         this.toIncidentActionCenterItems(incident),
@@ -263,13 +360,19 @@ export class OperationsService {
       ...journalEntries.flatMap((entry) =>
         this.toJournalActionCenterItems(entry),
       ),
-    ]
+    ];
+    const workflowByItemId = await this.loadActionCenterWorkflowByItemId(
+      tenantId,
+      projectedItems,
+    );
+    const items = projectedItems
+      .map((item) => this.applyActionCenterWorkflow(item, workflowByItemId))
       .filter((item) => !filters.status || item.status === filters.status)
       .filter((item) => !filters.type || item.type === filters.type)
       .sort((left, right) => this.compareActionCenterItems(left, right))
       .slice(0, limit);
 
-    return {
+    const response = {
       tenantId,
       generatedAt: new Date().toISOString(),
       total: items.length,
@@ -279,6 +382,180 @@ export class OperationsService {
         limit,
       },
       items,
+    };
+
+    if (actorId !== undefined) {
+      await this.auditService.log(
+        tenantId,
+        actorId,
+        AuditAction.READ,
+        AuditEntityType.PLANNING,
+        'ops-action-center',
+        {
+          action: 'READ_OPS_ACTION_CENTER',
+          filters: response.filters,
+          total: response.total,
+          itemTypeCounts: this.countActionCenterItemsByType(items),
+          itemStatusCounts: this.countActionCenterItemsByStatus(items),
+        },
+      );
+    }
+
+    return response;
+  }
+
+  async assignActionCenterItem(
+    tenantId: string,
+    itemId: string,
+    dto: AssignOpsActionCenterItemDto,
+    actorId: number,
+  ) {
+    const item = await this.getActiveActionCenterItemOrThrow(tenantId, itemId);
+    await this.applyActionCenterAssignmentToSource(
+      tenantId,
+      item,
+      dto,
+      actorId,
+    );
+    return this.recordActionCenterWorkflowMutation(tenantId, item, actorId, {
+      action: OpsActionCenterWorkflowAction.ASSIGN,
+      assignedToId: dto.assignedToId,
+      status: OpsActionCenterStatus.IN_PROGRESS,
+      comment: dto.comment ?? null,
+    });
+  }
+
+  async commentActionCenterItem(
+    tenantId: string,
+    itemId: string,
+    dto: CommentOpsActionCenterItemDto,
+    actorId: number,
+  ) {
+    const item = await this.getActiveActionCenterItemOrThrow(tenantId, itemId);
+    return this.recordActionCenterWorkflowMutation(tenantId, item, actorId, {
+      action: OpsActionCenterWorkflowAction.COMMENT,
+      comment: dto.comment,
+    });
+  }
+
+  async prioritizeActionCenterItem(
+    tenantId: string,
+    itemId: string,
+    dto: PrioritizeOpsActionCenterItemDto,
+    actorId: number,
+  ) {
+    const item = await this.getActiveActionCenterItemOrThrow(tenantId, itemId);
+    return this.recordActionCenterWorkflowMutation(tenantId, item, actorId, {
+      action: OpsActionCenterWorkflowAction.PRIORITY,
+      priority: dto.priority,
+      comment: dto.comment ?? null,
+    });
+  }
+
+  async transitionActionCenterItem(
+    tenantId: string,
+    itemId: string,
+    dto: TransitionOpsActionCenterItemDto,
+    actorId: number,
+  ) {
+    if (
+      dto.status === OpsActionCenterStatus.RESOLVED ||
+      dto.status === OpsActionCenterStatus.CLOSED
+    ) {
+      throw new BadRequestException(
+        'Use the action-center resolve endpoint for terminal statuses',
+      );
+    }
+
+    const item = await this.getActiveActionCenterItemOrThrow(tenantId, itemId);
+    await this.applyActionCenterStatusToSource(tenantId, item, dto, actorId);
+    return this.recordActionCenterWorkflowMutation(tenantId, item, actorId, {
+      action: OpsActionCenterWorkflowAction.STATUS,
+      status: dto.status,
+      comment: dto.comment ?? null,
+    });
+  }
+
+  async resolveActionCenterItem(
+    tenantId: string,
+    itemId: string,
+    dto: ResolveOpsActionCenterItemDto,
+    actorId: number,
+  ) {
+    const terminalStatus = dto.status ?? OpsActionCenterStatus.RESOLVED;
+    if (
+      terminalStatus !== OpsActionCenterStatus.RESOLVED &&
+      terminalStatus !== OpsActionCenterStatus.CLOSED
+    ) {
+      throw new BadRequestException(
+        'Action-center resolve only accepts RESOLVED or CLOSED',
+      );
+    }
+
+    const item = await this.getActiveActionCenterItemOrThrow(tenantId, itemId);
+    await this.applyActionCenterResolutionToSource(
+      tenantId,
+      item,
+      dto,
+      actorId,
+      terminalStatus,
+    );
+    return this.recordActionCenterWorkflowMutation(tenantId, item, actorId, {
+      action: OpsActionCenterWorkflowAction.RESOLVE,
+      status: terminalStatus,
+      comment: dto.summary,
+    });
+  }
+
+  async getMultiTenantSummary(
+    tenantIds?: string[],
+  ): Promise<OpsMultiTenantSummaryResponse> {
+    const scopedTenantIds = tenantIds?.length
+      ? Array.from(new Set(tenantIds.filter(Boolean))).sort()
+      : await this.listOperationTenantIds();
+
+    const tenants = await Promise.all(
+      scopedTenantIds.map((tenantId) => this.buildTenantSummary(tenantId)),
+    );
+    tenants.sort((left, right) => {
+      const statusDelta =
+        this.tenantStatusRank(right.status) -
+        this.tenantStatusRank(left.status);
+      if (statusDelta !== 0) return statusDelta;
+      return left.tenantId.localeCompare(right.tenantId);
+    });
+
+    return {
+      generatedAt: new Date().toISOString(),
+      scope: {
+        tenantId: tenantIds?.length === 1 ? tenantIds[0] : null,
+        allTenants: !tenantIds?.length,
+      },
+      totals: {
+        tenants: tenants.length,
+        criticalTenants: tenants.filter(
+          (tenant) => tenant.status === 'CRITICAL',
+        ).length,
+        warningTenants: tenants.filter((tenant) => tenant.status === 'WARNING')
+          .length,
+        openAlerts: tenants.reduce(
+          (total, tenant) => total + tenant.alerts.open,
+          0,
+        ),
+        activeIncidents: tenants.reduce(
+          (total, tenant) => total + tenant.incidents.active,
+          0,
+        ),
+        failedRoutines: tenants.reduce(
+          (total, tenant) => total + tenant.routines.failed,
+          0,
+        ),
+        actionCenterItems: tenants.reduce(
+          (total, tenant) => total + tenant.actionCenter.total,
+          0,
+        ),
+      },
+      tenants,
     };
   }
 
@@ -318,6 +595,7 @@ export class OperationsService {
   async getObservabilityMetrics(
     tenantId: string,
     filters: OpsObservabilityQueryDto = {},
+    actorId?: number,
   ): Promise<OpsObservabilityMetricsResponse> {
     const period = this.resolveObservabilityPeriod(filters);
     const [alerts, incidents, journalEntries, routineRuns, actionCenter] =
@@ -371,7 +649,7 @@ export class OperationsService {
       this.isWithinPeriod(entry.occurredAt, period),
     );
 
-    return {
+    const response = {
       tenantId,
       generatedAt: new Date().toISOString(),
       period: {
@@ -427,9 +705,221 @@ export class OperationsService {
         total: actionCenter.total,
       },
     };
+
+    if (actorId !== undefined) {
+      await this.auditService.log(
+        tenantId,
+        actorId,
+        AuditAction.READ,
+        AuditEntityType.PLANNING,
+        'ops-observability',
+        {
+          action: 'READ_OPS_OBSERVABILITY',
+          period: response.period,
+          sloSignals: {
+            openAlerts: response.alerts.totalOpen,
+            failedRoutines: response.routines.failed,
+            mttrApproxMinutes: response.incidents.mttrApproxMinutes,
+            actionCenterTotal: response.actionCenter.total,
+          },
+        },
+      );
+    }
+
+    return response;
   }
 
-  recordRoutineRun(tenantId: string, dto: RecordOperationRoutineRunDto) {
+  async getSloObjectives(
+    tenantId: string,
+    filters: OpsSloQueryDto = {},
+  ): Promise<OpsSloResponseDto> {
+    const period = this.resolveObservabilityPeriod(filters);
+    const evaluationDate = period.to ?? new Date();
+    const [alerts, incidents, journalEntries, routineRuns] = await Promise.all([
+      this.alertRepository.find({
+        where: { tenantId },
+        order: { openedAt: 'DESC', id: 'DESC' },
+      }),
+      this.incidentRepository.find({
+        where: { tenantId },
+        order: { declaredAt: 'DESC', id: 'DESC' },
+      }),
+      this.journalRepository.find({
+        where: { tenantId, type: OperationsJournalEntryType.NOTIFICATION },
+        order: { occurredAt: 'DESC', id: 'DESC' },
+      }),
+      this.routineRunRepository.find({
+        where: { tenantId },
+        order: { startedAt: 'DESC', id: 'DESC' },
+      }),
+    ]);
+
+    const resolvedAlerts = alerts.filter(
+      (alert) =>
+        alert.resolvedAt &&
+        this.isWithinPeriod(alert.resolvedAt, period) &&
+        alert.resolvedAt.getTime() >= alert.openedAt.getTime(),
+    );
+    const alertResolutionDurations = resolvedAlerts.map(
+      (alert) =>
+        (alert.resolvedAt!.getTime() - alert.openedAt.getTime()) / 60000,
+    );
+    const openAlerts = alerts.filter(
+      (alert) =>
+        alert.status === OperationalAlertStatus.OPEN &&
+        this.isActiveDuringPeriod(alert.openedAt, alert.resolvedAt, period),
+    );
+    const openAlertAges = openAlerts.map((alert) =>
+      Math.max(
+        0,
+        (evaluationDate.getTime() - alert.openedAt.getTime()) / 60000,
+      ),
+    );
+    const resolvedOrClosedIncidents = incidents.filter((incident) => {
+      const endedAt = incident.resolvedAt ?? incident.closedAt;
+      return (
+        Boolean(endedAt && this.isWithinPeriod(endedAt, period)) &&
+        endedAt!.getTime() >= incident.declaredAt.getTime()
+      );
+    });
+    const mttrDurations = resolvedOrClosedIncidents.map((incident) => {
+      const endedAt = incident.resolvedAt ?? incident.closedAt;
+      return (endedAt!.getTime() - incident.declaredAt.getTime()) / 60000;
+    });
+    const periodRoutineRuns = routineRuns.filter((run) =>
+      this.isWithinPeriod(run.startedAt, period),
+    );
+    const terminalRoutineRuns = periodRoutineRuns.filter((run) =>
+      TERMINAL_ROUTINE_STATUSES.includes(run.status),
+    );
+    const passedRoutineRuns = terminalRoutineRuns.filter(
+      (run) => run.status === OperationRoutineRunStatus.PASSED,
+    );
+    const notificationEntries = journalEntries.filter((entry) =>
+      this.isWithinPeriod(entry.occurredAt, period),
+    );
+    const notificationAttempts = notificationEntries.filter((entry) =>
+      [
+        OpsNotificationStatus.SENT,
+        OpsNotificationStatus.PARTIAL,
+        OpsNotificationStatus.FAILED,
+      ].some((status) => this.hasNotificationStatus(entry, status)),
+    );
+    const deliveredNotifications = notificationAttempts.filter((entry) =>
+      [OpsNotificationStatus.SENT, OpsNotificationStatus.PARTIAL].some(
+        (status) => this.hasNotificationStatus(entry, status),
+      ),
+    );
+    const backupFreshness = this.resolveBackupFreshness(
+      routineRuns,
+      openAlerts,
+      evaluationDate,
+    );
+
+    const objectives: OpsSloResponseDto['objectives'] = {
+      alert_resolution_delay: this.buildSloObjective({
+        id: 'alert_resolution_delay',
+        label: 'Alert resolution delay',
+        value: this.averageRounded(alertResolutionDurations),
+        sampleSize: resolvedAlerts.length,
+        reasonWhenNoData: 'No resolved alert during the selected period.',
+      }),
+      open_alert_age: this.buildSloObjective({
+        id: 'open_alert_age',
+        label: 'Open alert age',
+        value: this.maxRounded(openAlertAges),
+        sampleSize: openAlerts.length,
+        reasonWhenNoData: 'No open alert active during the selected period.',
+        details: {
+          openAlerts: openAlerts.length,
+        },
+      }),
+      incident_mttr: this.buildSloObjective({
+        id: 'incident_mttr',
+        label: 'Incident MTTR',
+        value: this.averageRounded(mttrDurations),
+        sampleSize: resolvedOrClosedIncidents.length,
+        reasonWhenNoData: 'No resolved or closed incident during the period.',
+      }),
+      backup_freshness: this.buildSloObjective({
+        id: 'backup_freshness',
+        label: 'Backup freshness',
+        value: backupFreshness.ageHours,
+        sampleSize: backupFreshness.sourceCount,
+        reasonWhenNoData: backupFreshness.reasonWhenNoData,
+        forceStatus: backupFreshness.forceStatus,
+        details: {
+          latestBackupAt: backupFreshness.latestBackupAt,
+          openBackupAlerts: backupFreshness.openBackupAlerts,
+        },
+      }),
+      routine_success_rate: this.buildSloObjective({
+        id: 'routine_success_rate',
+        label: 'Routine success rate',
+        value: terminalRoutineRuns.length
+          ? Math.round(
+              (passedRoutineRuns.length / terminalRoutineRuns.length) * 100,
+            )
+          : null,
+        sampleSize: terminalRoutineRuns.length,
+        reasonWhenNoData: 'No terminal routine run during the selected period.',
+        details: {
+          passed: passedRoutineRuns.length,
+          failed: terminalRoutineRuns.filter(
+            (run) => run.status === OperationRoutineRunStatus.FAILED,
+          ).length,
+          skipped: terminalRoutineRuns.filter(
+            (run) => run.status === OperationRoutineRunStatus.SKIPPED,
+          ).length,
+          cancelled: terminalRoutineRuns.filter(
+            (run) => run.status === OperationRoutineRunStatus.CANCELLED,
+          ).length,
+        },
+      }),
+      notification_delivery: this.buildSloObjective({
+        id: 'notification_delivery',
+        label: 'Notification delivery',
+        value: notificationAttempts.length
+          ? Math.round(
+              (deliveredNotifications.length / notificationAttempts.length) *
+                100,
+            )
+          : null,
+        sampleSize: notificationAttempts.length,
+        reasonWhenNoData: 'No delivery notification attempt during the period.',
+        details: {
+          sent: notificationEntries.filter((entry) =>
+            this.hasNotificationStatus(entry, OpsNotificationStatus.SENT),
+          ).length,
+          partial: notificationEntries.filter((entry) =>
+            this.hasNotificationStatus(entry, OpsNotificationStatus.PARTIAL),
+          ).length,
+          failed: notificationEntries.filter((entry) =>
+            this.hasNotificationStatus(entry, OpsNotificationStatus.FAILED),
+          ).length,
+          dryRun: notificationEntries.filter((entry) =>
+            this.hasNotificationStatus(entry, OpsNotificationStatus.DRY_RUN),
+          ).length,
+          throttled: notificationEntries.filter((entry) =>
+            this.hasNotificationStatus(entry, OpsNotificationStatus.THROTTLED),
+          ).length,
+        },
+      }),
+    };
+
+    return {
+      tenantId,
+      generatedAt: new Date().toISOString(),
+      period: {
+        from: period.from?.toISOString() ?? null,
+        to: period.to?.toISOString() ?? null,
+      },
+      status: this.rollupSloStatus(Object.values(objectives)),
+      objectives,
+    };
+  }
+
+  async recordRoutineRun(tenantId: string, dto: RecordOperationRoutineRunDto) {
     const startedAt = new Date(dto.startedAt);
     const finishedAt = dto.finishedAt ? new Date(dto.finishedAt) : null;
     const durationMs =
@@ -450,7 +940,34 @@ export class OperationsService {
       metadata: dto.metadata ?? null,
     });
 
-    return this.routineRunRepository.save(run);
+    const savedRun = await this.routineRunRepository.save(run);
+    const actorId = this.actorIdFromRoutineMetadata(dto.metadata);
+
+    if (actorId !== null) {
+      await this.auditService.log(
+        tenantId,
+        actorId,
+        AuditAction.AUTO_GENERATE,
+        AuditEntityType.PLANNING,
+        `operation-routine-run:${savedRun.id}`,
+        {
+          action: 'GENERATE_OPS_ROUTINE_REPORT',
+          routineRunId: savedRun.id,
+          routine: savedRun.routine,
+          status: savedRun.status,
+          startedAt: savedRun.startedAt.toISOString(),
+          finishedAt: savedRun.finishedAt?.toISOString() ?? null,
+          durationMs: savedRun.durationMs,
+          artifactCount: savedRun.artifacts?.length ?? 0,
+          artifactTypes: this.safeArtifactTypes(savedRun.artifacts),
+          trigger: this.safeStringMetadataValue(savedRun.metadata, 'trigger'),
+          mode: this.safeStringMetadataValue(savedRun.metadata, 'mode'),
+          exitCode: this.safeNumberMetadataValue(savedRun.metadata, 'exitCode'),
+        },
+      );
+    }
+
+    return savedRun;
   }
 
   findJournalEntries(
@@ -1174,11 +1691,13 @@ export class OperationsService {
   async generateAlertRunbook(
     tenantId: string,
     id: number,
+    actorId?: number,
   ): Promise<OperationsRunbookDto> {
     const alert = await this.getAlertOrThrow(tenantId, id);
-    return this.buildRunbook(
+    const runbook = await this.buildRunbook(
       {
         sourceType: 'ALERT',
+        type: alert.type,
         id: alert.id,
         tenantId: alert.tenantId,
         title: alert.message,
@@ -1195,19 +1714,25 @@ export class OperationsService {
         isResolved: alert.status === OperationalAlertStatus.RESOLVED,
         hasEvidence: false,
         ownerId: null,
+        service: this.extractRunbookService(alert.metadata),
+        type: alert.type,
         metadata: alert.metadata,
       },
     );
+    await this.writeRunbookReadAudit(tenantId, actorId, runbook);
+    return runbook;
   }
 
   async generateIncidentRunbook(
     tenantId: string,
     id: number,
+    actorId?: number,
   ): Promise<OperationsRunbookDto> {
     const incident = await this.getIncidentOrThrow(tenantId, id);
-    return this.buildRunbook(
+    const runbook = await this.buildRunbook(
       {
         sourceType: 'INCIDENT',
+        type: this.incidentRunbookType(incident),
         id: incident.id,
         tenantId: incident.tenantId,
         title: incident.title,
@@ -1229,19 +1754,25 @@ export class OperationsService {
         ].includes(incident.status),
         hasEvidence: this.evidenceOf(incident).length > 0,
         ownerId: incident.assignedToId ?? incident.escalatedToId,
+        service: incident.impactedService,
+        type: this.incidentRunbookType(incident),
         metadata: incident.metadata,
       },
     );
+    await this.writeRunbookReadAudit(tenantId, actorId, runbook);
+    return runbook;
   }
 
   async generateJournalRunbook(
     tenantId: string,
     id: number,
+    actorId?: number,
   ): Promise<OperationsRunbookDto> {
     const entry = await this.getJournalEntryOrThrow(tenantId, id);
-    return this.buildRunbook(
+    const runbook = await this.buildRunbook(
       {
         sourceType: 'JOURNAL',
+        type: entry.type,
         id: entry.id,
         tenantId: entry.tenantId,
         title: entry.title,
@@ -1263,9 +1794,13 @@ export class OperationsService {
         ].includes(entry.status),
         hasEvidence: Boolean(entry.evidenceUrl),
         ownerId: entry.ownerId,
+        service: this.extractRunbookService(entry.metadata),
+        type: entry.type,
         metadata: entry.metadata,
       },
     );
+    await this.writeRunbookReadAudit(tenantId, actorId, runbook);
+    return runbook;
   }
 
   async runOperationalEscalation(
@@ -1408,6 +1943,507 @@ export class OperationsService {
     };
   }
 
+  private async listOperationTenantIds() {
+    const tenantRows = await Promise.all([
+      this.listTenantIdsFromRepository(this.alertRepository, 'alert'),
+      this.listTenantIdsFromRepository(this.incidentRepository, 'incident'),
+      this.listTenantIdsFromRepository(this.routineRunRepository, 'routineRun'),
+      this.listTenantIdsFromRepository(this.journalRepository, 'journalEntry'),
+    ]);
+
+    return Array.from(new Set(tenantRows.flat())).sort();
+  }
+
+  private async listTenantIdsFromRepository<T extends { tenantId: string }>(
+    repository: Repository<T>,
+    alias: string,
+  ) {
+    const rows = await repository
+      .createQueryBuilder(alias)
+      .select(`${alias}.tenantId`, 'tenantId')
+      .distinct(true)
+      .getRawMany<{ tenantId: string | null }>();
+
+    return rows
+      .map((row) => row.tenantId)
+      .filter((tenantId): tenantId is string => Boolean(tenantId));
+  }
+
+  private async buildTenantSummary(
+    tenantId: string,
+  ): Promise<OpsTenantSummary> {
+    const [alerts, incidents, routineRuns, actionCenter] = await Promise.all([
+      this.alertRepository.find({
+        where: { tenantId, status: OperationalAlertStatus.OPEN },
+        order: { severity: 'DESC', openedAt: 'ASC', id: 'ASC' },
+      }),
+      this.incidentRepository.find({
+        where: {
+          tenantId,
+          status: In([
+            OperationIncidentStatus.OPEN,
+            OperationIncidentStatus.DECLARED,
+            OperationIncidentStatus.ASSIGNED,
+            OperationIncidentStatus.ESCALATED,
+          ]),
+        },
+        order: { severity: 'DESC', declaredAt: 'ASC', id: 'ASC' },
+      }),
+      this.routineRunRepository.find({
+        where: { tenantId },
+        order: { startedAt: 'DESC', id: 'DESC' },
+        take: 500,
+      }),
+      this.getActionCenter(tenantId, { limit: 500 }),
+    ]);
+
+    const alertsBySeverity = this.emptySeverityMetrics();
+    for (const alert of alerts) {
+      alertsBySeverity[alert.severity] += 1;
+    }
+
+    const failedRoutineRuns = routineRuns.filter(
+      (run) => run.status === OperationRoutineRunStatus.FAILED,
+    );
+    const criticalActionItems = actionCenter.items.filter(
+      (item) => item.priority === OpsActionCenterPriority.CRITICAL,
+    );
+    const status = this.resolveTenantOperationalStatus({
+      criticalAlerts: alertsBySeverity.CRITICAL,
+      criticalIncidents: incidents.filter(
+        (incident) => incident.severity === OperationIncidentSeverity.CRITICAL,
+      ).length,
+      highAlerts: alertsBySeverity.HIGH,
+      highIncidents: incidents.filter(
+        (incident) => incident.severity === OperationIncidentSeverity.HIGH,
+      ).length,
+      failedRoutines: failedRoutineRuns.length,
+      criticalActionCenterItems: criticalActionItems.length,
+    });
+
+    return {
+      tenantId,
+      status,
+      alerts: {
+        open: alerts.length,
+        critical: alertsBySeverity.CRITICAL,
+        bySeverity: alertsBySeverity,
+      },
+      incidents: {
+        active: incidents.length,
+        critical: incidents.filter(
+          (incident) =>
+            incident.severity === OperationIncidentSeverity.CRITICAL,
+        ).length,
+        escalated: incidents.filter(
+          (incident) => incident.status === OperationIncidentStatus.ESCALATED,
+        ).length,
+      },
+      routines: {
+        failed: failedRoutineRuns.length,
+        lastFailedAt: this.toIsoString(failedRoutineRuns[0]?.startedAt),
+      },
+      lastBackup: this.findLastBackupSummary(routineRuns),
+      actionCenter: {
+        total: actionCenter.total,
+        critical: criticalActionItems.length,
+        topItems: actionCenter.items.slice(0, 5),
+      },
+    };
+  }
+
+  private resolveTenantOperationalStatus(input: {
+    criticalAlerts: number;
+    criticalIncidents: number;
+    highAlerts: number;
+    highIncidents: number;
+    failedRoutines: number;
+    criticalActionCenterItems: number;
+  }): OpsTenantOperationalStatus {
+    if (
+      input.criticalAlerts > 0 ||
+      input.criticalIncidents > 0 ||
+      input.criticalActionCenterItems > 0
+    ) {
+      return 'CRITICAL';
+    }
+
+    if (
+      input.highAlerts > 0 ||
+      input.highIncidents > 0 ||
+      input.failedRoutines > 0
+    ) {
+      return 'WARNING';
+    }
+
+    return 'OK';
+  }
+
+  private tenantStatusRank(status: OpsTenantOperationalStatus) {
+    switch (status) {
+      case 'CRITICAL':
+        return 3;
+      case 'WARNING':
+        return 2;
+      case 'OK':
+        return 1;
+    }
+  }
+
+  private findLastBackupSummary(
+    routineRuns: OperationRoutineRun[],
+  ): OpsTenantLastBackupSummary | null {
+    const backupRun = routineRuns.find((run) => this.isBackupRoutineRun(run));
+    if (!backupRun) return null;
+
+    const artifact = backupRun.artifacts?.find(
+      (candidate) => candidate.url || candidate.path,
+    );
+
+    return {
+      routine: backupRun.routine,
+      status: backupRun.status,
+      startedAt: this.toIsoString(backupRun.startedAt) || '',
+      finishedAt: this.toIsoString(backupRun.finishedAt),
+      artifactUrl: artifact?.url ?? artifact?.path ?? null,
+      error: backupRun.error,
+    };
+  }
+
+  private isBackupRoutineRun(run: OperationRoutineRun) {
+    const haystack = [
+      run.routine,
+      JSON.stringify(run.metadata ?? {}),
+      JSON.stringify(run.artifacts ?? []),
+    ]
+      .join(' ')
+      .toLowerCase();
+
+    return haystack.includes('backup') || haystack.includes('sauvegarde');
+  }
+
+  private async getActiveActionCenterItemOrThrow(
+    tenantId: string,
+    itemId: string,
+  ) {
+    const actionCenter = await this.getActionCenter(tenantId, { limit: 500 });
+    const item = actionCenter.items.find(
+      (candidate) => candidate.id === itemId,
+    );
+
+    if (!item || item.sourceReference.tenantId !== tenantId) {
+      throw new NotFoundException(`Action-center item ${itemId} not found`);
+    }
+
+    return item;
+  }
+
+  private async loadActionCenterWorkflowByItemId(
+    tenantId: string,
+    items: OpsActionCenterItem[],
+  ) {
+    if (!items.length) return new Map<string, ActionCenterWorkflowSnapshot>();
+
+    const mutations = await this.actionCenterWorkflowRepository.find({
+      where: {
+        tenantId,
+        itemId: In(items.map((item) => item.id)),
+      },
+      order: { createdAt: 'ASC', id: 'ASC' },
+    });
+
+    const workflowByItemId = new Map<string, ActionCenterWorkflowSnapshot>();
+    for (const mutation of mutations) {
+      workflowByItemId.set(
+        mutation.itemId,
+        this.reduceActionCenterWorkflow(
+          workflowByItemId.get(mutation.itemId) ??
+            this.emptyActionCenterWorkflow(),
+          mutation,
+        ),
+      );
+    }
+
+    return workflowByItemId;
+  }
+
+  private applyActionCenterWorkflow(
+    item: OpsActionCenterItem,
+    workflowByItemId: Map<string, ActionCenterWorkflowSnapshot>,
+  ): OpsActionCenterItem {
+    const workflow =
+      workflowByItemId.get(item.id) ?? this.emptyActionCenterWorkflow();
+
+    return {
+      ...item,
+      priority: workflow.priorityOverride ?? item.priority,
+      status: workflow.statusOverride ?? item.status,
+      workflow,
+    };
+  }
+
+  private emptyActionCenterWorkflow(): ActionCenterWorkflowSnapshot {
+    return {
+      assignedToId: null,
+      priorityOverride: null,
+      statusOverride: null,
+      commentsCount: 0,
+      lastComment: null,
+      updatedAt: null,
+      updatedById: null,
+    };
+  }
+
+  private reduceActionCenterWorkflow(
+    state: ActionCenterWorkflowSnapshot,
+    mutation: OpsActionCenterWorkflowMutation,
+  ): ActionCenterWorkflowSnapshot {
+    const updatedAt = this.toIsoString(mutation.createdAt);
+    const next: ActionCenterWorkflowSnapshot = {
+      ...state,
+      updatedAt,
+      updatedById: mutation.actorId,
+    };
+
+    if (mutation.assignedToId) next.assignedToId = mutation.assignedToId;
+    if (mutation.priority) next.priorityOverride = mutation.priority;
+    if (mutation.status) next.statusOverride = mutation.status;
+    if (mutation.comment) {
+      next.commentsCount += 1;
+      next.lastComment = {
+        id: mutation.id,
+        comment: mutation.comment,
+        actorId: mutation.actorId,
+        createdAt: updatedAt ?? '',
+      };
+    }
+
+    return next;
+  }
+
+  private async recordActionCenterWorkflowMutation(
+    tenantId: string,
+    item: OpsActionCenterItem,
+    actorId: number,
+    change: {
+      action: OpsActionCenterWorkflowAction;
+      assignedToId?: number | null;
+      priority?: OpsActionCenterPriority | null;
+      status?: OpsActionCenterStatus | null;
+      comment?: string | null;
+    },
+  ) {
+    const beforeState = this.toActionCenterWorkflowAuditSnapshot(item.workflow);
+    const mutation = this.actionCenterWorkflowRepository.create({
+      tenantId,
+      itemId: item.id,
+      itemType: item.type,
+      sourceEntity: this.toWorkflowSourceEntity(item),
+      sourceId: item.sourceReference.id,
+      action: change.action,
+      actorId,
+      assignedToId: change.assignedToId ?? null,
+      priority: change.priority ?? null,
+      status: change.status ?? null,
+      comment: change.comment ?? null,
+      beforeState,
+      afterState: null,
+      auditLogId: null,
+    });
+    const savedMutation =
+      await this.actionCenterWorkflowRepository.save(mutation);
+    const afterState = this.toActionCenterWorkflowAuditSnapshot(
+      this.reduceActionCenterWorkflow(item.workflow, savedMutation),
+    );
+    const auditLog = await this.auditService.log(
+      tenantId,
+      actorId,
+      AuditAction.UPDATE,
+      AuditEntityType.PLANNING,
+      `ops-action-center:${item.id}:workflow:${savedMutation.id}`,
+      {
+        action: `OPS_ACTION_CENTER_${change.action}`,
+        workflowAction: change.action,
+        itemId: item.id,
+        itemType: item.type,
+        sourceEntity: item.sourceReference.entity,
+        sourceId: item.sourceReference.id,
+        sourceTenantId: item.sourceReference.tenantId,
+        assignedToId: change.assignedToId ?? null,
+        priority: change.priority ?? null,
+        status: change.status ?? null,
+        commentPresent: Boolean(change.comment),
+        commentLength: change.comment?.length ?? 0,
+        before: beforeState,
+        after: afterState,
+      },
+    );
+
+    savedMutation.auditLogId = auditLog.id;
+    savedMutation.afterState = afterState;
+    return this.actionCenterWorkflowRepository.save(savedMutation);
+  }
+
+  private toActionCenterWorkflowAuditSnapshot(
+    workflow: ActionCenterWorkflowSnapshot,
+  ) {
+    return {
+      assignedToId: workflow.assignedToId,
+      priorityOverride: workflow.priorityOverride,
+      statusOverride: workflow.statusOverride,
+      commentsCount: workflow.commentsCount,
+      lastComment: workflow.lastComment
+        ? {
+            id: workflow.lastComment.id,
+            actorId: workflow.lastComment.actorId,
+            createdAt: workflow.lastComment.createdAt,
+          }
+        : null,
+      updatedAt: workflow.updatedAt,
+      updatedById: workflow.updatedById,
+    };
+  }
+
+  private toWorkflowSourceEntity(item: OpsActionCenterItem) {
+    switch (item.sourceReference.entity) {
+      case 'OperationalAlert':
+        return OpsActionCenterSourceEntity.OPERATIONAL_ALERT;
+      case 'OperationIncident':
+        return OpsActionCenterSourceEntity.OPERATION_INCIDENT;
+      case 'OperationsJournalEntry':
+        return OpsActionCenterSourceEntity.OPERATIONS_JOURNAL_ENTRY;
+    }
+  }
+
+  private async applyActionCenterAssignmentToSource(
+    tenantId: string,
+    item: OpsActionCenterItem,
+    dto: AssignOpsActionCenterItemDto,
+    actorId: number,
+  ) {
+    if (item.sourceReference.entity === 'OperationIncident') {
+      await this.assignIncident(
+        tenantId,
+        item.sourceReference.id,
+        { assignedToId: dto.assignedToId, note: dto.comment },
+        actorId,
+      );
+      return;
+    }
+
+    if (item.sourceReference.entity === 'OperationsJournalEntry') {
+      const entry = await this.getJournalEntryOrThrow(
+        tenantId,
+        item.sourceReference.id,
+      );
+      await this.updateJournalEntry(
+        tenantId,
+        entry.id,
+        {
+          ownerId: dto.assignedToId,
+          status:
+            entry.status === OperationsJournalEntryStatus.RECORDED
+              ? OperationsJournalEntryStatus.IN_PROGRESS
+              : entry.status,
+        },
+        actorId,
+      );
+    }
+  }
+
+  private async applyActionCenterStatusToSource(
+    tenantId: string,
+    item: OpsActionCenterItem,
+    dto: TransitionOpsActionCenterItemDto,
+    actorId: number,
+  ) {
+    if (item.sourceReference.entity !== 'OperationsJournalEntry') return;
+
+    await this.updateJournalEntry(
+      tenantId,
+      item.sourceReference.id,
+      {
+        status:
+          dto.status === OpsActionCenterStatus.IN_PROGRESS
+            ? OperationsJournalEntryStatus.IN_PROGRESS
+            : OperationsJournalEntryStatus.OPEN,
+      },
+      actorId,
+    );
+  }
+
+  private async applyActionCenterResolutionToSource(
+    tenantId: string,
+    item: OpsActionCenterItem,
+    dto: ResolveOpsActionCenterItemDto,
+    actorId: number,
+    terminalStatus:
+      | OpsActionCenterStatus.RESOLVED
+      | OpsActionCenterStatus.CLOSED,
+  ) {
+    if (item.sourceReference.entity === 'OperationalAlert') {
+      await this.resolveAlert(
+        tenantId,
+        item.sourceReference.id,
+        { resolutionSummary: dto.summary },
+        actorId,
+      );
+      return;
+    }
+
+    if (item.sourceReference.entity === 'OperationIncident') {
+      this.assertActionCenterEvidence(dto);
+      if (terminalStatus === OpsActionCenterStatus.CLOSED) {
+        await this.closeIncident(
+          tenantId,
+          item.sourceReference.id,
+          {
+            closureSummary: dto.summary,
+            evidenceUrl: dto.evidenceUrl!,
+            evidenceLabel: dto.evidenceLabel,
+          },
+          actorId,
+        );
+      } else {
+        await this.resolveIncident(
+          tenantId,
+          item.sourceReference.id,
+          {
+            resolutionSummary: dto.summary,
+            evidenceUrl: dto.evidenceUrl!,
+            evidenceLabel: dto.evidenceLabel,
+          },
+          actorId,
+        );
+      }
+      return;
+    }
+
+    await this.updateJournalEntry(
+      tenantId,
+      item.sourceReference.id,
+      {
+        status:
+          terminalStatus === OpsActionCenterStatus.CLOSED
+            ? OperationsJournalEntryStatus.CLOSED
+            : OperationsJournalEntryStatus.RESOLVED,
+        resolvedAt: new Date().toISOString(),
+        evidenceUrl: dto.evidenceUrl,
+        evidenceLabel: dto.evidenceLabel,
+        description: dto.summary,
+      },
+      actorId,
+    );
+  }
+
+  private assertActionCenterEvidence(dto: ResolveOpsActionCenterItemDto) {
+    if (!dto.evidenceUrl) {
+      throw new BadRequestException(
+        'Incident action-center resolution requires evidenceUrl',
+      );
+    }
+  }
+
   private toAlertActionCenterItem(
     alert: OperationalAlert,
   ): OpsActionCenterItem {
@@ -1443,6 +2479,7 @@ export class OperationsService {
         escalatedAt: escalation?.escalatedAt ?? null,
         resolvedAt: this.toIsoString(alert.resolvedAt),
       },
+      workflow: this.emptyActionCenterWorkflow(),
     };
   }
 
@@ -1517,6 +2554,7 @@ export class OperationsService {
         escalatedAt: this.toIsoString(incident.escalatedAt),
         resolvedAt: this.toIsoString(incident.resolvedAt),
       },
+      workflow: this.emptyActionCenterWorkflow(),
     };
   }
 
@@ -1548,6 +2586,7 @@ export class OperationsService {
         escalatedAt: this.toIsoString(incident.escalatedAt),
         resolvedAt: this.toIsoString(incident.resolvedAt),
       },
+      workflow: this.emptyActionCenterWorkflow(),
     };
   }
 
@@ -1593,6 +2632,7 @@ export class OperationsService {
       ],
       sourceReference: this.toJournalSourceReference(entry),
       timestamps: this.toJournalActionTimestamps(entry),
+      workflow: this.emptyActionCenterWorkflow(),
     };
   }
 
@@ -1613,6 +2653,7 @@ export class OperationsService {
       ],
       sourceReference: this.toJournalSourceReference(entry),
       timestamps: this.toJournalActionTimestamps(entry),
+      workflow: this.emptyActionCenterWorkflow(),
     };
   }
 
@@ -1641,6 +2682,7 @@ export class OperationsService {
         ...this.toJournalActionTimestamps(entry),
         escalatedAt: escalation?.escalatedAt ?? null,
       },
+      workflow: this.emptyActionCenterWorkflow(),
     };
   }
 
@@ -1942,27 +2984,51 @@ export class OperationsService {
     });
   }
 
-  private buildRunbook(
+  private async buildRunbook(
     reference: OperationsRunbookReference,
     context: RunbookBuildContext,
-  ): OperationsRunbookDto {
-    const actions = this.runbookActions(reference, context);
+  ): Promise<OperationsRunbookDto> {
+    const template = await this.resolveRunbookTemplate(reference, context);
+    const defaultActions = this.runbookActions(reference, context);
     const checks = this.runbookChecks(reference, context);
-    const expectedEvidence = this.runbookExpectedEvidence(reference, context);
+    const defaultEvidence = this.runbookExpectedEvidence(reference, context);
+    const actions = this.nonEmptyTemplateArray(template?.actions)
+      ? template!.actions
+      : defaultActions;
+    const expectedEvidence = this.nonEmptyTemplateArray(template?.evidence)
+      ? template!.evidence
+      : defaultEvidence;
     const next = this.runbookNext(reference, context, actions);
-    const steps = this.runbookSteps(
+    const defaultSteps = this.runbookSteps(
       reference,
       context,
       checks,
       expectedEvidence,
       actions,
     );
+    const steps = this.nonEmptyTemplateArray(template?.steps)
+      ? template!.steps
+      : defaultSteps;
+    const requiredPermissions = this.nonEmptyTemplateArray(
+      template?.requiredPermissions,
+    )
+      ? template!.requiredPermissions!
+      : this.runbookRequirements(context);
 
     return {
       id: `${reference.sourceType.toLowerCase()}-${reference.id}-runbook`,
       generatedAt: new Date().toISOString(),
+      template: template
+        ? {
+            id: template.id,
+            version: template.version,
+            tenantId: template.tenantId,
+            service: template.service,
+            type: template.type,
+          }
+        : null,
       reference,
-      requiredPermissions: this.runbookRequirements(context),
+      requiredPermissions,
       why: this.runbookWhy(reference, context),
       next,
       steps,
@@ -1970,6 +3036,90 @@ export class OperationsService {
       actions,
       expectedEvidence,
     };
+  }
+
+  private async resolveRunbookTemplate(
+    reference: OperationsRunbookReference,
+    context: RunbookBuildContext,
+  ) {
+    const tenantId = reference.tenantId;
+    const service = context.service ?? reference.impactedService ?? null;
+    const type = context.type ?? reference.type ?? null;
+    const candidates = await this.runbookTemplateRepository.find({
+      where: this.runbookTemplateWhere(
+        reference.sourceType,
+        tenantId,
+        service,
+        type,
+      ),
+      order: { version: 'DESC', id: 'DESC' },
+    });
+
+    return (
+      candidates
+        .map((template) => ({
+          template,
+          score: this.runbookTemplateScore(template, tenantId, service, type),
+        }))
+        .filter((candidate) => candidate.score >= 0)
+        .sort(
+          (left, right) =>
+            right.score - left.score ||
+            right.template.version - left.template.version ||
+            right.template.id - left.template.id,
+        )[0]?.template ?? null
+    );
+  }
+
+  private runbookTemplateWhere(
+    sourceType: OperationsRunbookSourceType,
+    tenantId: string,
+    service: string | null,
+    type: string | null,
+  ): FindOptionsWhere<OperationRunbookTemplate>[] {
+    const tenants: Array<string | FindOperator<string>> = [tenantId, IsNull()];
+    const services: Array<string | FindOperator<string>> = service
+      ? [service, IsNull()]
+      : [IsNull()];
+    const types: Array<string | FindOperator<string>> = type
+      ? [type, IsNull()]
+      : [IsNull()];
+
+    return tenants.flatMap((tenantValue) =>
+      services.flatMap((serviceValue) =>
+        types.map((typeValue) => ({
+          active: true,
+          sourceType,
+          tenantId: tenantValue,
+          service: serviceValue,
+          type: typeValue,
+        })),
+      ),
+    );
+  }
+
+  private runbookTemplateScore(
+    template: OperationRunbookTemplate,
+    tenantId: string,
+    service: string | null,
+    type: string | null,
+  ) {
+    if (!template.active) return -1;
+    if (template.tenantId && template.tenantId !== tenantId) return -1;
+    if (template.service && template.service !== service) return -1;
+    if (template.type && template.type !== type) return -1;
+
+    return (
+      (template.tenantId === tenantId ? 100 : 0) +
+      (template.service && template.service === service ? 20 : 0) +
+      (template.type && template.type === type ? 10 : 0)
+    );
+  }
+
+  private nonEmptyTemplateArray<T>(
+    value: T[] | null | undefined,
+  ): value is T[] {
+    return Array.isArray(value) && value.length > 0;
   }
 
   private runbookWhy(
@@ -2200,6 +3350,17 @@ export class OperationsService {
       return 'Planning workflow smoke check succeeds for the impacted service.';
     }
     return 'Relevant operational control has been replayed and returns OK.';
+  }
+
+  private incidentRunbookType(incident: OperationIncident) {
+    const auto = this.autoMetadataOf(incident);
+    return typeof auto.sourceType === 'string' ? auto.sourceType : null;
+  }
+
+  private extractRunbookService(metadata: Record<string, unknown> | null) {
+    if (!metadata) return null;
+    const service = metadata.service ?? metadata.impactedService;
+    return typeof service === 'string' && service.trim() ? service : null;
   }
 
   private runbookExpectedEvidence(
@@ -3003,6 +4164,95 @@ export class OperationsService {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
   }
 
+  private actorIdFromRoutineMetadata(
+    metadata: Record<string, unknown> | null | undefined,
+  ) {
+    const actorId = metadata?.actorId;
+    return typeof actorId === 'number' && Number.isFinite(actorId)
+      ? actorId
+      : null;
+  }
+
+  private safeStringMetadataValue(
+    metadata: Record<string, unknown> | null | undefined,
+    key: string,
+  ) {
+    const value = metadata?.[key];
+    return typeof value === 'string' ? value : null;
+  }
+
+  private safeNumberMetadataValue(
+    metadata: Record<string, unknown> | null | undefined,
+    key: string,
+  ) {
+    const value = metadata?.[key];
+    return typeof value === 'number' && Number.isFinite(value) ? value : null;
+  }
+
+  private safeArtifactTypes(
+    artifacts: OperationRoutineRun['artifacts'] | null | undefined,
+  ) {
+    if (!Array.isArray(artifacts)) return [];
+
+    return Array.from(
+      new Set(
+        artifacts
+          .map((artifact) => artifact?.type)
+          .filter((type): type is string => typeof type === 'string'),
+      ),
+    );
+  }
+
+  private countActionCenterItemsByType(items: OpsActionCenterItem[]) {
+    return items.reduce<Record<string, number>>((counts, item) => {
+      counts[item.type] = (counts[item.type] || 0) + 1;
+      return counts;
+    }, {});
+  }
+
+  private countActionCenterItemsByStatus(items: OpsActionCenterItem[]) {
+    return items.reduce<Record<string, number>>((counts, item) => {
+      counts[item.status] = (counts[item.status] || 0) + 1;
+      return counts;
+    }, {});
+  }
+
+  private async writeRunbookReadAudit(
+    tenantId: string,
+    actorId: number | undefined,
+    runbook: OperationsRunbookDto,
+  ) {
+    if (actorId === undefined) return;
+
+    await this.auditService.log(
+      tenantId,
+      actorId,
+      AuditAction.READ,
+      this.runbookAuditEntityType(runbook.reference.sourceType),
+      `ops-runbook:${runbook.reference.sourceType.toLowerCase()}:${runbook.reference.id}`,
+      {
+        action: 'READ_OPS_RUNBOOK',
+        sourceType: runbook.reference.sourceType,
+        sourceId: runbook.reference.id,
+        status: runbook.reference.status,
+        severity: runbook.reference.severity,
+        recommendedActionId: runbook.next.recommendedActionId,
+        waitingOn: runbook.next.waitingOn,
+        requiredPermissionCount: runbook.requiredPermissions.length,
+        actionCount: runbook.actions.length,
+        evidenceRequirementCount: runbook.expectedEvidence.length,
+      },
+    );
+  }
+
+  private runbookAuditEntityType(
+    sourceType: OperationsRunbookSourceType,
+  ): AuditEntityType {
+    if (sourceType === 'ALERT') return AuditEntityType.OPERATION_ALERT;
+    if (sourceType === 'INCIDENT') return AuditEntityType.OPERATION_INCIDENT;
+    return AuditEntityType.PLANNING;
+  }
+
   private async writeAutomaticJournalEntry(
     tenantId: string,
     actorId: number,
@@ -3192,6 +4442,178 @@ export class OperationsService {
       HIGH: 0,
       CRITICAL: 0,
     };
+  }
+
+  private buildSloObjective(options: {
+    id: OpsSloObjectiveId;
+    label: string;
+    value: number | null;
+    sampleSize: number;
+    reasonWhenNoData: string;
+    forceStatus?: OpsSloStatus;
+    details?: Record<string, unknown>;
+  }): OpsSloObjectiveDto {
+    const thresholds = OPS_SLO_THRESHOLDS[options.id];
+    const status =
+      options.forceStatus ??
+      this.evaluateSloStatus(options.value, thresholds, options.sampleSize);
+
+    return {
+      id: options.id,
+      label: options.label,
+      status,
+      actual: {
+        value: options.value,
+        unit: thresholds.unit,
+        sampleSize: options.sampleSize,
+      },
+      thresholds,
+      reason:
+        options.value === null
+          ? options.reasonWhenNoData
+          : this.formatSloReason(options.value, thresholds, status),
+      details: options.details,
+    };
+  }
+
+  private evaluateSloStatus(
+    value: number | null,
+    thresholds: OpsSloObjectiveDto['thresholds'],
+    sampleSize: number,
+  ) {
+    if (value === null || sampleSize === 0) return OpsSloStatus.PASSED;
+
+    if (thresholds.direction === 'lte') {
+      if (value <= thresholds.pass) return OpsSloStatus.PASSED;
+      if (value <= thresholds.warning) return OpsSloStatus.WARNING;
+      return OpsSloStatus.FAILED;
+    }
+
+    if (value >= thresholds.pass) return OpsSloStatus.PASSED;
+    if (value >= thresholds.warning) return OpsSloStatus.WARNING;
+    return OpsSloStatus.FAILED;
+  }
+
+  private formatSloReason(
+    value: number,
+    thresholds: OpsSloObjectiveDto['thresholds'],
+    status: OpsSloStatus,
+  ) {
+    const comparator = thresholds.direction === 'lte' ? '<=' : '>=';
+    if (status === OpsSloStatus.PASSED) {
+      return `Actual ${value}${thresholds.unit} meets target ${comparator} ${thresholds.pass}${thresholds.unit}.`;
+    }
+    if (status === OpsSloStatus.WARNING) {
+      return `Actual ${value}${thresholds.unit} is within warning threshold ${thresholds.warning}${thresholds.unit}.`;
+    }
+    return `Actual ${value}${thresholds.unit} breaches failed threshold ${thresholds.warning}${thresholds.unit}.`;
+  }
+
+  private rollupSloStatus(objectives: OpsSloObjectiveDto[]) {
+    if (
+      objectives.some((objective) => objective.status === OpsSloStatus.FAILED)
+    ) {
+      return OpsSloStatus.FAILED;
+    }
+    if (
+      objectives.some((objective) => objective.status === OpsSloStatus.WARNING)
+    ) {
+      return OpsSloStatus.WARNING;
+    }
+    return OpsSloStatus.PASSED;
+  }
+
+  private averageRounded(values: number[]) {
+    if (!values.length) return null;
+    return Math.round(
+      values.reduce((total, value) => total + value, 0) / values.length,
+    );
+  }
+
+  private maxRounded(values: number[]) {
+    if (!values.length) return null;
+    return Math.round(Math.max(...values));
+  }
+
+  private resolveBackupFreshness(
+    routineRuns: OperationRoutineRun[],
+    openAlerts: OperationalAlert[],
+    evaluationDate: Date,
+  ): {
+    ageHours: number | null;
+    sourceCount: number;
+    latestBackupAt: string | null;
+    openBackupAlerts: number;
+    forceStatus?: OpsSloStatus;
+    reasonWhenNoData: string;
+  } {
+    const openBackupAlerts = openAlerts.filter((alert) =>
+      [
+        OperationalAlertType.BACKUP_STALE,
+        OperationalAlertType.BACKUP_EXPORT_FAILED,
+      ].includes(alert.type),
+    ).length;
+    const latestBackupDate = routineRuns
+      .filter(
+        (run) =>
+          run.status === OperationRoutineRunStatus.PASSED &&
+          run.routine.toLowerCase().includes('backup'),
+      )
+      .map((run) => this.resolveBackupTimestamp(run))
+      .filter((date): date is Date => Boolean(date))
+      .sort((left, right) => right.getTime() - left.getTime())[0];
+
+    if (openBackupAlerts > 0 && !latestBackupDate) {
+      return {
+        ageHours: null,
+        sourceCount: 0,
+        latestBackupAt: null,
+        openBackupAlerts,
+        forceStatus: OpsSloStatus.FAILED,
+        reasonWhenNoData:
+          'Open backup alert without a successful backup source.',
+      };
+    }
+
+    if (!latestBackupDate) {
+      return {
+        ageHours: null,
+        sourceCount: 0,
+        latestBackupAt: null,
+        openBackupAlerts,
+        forceStatus: OpsSloStatus.WARNING,
+        reasonWhenNoData: 'No successful backup routine source is available.',
+      };
+    }
+
+    return {
+      ageHours: Math.max(
+        0,
+        Math.round(
+          (evaluationDate.getTime() - latestBackupDate.getTime()) / 3600000,
+        ),
+      ),
+      sourceCount: 1,
+      latestBackupAt: latestBackupDate.toISOString(),
+      openBackupAlerts,
+      forceStatus: openBackupAlerts > 0 ? OpsSloStatus.FAILED : undefined,
+      reasonWhenNoData: 'No successful backup routine source is available.',
+    };
+  }
+
+  private resolveBackupTimestamp(run: OperationRoutineRun) {
+    const metadata = run.metadata ?? {};
+    const metadataTimestamp = [
+      metadata.backupCompletedAt,
+      metadata.backupExportedAt,
+      metadata.exportedAt,
+      metadata.snapshotExportedAt,
+    ].find((value) => typeof value === 'string');
+    const date = metadataTimestamp
+      ? new Date(metadataTimestamp as string)
+      : (run.finishedAt ?? run.startedAt);
+
+    return Number.isNaN(date.getTime()) ? null : date;
   }
 
   private isWithinPeriod(

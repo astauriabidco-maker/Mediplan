@@ -15,6 +15,7 @@ export type OpsPreAction =
   | 'ESCALATE_INCIDENT'
   | 'RESOLVE_INCIDENT'
   | 'CLOSE_INCIDENT'
+  | 'MUTATE_ACTION_CENTER_ITEM'
   | 'RUN_OPERATIONAL_ESCALATION'
   | 'RUN_OPS_ROUTINES';
 
@@ -135,6 +136,11 @@ const ACTION_RULES: Record<
         'Only a resolved incident can be closed',
     },
     missingEvidenceMessage: 'Incident closure requires evidence',
+  },
+  MUTATE_ACTION_CENTER_ITEM: {
+    requiredPermission: Permission.OperationsWrite,
+    requiredEvidence: [],
+    expectedState: 'ACTION_CENTER_ITEM_MUTATED',
   },
   RUN_OPERATIONAL_ESCALATION: {
     requiredPermission: Permission.OperationsWrite,

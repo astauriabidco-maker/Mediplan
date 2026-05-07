@@ -15,6 +15,7 @@ import {
   OperationRoutineRun,
   OperationRoutineRunStatus,
 } from './entities/operation-routine-run.entity';
+import { OperationRunbookTemplate } from './entities/operation-runbook-template.entity';
 import {
   OperationalAlert,
   OperationalAlertSeverity,
@@ -27,11 +28,15 @@ import {
   OperationsJournalEntryStatus,
   OperationsJournalEntryType,
 } from './entities/operations-journal-entry.entity';
+import { OpsActionCenterWorkflowMutation } from './entities/ops-action-center-workflow-mutation.entity';
 import {
   OpsActionCenterItemType,
+  OpsActionCenterPriority,
   OpsActionCenterStatus,
+  OpsActionCenterWorkflowAction,
 } from './dto/ops-action-center.dto';
 import { OpsNotificationStatus } from './dto/ops-notification.dto';
+import { OpsSloStatus } from './dto/ops-slo.dto';
 import { OpsNotificationService } from './ops-notification.service';
 import { OpsPreActionValidationService } from './ops-pre-action-validation.service';
 import { OperationsService } from './operations.service';
@@ -41,6 +46,26 @@ type RepositoryMock = {
   findOne: jest.Mock;
   create: jest.Mock;
   save: jest.Mock;
+  createQueryBuilder: jest.Mock;
+};
+
+const createQueryBuilderMock = () => {
+  const queryBuilder = {
+    select: jest.fn(),
+    distinct: jest.fn(),
+    getRawMany: jest.fn().mockResolvedValue([]),
+  };
+  queryBuilder.select.mockReturnValue(queryBuilder);
+  queryBuilder.distinct.mockReturnValue(queryBuilder);
+  return queryBuilder;
+};
+
+const createTenantQueryBuilderMock = (tenantIds: string[]) => {
+  const queryBuilder = createQueryBuilderMock();
+  queryBuilder.getRawMany.mockResolvedValue(
+    tenantIds.map((tenantId) => ({ tenantId })),
+  );
+  return queryBuilder;
 };
 
 const createRepositoryMock = (): RepositoryMock => ({
@@ -53,6 +78,8 @@ const createRepositoryMock = (): RepositoryMock => ({
         | OperationsJournalEntry
         | OperationalAlert
         | OperationRoutineRun
+        | OperationRunbookTemplate
+        | OpsActionCenterWorkflowMutation
       >,
     ) => entity,
   ),
@@ -63,6 +90,8 @@ const createRepositoryMock = (): RepositoryMock => ({
         | OperationsJournalEntry
         | OperationalAlert
         | OperationRoutineRun
+        | OperationRunbookTemplate
+        | OpsActionCenterWorkflowMutation
       >,
     ) =>
       Promise.resolve({
@@ -74,8 +103,11 @@ const createRepositoryMock = (): RepositoryMock => ({
         | OperationIncident
         | OperationsJournalEntry
         | OperationalAlert
-        | OperationRoutineRun),
+        | OperationRoutineRun
+        | OperationRunbookTemplate
+        | OpsActionCenterWorkflowMutation),
   ),
+  createQueryBuilder: jest.fn(() => createQueryBuilderMock()),
 });
 
 const objectContaining = <T extends object>(value: T): T =>
@@ -197,6 +229,8 @@ describe('OperationsService', () => {
   let alertRepository: RepositoryMock;
   let journalRepository: RepositoryMock;
   let routineRunRepository: RepositoryMock;
+  let runbookTemplateRepository: RepositoryMock;
+  let actionCenterWorkflowRepository: RepositoryMock;
   let auditService: { log: jest.Mock };
   let opsNotificationService: {
     notifyIncidentDeclared: jest.Mock;
@@ -210,6 +244,8 @@ describe('OperationsService', () => {
     alertRepository = createRepositoryMock();
     journalRepository = createRepositoryMock();
     routineRunRepository = createRepositoryMock();
+    runbookTemplateRepository = createRepositoryMock();
+    actionCenterWorkflowRepository = createRepositoryMock();
     incidentRepository.find.mockResolvedValue([]);
     incidentRepository.findOne.mockResolvedValue(null);
     alertRepository.find.mockResolvedValue([]);
@@ -218,6 +254,10 @@ describe('OperationsService', () => {
     journalRepository.findOne.mockResolvedValue(null);
     routineRunRepository.find.mockResolvedValue([]);
     routineRunRepository.findOne.mockResolvedValue(null);
+    runbookTemplateRepository.find.mockResolvedValue([]);
+    runbookTemplateRepository.findOne.mockResolvedValue(null);
+    actionCenterWorkflowRepository.find.mockResolvedValue([]);
+    actionCenterWorkflowRepository.findOne.mockResolvedValue(null);
     auditService = { log: jest.fn().mockResolvedValue({ id: 99 }) };
     opsNotificationService = {
       notifyIncidentDeclared: jest.fn().mockResolvedValue(undefined),
@@ -244,6 +284,14 @@ describe('OperationsService', () => {
         {
           provide: getRepositoryToken(OperationRoutineRun),
           useValue: routineRunRepository,
+        },
+        {
+          provide: getRepositoryToken(OperationRunbookTemplate),
+          useValue: runbookTemplateRepository,
+        },
+        {
+          provide: getRepositoryToken(OpsActionCenterWorkflowMutation),
+          useValue: actionCenterWorkflowRepository,
         },
         { provide: AuditService, useValue: auditService },
         { provide: OpsNotificationService, useValue: opsNotificationService },
@@ -294,6 +342,52 @@ describe('OperationsService', () => {
         durationMs: 150000,
       }),
     );
+    expect(auditService.log).not.toHaveBeenCalled();
+  });
+
+  it('audits manual routine report generation without artifact URLs or stderr', async () => {
+    const run = await service.recordRoutineRun('tenant-a', {
+      routine: 'ops:weekly-report',
+      status: OperationRoutineRunStatus.PASSED,
+      startedAt: '2026-05-07T06:00:00.000Z',
+      finishedAt: '2026-05-07T06:02:30.000Z',
+      artifacts: [
+        {
+          type: 'REPORT',
+          label: 'Weekly JSON',
+          url: 'https://reports.test/ops-weekly-report-2026-05-07.json',
+        },
+      ],
+      metadata: {
+        trigger: 'manual',
+        mode: 'dry-run',
+        actorId: 77,
+        exitCode: 0,
+        stderrTail: 'debug output should stay out of audit',
+      },
+    });
+
+    expect(run).toEqual(expect.objectContaining({ id: 1 }));
+    expect(auditService.log).toHaveBeenCalledWith(
+      'tenant-a',
+      77,
+      AuditAction.AUTO_GENERATE,
+      AuditEntityType.PLANNING,
+      'operation-routine-run:1',
+      expect.objectContaining({
+        action: 'GENERATE_OPS_ROUTINE_REPORT',
+        routineRunId: 1,
+        routine: 'ops:weekly-report',
+        status: OperationRoutineRunStatus.PASSED,
+        artifactCount: 1,
+        artifactTypes: ['REPORT'],
+        trigger: 'manual',
+        mode: 'dry-run',
+        exitCode: 0,
+      }),
+    );
+    expect(auditService.log.mock.calls[0][5]).not.toHaveProperty('artifacts');
+    expect(auditService.log.mock.calls[0][5]).not.toHaveProperty('stderrTail');
   });
 
   it('lists operation routine runs by tenant and filters', async () => {
@@ -408,10 +502,14 @@ describe('OperationsService', () => {
       }),
     ]);
 
-    const metrics = await service.getObservabilityMetrics('tenant-a', {
-      from: '2026-05-06T00:00:00.000Z',
-      to: '2026-05-06T23:59:59.000Z',
-    });
+    const metrics = await service.getObservabilityMetrics(
+      'tenant-a',
+      {
+        from: '2026-05-06T00:00:00.000Z',
+        to: '2026-05-06T23:59:59.000Z',
+      },
+      77,
+    );
 
     expect(metrics).toEqual(
       expect.objectContaining({
@@ -444,6 +542,249 @@ describe('OperationsService', () => {
     expect(routineRunRepository.find).toHaveBeenCalledWith(
       expect.objectContaining({ where: { tenantId: 'tenant-a' } }),
     );
+    expect(auditService.log).toHaveBeenCalledWith(
+      'tenant-a',
+      77,
+      AuditAction.READ,
+      AuditEntityType.PLANNING,
+      'ops-observability',
+      expect.objectContaining({
+        action: 'READ_OPS_OBSERVABILITY',
+        sloSignals: expect.objectContaining({
+          openAlerts: 1,
+          failedRoutines: 1,
+          actionCenterTotal: 1,
+        }),
+      }),
+    );
+  });
+
+  it('calculates SLO objectives with statuses by tenant and period', async () => {
+    alertRepository.find.mockResolvedValueOnce([
+      createAlert({
+        id: 1,
+        status: OperationalAlertStatus.RESOLVED,
+        openedAt: new Date('2026-05-08T08:00:00.000Z'),
+        resolvedAt: new Date('2026-05-08T08:30:00.000Z'),
+      }),
+      createAlert({
+        id: 2,
+        status: OperationalAlertStatus.OPEN,
+        type: OperationalAlertType.BACKUP_STALE,
+        openedAt: new Date('2026-05-08T06:00:00.000Z'),
+      }),
+    ]);
+    incidentRepository.find.mockResolvedValueOnce([
+      createIncident({
+        id: 21,
+        status: OperationIncidentStatus.RESOLVED,
+        declaredAt: new Date('2026-05-08T07:00:00.000Z'),
+        resolvedAt: new Date('2026-05-08T09:00:00.000Z'),
+      }),
+    ]);
+    journalRepository.find.mockResolvedValueOnce([
+      createJournalEntry({
+        id: 31,
+        type: OperationsJournalEntryType.NOTIFICATION,
+        occurredAt: new Date('2026-05-08T09:00:00.000Z'),
+        metadata: { notificationStatus: OpsNotificationStatus.SENT },
+      }),
+      createJournalEntry({
+        id: 32,
+        type: OperationsJournalEntryType.NOTIFICATION,
+        occurredAt: new Date('2026-05-08T09:05:00.000Z'),
+        metadata: { notificationStatus: OpsNotificationStatus.FAILED },
+      }),
+    ]);
+    routineRunRepository.find.mockResolvedValueOnce([
+      createRoutineRun({
+        id: 41,
+        routine: 'backup',
+        status: OperationRoutineRunStatus.PASSED,
+        startedAt: new Date('2026-05-08T05:00:00.000Z'),
+        finishedAt: new Date('2026-05-08T05:10:00.000Z'),
+      }),
+      createRoutineRun({
+        id: 42,
+        routine: 'daily',
+        status: OperationRoutineRunStatus.FAILED,
+        startedAt: new Date('2026-05-08T06:00:00.000Z'),
+      }),
+    ]);
+
+    const slo = await service.getSloObjectives('tenant-a', {
+      from: '2026-05-08T00:00:00.000Z',
+      to: '2026-05-08T10:00:00.000Z',
+    });
+
+    expect(slo.status).toBe(OpsSloStatus.FAILED);
+    expect(slo.objectives.alert_resolution_delay).toEqual(
+      expect.objectContaining({
+        status: OpsSloStatus.PASSED,
+        actual: expect.objectContaining({ value: 30, sampleSize: 1 }),
+      }),
+    );
+    expect(slo.objectives.open_alert_age).toEqual(
+      expect.objectContaining({
+        status: OpsSloStatus.WARNING,
+        actual: expect.objectContaining({ value: 240, sampleSize: 1 }),
+      }),
+    );
+    expect(slo.objectives.incident_mttr).toEqual(
+      expect.objectContaining({
+        status: OpsSloStatus.PASSED,
+        actual: expect.objectContaining({ value: 120, sampleSize: 1 }),
+      }),
+    );
+    expect(slo.objectives.backup_freshness).toEqual(
+      expect.objectContaining({
+        status: OpsSloStatus.FAILED,
+        actual: expect.objectContaining({ value: 5, sampleSize: 1 }),
+        details: expect.objectContaining({ openBackupAlerts: 1 }),
+      }),
+    );
+    expect(slo.objectives.routine_success_rate).toEqual(
+      expect.objectContaining({
+        status: OpsSloStatus.FAILED,
+        actual: expect.objectContaining({ value: 50, sampleSize: 2 }),
+      }),
+    );
+    expect(slo.objectives.notification_delivery).toEqual(
+      expect.objectContaining({
+        status: OpsSloStatus.FAILED,
+        actual: expect.objectContaining({ value: 50, sampleSize: 2 }),
+      }),
+    );
+  });
+
+  it('aggregates a multi-tenant ops summary for a scoped tenant', async () => {
+    const criticalAlert = createAlert({
+      id: 1,
+      severity: OperationalAlertSeverity.CRITICAL,
+    });
+    const escalatedIncident = createIncident({
+      id: 2,
+      severity: OperationIncidentSeverity.HIGH,
+      status: OperationIncidentStatus.ESCALATED,
+      escalatedAt: new Date('2026-05-07T08:10:00.000Z'),
+      escalationReason: 'Impact patient potentiel',
+    });
+    const failedBackup = createRoutineRun({
+      id: 3,
+      routine: 'tenant-backup:nightly',
+      status: OperationRoutineRunStatus.FAILED,
+      startedAt: new Date('2026-05-07T05:00:00.000Z'),
+      finishedAt: new Date('2026-05-07T05:02:00.000Z'),
+      error: 'Export object storage unavailable',
+      artifacts: [
+        {
+          label: 'Backup report',
+          url: 'https://reports.test/backups/tenant-a/2026-05-07.json',
+        },
+      ],
+    });
+
+    alertRepository.find
+      .mockResolvedValueOnce([criticalAlert])
+      .mockResolvedValueOnce([criticalAlert]);
+    incidentRepository.find
+      .mockResolvedValueOnce([escalatedIncident])
+      .mockResolvedValueOnce([escalatedIncident]);
+    routineRunRepository.find.mockResolvedValueOnce([failedBackup]);
+    journalRepository.find.mockResolvedValueOnce([]);
+
+    const summary = await service.getMultiTenantSummary(['tenant-a']);
+
+    expect(summary.scope).toEqual({ tenantId: 'tenant-a', allTenants: false });
+    expect(summary.totals).toEqual(
+      expect.objectContaining({
+        tenants: 1,
+        criticalTenants: 1,
+        openAlerts: 1,
+        activeIncidents: 1,
+        failedRoutines: 1,
+      }),
+    );
+    expect(summary.tenants[0]).toEqual(
+      expect.objectContaining({
+        tenantId: 'tenant-a',
+        status: 'CRITICAL',
+        alerts: expect.objectContaining({
+          open: 1,
+          critical: 1,
+        }),
+        incidents: expect.objectContaining({
+          active: 1,
+          escalated: 1,
+        }),
+        routines: {
+          failed: 1,
+          lastFailedAt: '2026-05-07T05:00:00.000Z',
+        },
+        lastBackup: expect.objectContaining({
+          routine: 'tenant-backup:nightly',
+          status: OperationRoutineRunStatus.FAILED,
+          artifactUrl: 'https://reports.test/backups/tenant-a/2026-05-07.json',
+        }),
+      }),
+    );
+    expect(alertRepository.find).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        where: { tenantId: 'tenant-a', status: OperationalAlertStatus.OPEN },
+      }),
+    );
+    expect(incidentRepository.find).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        where: expect.objectContaining({ tenantId: 'tenant-a' }),
+      }),
+    );
+    expect(routineRunRepository.find).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { tenantId: 'tenant-a' } }),
+    );
+  });
+
+  it('discovers tenant ids across ops entities for super-admin consolidation', async () => {
+    alertRepository.createQueryBuilder.mockReturnValue(
+      createTenantQueryBuilderMock(['tenant-b']),
+    );
+    incidentRepository.createQueryBuilder.mockReturnValue(
+      createTenantQueryBuilderMock(['tenant-a']),
+    );
+    routineRunRepository.createQueryBuilder.mockReturnValue(
+      createTenantQueryBuilderMock(['tenant-a', 'tenant-c']),
+    );
+    journalRepository.createQueryBuilder.mockReturnValue(
+      createTenantQueryBuilderMock([]),
+    );
+    const buildTenantSummary = jest
+      .spyOn(service as any, 'buildTenantSummary')
+      .mockImplementation((tenantId: string) =>
+        Promise.resolve({
+          tenantId,
+          status: 'OK',
+          alerts: {
+            open: 0,
+            critical: 0,
+            bySeverity: { LOW: 0, MEDIUM: 0, HIGH: 0, CRITICAL: 0 },
+          },
+          incidents: { active: 0, critical: 0, escalated: 0 },
+          routines: { failed: 0, lastFailedAt: null },
+          lastBackup: null,
+          actionCenter: { total: 0, critical: 0, topItems: [] },
+        }),
+      );
+
+    const summary = await service.getMultiTenantSummary();
+
+    expect(summary.scope).toEqual({ tenantId: null, allTenants: true });
+    expect(summary.tenants.map((tenant) => tenant.tenantId)).toEqual([
+      'tenant-a',
+      'tenant-b',
+      'tenant-c',
+    ]);
+    expect(buildTenantSummary).toHaveBeenCalledTimes(3);
   });
 
   it('declares a post-production incident with initial proof and audit', async () => {
@@ -1012,7 +1353,7 @@ describe('OperationsService', () => {
       }),
     );
 
-    const runbook = await service.generateAlertRunbook('tenant-a', 44);
+    const runbook = await service.generateAlertRunbook('tenant-a', 44, 77);
 
     expect(alertRepository.findOne).toHaveBeenCalledWith({
       where: { tenantId: 'tenant-a', id: 44 },
@@ -1063,6 +1404,22 @@ describe('OperationsService', () => {
           requiredFor: expect.arrayContaining(['resolution']),
         }),
       ]),
+    );
+    expect(auditService.log).toHaveBeenCalledWith(
+      'tenant-a',
+      77,
+      AuditAction.READ,
+      AuditEntityType.OPERATION_ALERT,
+      'ops-runbook:alert:44',
+      expect.objectContaining({
+        action: 'READ_OPS_RUNBOOK',
+        sourceType: 'ALERT',
+        sourceId: 44,
+        status: OperationalAlertStatus.OPEN,
+        severity: OperationalAlertSeverity.CRITICAL,
+        recommendedActionId: 'resolve-alert',
+        waitingOn: expect.arrayContaining(['evidence', 'resolution']),
+      }),
     );
   });
 
@@ -1163,6 +1520,237 @@ describe('OperationsService', () => {
     expect(runbook.requiredPermissions).not.toEqual(
       expect.arrayContaining([
         expect.objectContaining({ permission: 'operations:write' }),
+      ]),
+    );
+  });
+
+  it('applies the highest active tenant/service runbook template over defaults', async () => {
+    alertRepository.findOne.mockResolvedValue(
+      createAlert({
+        type: OperationalAlertType.SLO_BREACH,
+        metadata: { service: 'urgences' },
+      }),
+    );
+    runbookTemplateRepository.find.mockResolvedValue([
+      {
+        id: 1,
+        tenantId: null,
+        service: null,
+        sourceType: 'ALERT',
+        type: null,
+        version: 4,
+        active: true,
+        steps: [],
+        evidence: [
+          {
+            label: 'Generic proof',
+            expected: 'Generic operational proof',
+            requiredFor: ['resolution'],
+          },
+        ],
+        actions: [],
+        requiredPermissions: null,
+      },
+      {
+        id: 2,
+        tenantId: 'tenant-a',
+        service: 'urgences',
+        sourceType: 'ALERT',
+        type: OperationalAlertType.SLO_BREACH,
+        version: 1,
+        active: true,
+        steps: [
+          {
+            order: 1,
+            title: 'Tenant SLO playbook',
+            why: 'Service-specific SLO ownership.',
+            instruction: 'Call the tenant operations lead.',
+            requiredRole: 'Ops lead',
+            requiredPermission: 'operations:write',
+            checks: [],
+            evidence: [],
+            actions: [],
+          },
+        ],
+        evidence: [
+          {
+            label: 'Urgences SLO graph',
+            expected: 'P95 graph scoped to urgences.',
+            requiredFor: ['resolution'],
+          },
+        ],
+        actions: [
+          {
+            id: 'resolve-alert',
+            label: 'Resolve urgences alert',
+            method: 'PATCH',
+            endpoint: '/ops/alerts/44/resolve',
+            requiredPermission: 'operations:write',
+            enabled: true,
+            why: 'Tenant/service template action.',
+          },
+        ],
+        requiredPermissions: [
+          {
+            role: 'Ops lead urgences',
+            permission: 'operations:write',
+            reason: 'Operate tenant/service SLO runbook.',
+          },
+        ],
+      },
+      {
+        id: 3,
+        tenantId: 'tenant-a',
+        service: 'urgences',
+        sourceType: 'ALERT',
+        type: OperationalAlertType.SLO_BREACH,
+        version: 2,
+        active: false,
+        steps: [],
+        evidence: [],
+        actions: [],
+        requiredPermissions: null,
+      },
+    ] as OperationRunbookTemplate[]);
+
+    const runbook = await service.generateAlertRunbook('tenant-a', 44);
+
+    expect(runbook.template).toEqual(
+      expect.objectContaining({
+        id: 2,
+        version: 1,
+        tenantId: 'tenant-a',
+        service: 'urgences',
+        type: OperationalAlertType.SLO_BREACH,
+      }),
+    );
+    expect(runbook.reference).toEqual(
+      expect.objectContaining({
+        sourceType: 'ALERT',
+        type: OperationalAlertType.SLO_BREACH,
+      }),
+    );
+    expect(runbook.steps).toEqual([
+      expect.objectContaining({ title: 'Tenant SLO playbook' }),
+    ]);
+    expect(runbook.expectedEvidence).toEqual([
+      expect.objectContaining({ label: 'Urgences SLO graph' }),
+    ]);
+    expect(runbook.requiredPermissions).toEqual([
+      expect.objectContaining({ role: 'Ops lead urgences' }),
+    ]);
+  });
+
+  it('falls back from tenant/type template to default active template and keeps latest version', async () => {
+    journalRepository.findOne.mockResolvedValue(
+      createJournalEntry({
+        id: 4,
+        type: OperationsJournalEntryType.ACTION,
+        metadata: { service: 'bloc' },
+      }),
+    );
+    runbookTemplateRepository.find.mockResolvedValue([
+      {
+        id: 10,
+        tenantId: null,
+        service: null,
+        sourceType: 'JOURNAL',
+        type: null,
+        version: 1,
+        active: true,
+        steps: [],
+        evidence: [
+          {
+            label: 'Default v1 evidence',
+            expected: 'Old default proof.',
+            requiredFor: ['resolution'],
+          },
+        ],
+        actions: [],
+        requiredPermissions: null,
+      },
+      {
+        id: 11,
+        tenantId: null,
+        service: null,
+        sourceType: 'JOURNAL',
+        type: null,
+        version: 3,
+        active: true,
+        steps: [],
+        evidence: [
+          {
+            label: 'Default v3 evidence',
+            expected: 'Current default proof.',
+            requiredFor: ['resolution'],
+          },
+        ],
+        actions: [],
+        requiredPermissions: null,
+      },
+    ] as OperationRunbookTemplate[]);
+
+    const runbook = await service.generateJournalRunbook('tenant-a', 4);
+
+    expect(runbook.template).toEqual(
+      expect.objectContaining({
+        id: 11,
+        version: 3,
+        tenantId: null,
+        service: null,
+        type: null,
+      }),
+    );
+    expect(runbook.expectedEvidence).toEqual([
+      expect.objectContaining({ label: 'Default v3 evidence' }),
+    ]);
+    expect(runbook.actions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'update-journal' }),
+      ]),
+    );
+  });
+
+  it('uses generated runbook when no active template matches', async () => {
+    incidentRepository.findOne.mockResolvedValue(
+      createIncident({
+        impactedService: 'planning',
+        metadata: {
+          source: 'operations:auto-incident',
+          auto: { sourceType: 'BACKUP', reference: 'backup:nightly' },
+        },
+      }),
+    );
+    runbookTemplateRepository.find.mockResolvedValue([
+      {
+        id: 20,
+        tenantId: 'tenant-b',
+        service: 'planning',
+        sourceType: 'INCIDENT',
+        type: 'BACKUP',
+        version: 1,
+        active: true,
+        steps: [],
+        evidence: [],
+        actions: [],
+        requiredPermissions: null,
+      },
+    ] as OperationRunbookTemplate[]);
+
+    const runbook = await service.generateIncidentRunbook('tenant-a', 12);
+
+    expect(runbook.template).toBeNull();
+    expect(runbook.reference).toEqual(
+      expect.objectContaining({
+        sourceType: 'INCIDENT',
+        type: 'BACKUP',
+        impactedService: 'planning',
+      }),
+    );
+    expect(runbook.actions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'assign-incident' }),
+        expect.objectContaining({ id: 'resolve-incident' }),
       ]),
     );
   });
@@ -1349,7 +1937,7 @@ describe('OperationsService', () => {
       }),
     ]);
 
-    const result = await service.getActionCenter('tenant-a', { limit: 10 });
+    const result = await service.getActionCenter('tenant-a', { limit: 10 }, 77);
 
     expect(result).toEqual(
       expect.objectContaining({
@@ -1388,6 +1976,28 @@ describe('OperationsService', () => {
         },
       }),
     );
+    expect(auditService.log).toHaveBeenCalledWith(
+      'tenant-a',
+      77,
+      AuditAction.READ,
+      AuditEntityType.PLANNING,
+      'ops-action-center',
+      expect.objectContaining({
+        action: 'READ_OPS_ACTION_CENTER',
+        filters: { status: null, type: null, limit: 10 },
+        total: 4,
+        itemTypeCounts: expect.objectContaining({
+          [OpsActionCenterItemType.OPERATIONAL_ALERT]: 1,
+          [OpsActionCenterItemType.AUTO_INCIDENT]: 1,
+          [OpsActionCenterItemType.MISSING_EVIDENCE]: 1,
+          [OpsActionCenterItemType.DECISION_REQUIRED]: 1,
+        }),
+        itemStatusCounts: expect.objectContaining({
+          [OpsActionCenterStatus.WAITING_DECISION]: 1,
+          [OpsActionCenterStatus.WAITING_EVIDENCE]: 1,
+        }),
+      }),
+    );
   });
 
   it('filters action center items by normalized status and type', async () => {
@@ -1420,6 +2030,163 @@ describe('OperationsService', () => {
         requiredEvidence: ['URL de preuve incident', 'Libelle de preuve'],
       }),
     ]);
+  });
+
+  it('applies persisted workflow state to action center projections', async () => {
+    alertRepository.find.mockResolvedValue([createAlert()]);
+    actionCenterWorkflowRepository.find.mockResolvedValue([
+      {
+        id: 501,
+        tenantId: 'tenant-a',
+        itemId: 'operational-alert:44',
+        itemType: OpsActionCenterItemType.OPERATIONAL_ALERT,
+        sourceEntity: 'OperationalAlert',
+        sourceId: 44,
+        action: OpsActionCenterWorkflowAction.ASSIGN,
+        actorId: 77,
+        assignedToId: 88,
+        priority: null,
+        status: OpsActionCenterStatus.IN_PROGRESS,
+        comment: 'Pris en charge',
+        beforeState: null,
+        afterState: null,
+        auditLogId: null,
+        createdAt: new Date('2026-05-07T08:10:00.000Z'),
+      },
+      {
+        id: 502,
+        tenantId: 'tenant-a',
+        itemId: 'operational-alert:44',
+        itemType: OpsActionCenterItemType.OPERATIONAL_ALERT,
+        sourceEntity: 'OperationalAlert',
+        sourceId: 44,
+        action: OpsActionCenterWorkflowAction.PRIORITY,
+        actorId: 78,
+        assignedToId: null,
+        priority: OpsActionCenterPriority.CRITICAL,
+        status: null,
+        comment: null,
+        beforeState: null,
+        afterState: null,
+        auditLogId: null,
+        createdAt: new Date('2026-05-07T08:20:00.000Z'),
+      },
+    ] as OpsActionCenterWorkflowMutation[]);
+
+    const result = await service.getActionCenter('tenant-a', { limit: 10 });
+
+    expect(result.items[0]).toEqual(
+      expect.objectContaining({
+        id: 'operational-alert:44',
+        priority: OpsActionCenterPriority.CRITICAL,
+        status: OpsActionCenterStatus.IN_PROGRESS,
+        workflow: expect.objectContaining({
+          assignedToId: 88,
+          priorityOverride: OpsActionCenterPriority.CRITICAL,
+          commentsCount: 1,
+          updatedById: 78,
+        }),
+      }),
+    );
+    expect(actionCenterWorkflowRepository.find).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          tenantId: 'tenant-a',
+        }),
+      }),
+    );
+  });
+
+  it('records action-center comments with tenant-scoped source audit', async () => {
+    journalRepository.find.mockResolvedValue([
+      createJournalEntry({
+        id: 71,
+        type: OperationsJournalEntryType.ACTION,
+      }),
+    ]);
+    actionCenterWorkflowRepository.save.mockImplementation((entity) =>
+      Promise.resolve({
+        id: entity.id ?? 701,
+        createdAt: new Date('2026-05-07T09:00:00.000Z'),
+        ...entity,
+      } as OpsActionCenterWorkflowMutation),
+    );
+
+    const result = await service.commentActionCenterItem(
+      'tenant-a',
+      'operations-journal:71:action',
+      { comment: 'Controle manuel lance' },
+      77,
+    );
+
+    expect(actionCenterWorkflowRepository.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tenantId: 'tenant-a',
+        itemId: 'operations-journal:71:action',
+        itemType: OpsActionCenterItemType.JOURNAL_ACTION,
+        sourceId: 71,
+        action: OpsActionCenterWorkflowAction.COMMENT,
+        actorId: 77,
+        comment: 'Controle manuel lance',
+      }),
+    );
+    expect(auditService.log).toHaveBeenCalledWith(
+      'tenant-a',
+      77,
+      AuditAction.UPDATE,
+      AuditEntityType.PLANNING,
+      'ops-action-center:operations-journal:71:action:workflow:701',
+      expect.objectContaining({
+        action: 'OPS_ACTION_CENTER_COMMENT',
+        itemId: 'operations-journal:71:action',
+      }),
+    );
+    expect(result.auditLogId).toBe(99);
+  });
+
+  it('assigns incident-backed action-center items through the incident workflow', async () => {
+    const incident = createIncident({
+      status: OperationIncidentStatus.OPEN,
+      metadata: {
+        source: 'operations:auto-incident',
+        auto: { sourceType: 'ALERT', reference: 'alert:44' },
+      },
+    });
+    incidentRepository.find.mockResolvedValue([incident]);
+    incidentRepository.findOne.mockResolvedValue(incident);
+
+    await service.assignActionCenterItem(
+      'tenant-a',
+      'operation-incident:12:auto',
+      { assignedToId: 88, comment: 'Astreinte L2' },
+      77,
+    );
+
+    expect(incidentRepository.save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 12,
+        status: OperationIncidentStatus.ASSIGNED,
+        assignedToId: 88,
+      }),
+    );
+    expect(actionCenterWorkflowRepository.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: OpsActionCenterWorkflowAction.ASSIGN,
+        assignedToId: 88,
+        status: OpsActionCenterStatus.IN_PROGRESS,
+      }),
+    );
+  });
+
+  it('rejects terminal status transitions outside action-center resolve', async () => {
+    await expect(
+      service.transitionActionCenterItem(
+        'tenant-a',
+        'operational-alert:44',
+        { status: OpsActionCenterStatus.RESOLVED },
+        77,
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
   });
 
   it('auto-escalates stale high/critical incidents, alerts and journal entries once', async () => {
