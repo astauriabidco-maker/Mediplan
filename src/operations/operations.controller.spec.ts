@@ -4,6 +4,11 @@ import {
   OperationIncidentStatus,
 } from './entities/operation-incident.entity';
 import {
+  OperationalAlertSeverity,
+  OperationalAlertStatus,
+  OperationalAlertType,
+} from './entities/operational-alert.entity';
+import {
   OperationsJournalEntrySeverity,
   OperationsJournalEntryStatus,
   OperationsJournalEntryType,
@@ -26,6 +31,10 @@ type OperationsServiceMock = jest.Mocked<
     | 'getJournalEntry'
     | 'createJournalEntry'
     | 'updateJournalEntry'
+    | 'findAlerts'
+    | 'getAlert'
+    | 'resolveAlert'
+    | 'runOperationalEscalation'
   >
 >;
 
@@ -56,6 +65,10 @@ const createServiceMock = (): OperationsServiceMock => ({
   getJournalEntry: jest.fn(),
   createJournalEntry: jest.fn(),
   updateJournalEntry: jest.fn(),
+  findAlerts: jest.fn(),
+  getAlert: jest.fn(),
+  resolveAlert: jest.fn(),
+  runOperationalEscalation: jest.fn(),
 });
 
 describe('OperationsController', () => {
@@ -110,6 +123,32 @@ describe('OperationsController', () => {
     expect(operationsService.getJournalEntry).toHaveBeenCalledWith(
       'tenant-a',
       4,
+    );
+  });
+
+  it('resolves tenants for alert reads and resolution', async () => {
+    const req = createRequest({ role: 'ADMIN', id: 77 });
+    const filters = {
+      type: OperationalAlertType.SLO_BREACH,
+      status: OperationalAlertStatus.OPEN,
+      severity: OperationalAlertSeverity.HIGH,
+    };
+    const resolution = { resolutionSummary: 'Controle revenu nominal' };
+
+    await controller.findAlerts(req, filters, 'tenant-b');
+    await controller.getAlert(req, { id: 44 }, 'tenant-b');
+    await controller.resolveAlert(req, { id: 44 }, resolution, 'tenant-b');
+
+    expect(operationsService.findAlerts).toHaveBeenCalledWith(
+      'tenant-a',
+      filters,
+    );
+    expect(operationsService.getAlert).toHaveBeenCalledWith('tenant-a', 44);
+    expect(operationsService.resolveAlert).toHaveBeenCalledWith(
+      'tenant-a',
+      44,
+      resolution,
+      77,
     );
   });
 
@@ -218,6 +257,23 @@ describe('OperationsController', () => {
         closureSummary: 'Clôture validée',
         evidenceUrl: 'https://evidence.test/closure',
       },
+      77,
+    );
+  });
+
+  it('passes actor id and resolved tenant to operational escalation run', async () => {
+    const req = createRequest({ id: 77 });
+    const dto = {
+      escalationUserId: 91,
+      criticalUnassignedDelayMinutes: 10,
+      now: '2026-05-07T10:00:00.000Z',
+    };
+
+    await controller.runOperationalEscalation(req, dto, 'tenant-b');
+
+    expect(operationsService.runOperationalEscalation).toHaveBeenCalledWith(
+      'tenant-a',
+      dto,
       77,
     );
   });

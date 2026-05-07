@@ -46,11 +46,12 @@ export class OperationIncidents1777776000000 implements MigrationInterface {
         "closedAt" TIMESTAMP,
         "evidence" jsonb NOT NULL DEFAULT '[]',
         "timeline" jsonb NOT NULL DEFAULT '[]',
+        "metadata" jsonb,
         "createdAt" TIMESTAMP NOT NULL DEFAULT now(),
         "updatedAt" TIMESTAMP NOT NULL DEFAULT now(),
         CONSTRAINT "PK_operation_incident_id" PRIMARY KEY ("id"),
         CONSTRAINT "CHK_operation_incident_severity" CHECK ("severity" IN ('LOW', 'MEDIUM', 'HIGH', 'CRITICAL')),
-        CONSTRAINT "CHK_operation_incident_status" CHECK ("status" IN ('DECLARED', 'ASSIGNED', 'ESCALATED', 'RESOLVED', 'CLOSED'))
+        CONSTRAINT "CHK_operation_incident_status" CHECK ("status" IN ('OPEN', 'DECLARED', 'ASSIGNED', 'ESCALATED', 'RESOLVED', 'CLOSED'))
       )
     `);
     await queryRunner.query(

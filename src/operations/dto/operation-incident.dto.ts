@@ -1,6 +1,7 @@
 import {
   IsEnum,
   IsInt,
+  IsISO8601,
   IsOptional,
   IsString,
   IsUrl,
@@ -123,4 +124,40 @@ export class OperationIncidentFiltersDto {
   @IsInt()
   @Min(1)
   assignedToId?: number;
+}
+
+export class RunOperationalEscalationDto {
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  escalationUserId?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  criticalUnassignedDelayMinutes?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  criticalUnresolvedDelayMinutes?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  highUnassignedDelayMinutes?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  highUnresolvedDelayMinutes?: number;
+
+  @IsOptional()
+  @IsISO8601()
+  now?: string;
 }

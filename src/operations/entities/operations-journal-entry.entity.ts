@@ -9,6 +9,7 @@ import {
 
 export enum OperationsJournalEntryType {
   INCIDENT = 'INCIDENT',
+  NOTIFICATION = 'NOTIFICATION',
   ACTION = 'ACTION',
   DECISION = 'DECISION',
   EVIDENCE = 'EVIDENCE',

@@ -14,6 +14,9 @@ vi.mock('../api/ops.api', async () => {
     ...actual,
     opsApi: {
       summary: vi.fn(),
+      resolveAlert: vi.fn(),
+      rerunShiftCheck: vi.fn(),
+      declareIncident: vi.fn(),
     },
   };
 });
@@ -101,6 +104,13 @@ const buildSummary = (
       status: 'CRITICAL',
     },
     {
+      key: 'notifications',
+      label: 'Notifications',
+      value: 'Notifications à traiter',
+      detail: '1 alerte non acquittée.',
+      status: 'WARNING',
+    },
+    {
       key: 'readiness',
       label: 'Post-prod',
       value: 'PROD_NO_GO',
@@ -120,6 +130,28 @@ const buildSummary = (
       value: 'Exportable',
       detail: 'Gate PASSED',
       status: 'OK',
+    },
+  ],
+  alerts: [
+    {
+      id: 44,
+      sourceKind: 'AGENT_ALERT',
+      title: 'Repos insuffisant sur le shift',
+      detail: 'COMPLIANCE · Agent 7 · Shift 101',
+      severity: 'HIGH',
+      detectedAt: '2026-05-05T08:00:00.000Z',
+      source: 'agent-alerts',
+      agentId: 7,
+      shiftId: 101,
+      ruleCode: 'REST_INSUFFICIENT',
+      type: 'COMPLIANCE',
+      acknowledged: false,
+      notificationStatus: 'PENDING',
+      actions: {
+        canResolve: true,
+        canRerunCheck: true,
+        canOpenIncident: true,
+      },
     },
   ],
   anomalies: [
@@ -165,6 +197,14 @@ const buildSummary = (
       source: 'planning/publication',
     },
   ],
+  notifications: {
+    status: 'WARNING',
+    label: 'Notifications à traiter',
+    detail: '1 alerte non acquittée.',
+    pendingAlerts: 1,
+    escalatedIncidents: 0,
+    lastActivityAt: '2026-05-05T08:00:00.000Z',
+  },
   gates: [
     { key: 'FREEZE', status: 'PASSED', source: 'manual' },
     { key: 'SMOKE', status: 'FAILED', source: 'ci' },
@@ -179,6 +219,9 @@ const buildSummary = (
 });
 
 const mockSummary = vi.mocked(opsApi.summary);
+const mockResolveAlert = vi.mocked(opsApi.resolveAlert);
+const mockRerunShiftCheck = vi.mocked(opsApi.rerunShiftCheck);
+const mockDeclareIncident = vi.mocked(opsApi.declareIncident);
 
 afterEach(() => {
   vi.clearAllMocks();
@@ -192,7 +235,9 @@ describe('OpsDashboardPage', () => {
 
     expect(await screen.findByText('Tableau de bord ops')).toBeInTheDocument();
     expect(screen.getByText('Statut global: Critique')).toBeInTheDocument();
-    expect(screen.getByText('Alertes ouvertes')).toBeInTheDocument();
+    expect(screen.getAllByText('Alertes ouvertes')).not.toHaveLength(0);
+    expect(screen.getByText('Repos insuffisant sur le shift')).toBeInTheDocument();
+    expect(screen.getByText('Notifications et escalade')).toBeInTheDocument();
     expect(screen.getByText('Gate ou signoff bloquant')).toBeInTheDocument();
     expect(screen.getByText('SLA publication')).toBeInTheDocument();
     expect(screen.getAllByText('Backups')).not.toHaveLength(0);
@@ -215,13 +260,52 @@ describe('OpsDashboardPage', () => {
     );
   });
 
+  it('déclenche les actions sûres sur une alerte ouverte', async () => {
+    const user = userEvent.setup();
+    mockSummary.mockResolvedValue(buildSummary());
+    mockResolveAlert.mockResolvedValue({});
+    mockRerunShiftCheck.mockResolvedValue({});
+    mockDeclareIncident.mockResolvedValue({});
+
+    renderWithQueryClient(<OpsDashboardPage />);
+
+    await screen.findByText('Repos insuffisant sur le shift');
+
+    await user.click(screen.getByRole('button', { name: /résoudre alerte/i }));
+    expect(mockResolveAlert).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 44, sourceKind: 'AGENT_ALERT' }),
+      expect.stringContaining('tableau de bord ops'),
+    );
+
+    await user.click(screen.getByRole('button', { name: /relancer contrôle/i }));
+    expect(mockRerunShiftCheck).toHaveBeenCalledWith(101);
+
+    await user.click(screen.getByRole('button', { name: /ouvrir incident/i }));
+    expect(mockDeclareIncident).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: expect.stringContaining('Alerte HIGH'),
+        severity: 'HIGH',
+        impactedService: 'agent-alerts',
+      }),
+      { tenantId: 'tenant-a' },
+    );
+  });
+
   it('affiche un état vide quand aucune anomalie ni incident ne sont actifs', async () => {
     mockSummary.mockResolvedValue(
       buildSummary({
         status: 'OPERATIONAL',
         statusLabel: 'Opérationnel',
+        alerts: [],
         anomalies: [],
         incidents: [],
+        notifications: {
+          status: 'UNKNOWN',
+          label: 'Aucun signal',
+          detail: 'Aucune notification ou escalade active remontée.',
+          pendingAlerts: 0,
+          escalatedIncidents: 0,
+        },
       }),
     );
 
@@ -229,6 +313,7 @@ describe('OpsDashboardPage', () => {
 
     const anomalies = await screen.findByText('Anomalies récentes');
     expect(anomalies).toBeInTheDocument();
+    expect(screen.getByText('Aucune alerte ouverte')).toBeInTheDocument();
     expect(screen.getByText('Aucune anomalie active')).toBeInTheDocument();
     const incidents = screen.getByText('Incidents').closest('section');
     expect(incidents).not.toBeNull();

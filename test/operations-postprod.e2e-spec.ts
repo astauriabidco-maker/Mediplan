@@ -1,4 +1,5 @@
 import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import request from 'supertest';
@@ -11,8 +12,19 @@ import {
 } from '../src/audit/entities/audit-log.entity';
 import { JwtAuthGuard } from '../src/auth/jwt-auth.guard';
 import { RolesGuard } from '../src/auth/roles.guard';
-import { OperationIncident } from '../src/operations/entities/operation-incident.entity';
+import {
+  OperationIncident,
+  OperationIncidentSeverity,
+  OperationIncidentStatus,
+} from '../src/operations/entities/operation-incident.entity';
+import {
+  OperationalAlert,
+  OperationalAlertSeverity,
+  OperationalAlertStatus,
+  OperationalAlertType,
+} from '../src/operations/entities/operational-alert.entity';
 import { OperationsJournalEntry } from '../src/operations/entities/operations-journal-entry.entity';
+import { OpsNotificationService } from '../src/operations/ops-notification.service';
 import { OperationsController } from '../src/operations/operations.controller';
 import { OperationsService } from '../src/operations/operations.service';
 
@@ -81,6 +93,9 @@ class MemoryRepository<T extends MemoryEntity> {
       if (this.isNotNullFindOperator(value)) {
         return row[key] !== null && row[key] !== undefined;
       }
+      if (this.isInFindOperator(value)) {
+        return (value as { _value: unknown[] })._value.includes(row[key]);
+      }
       if (value && typeof value === 'object' && !(value instanceof Date)) {
         return this.matchesWhere(row[key] || {}, value);
       }
@@ -95,6 +110,15 @@ class MemoryRepository<T extends MemoryEntity> {
       (value as { _type?: string; _value?: { _type?: string } })._type ===
         'not' &&
       (value as { _value?: { _type?: string } })._value?._type === 'isNull'
+    );
+  }
+
+  private isInFindOperator(value: unknown): boolean {
+    return (
+      Boolean(value) &&
+      typeof value === 'object' &&
+      (value as { _type?: string })._type === 'in' &&
+      Array.isArray((value as { _value?: unknown[] })._value)
     );
   }
 
@@ -119,12 +143,15 @@ class MemoryRepository<T extends MemoryEntity> {
 
 describe('Sprint 23 post-production operations (e2e)', () => {
   let app: INestApplication;
+  let operationsService: OperationsService;
   let incidentRepository: MemoryRepository<OperationIncident>;
+  let alertRepository: MemoryRepository<OperationalAlert>;
   let journalRepository: MemoryRepository<OperationsJournalEntry>;
   let auditRepository: MemoryRepository<AuditLog>;
 
   beforeEach(async () => {
     incidentRepository = new MemoryRepository<OperationIncident>();
+    alertRepository = new MemoryRepository<OperationalAlert>();
     journalRepository = new MemoryRepository<OperationsJournalEntry>();
     auditRepository = new MemoryRepository<AuditLog>();
 
@@ -138,10 +165,19 @@ describe('Sprint 23 post-production operations (e2e)', () => {
           useValue: incidentRepository,
         },
         {
+          provide: getRepositoryToken(OperationalAlert),
+          useValue: alertRepository,
+        },
+        {
           provide: getRepositoryToken(OperationsJournalEntry),
           useValue: journalRepository,
         },
         { provide: getRepositoryToken(AuditLog), useValue: auditRepository },
+        OpsNotificationService,
+        {
+          provide: ConfigService,
+          useValue: { get: jest.fn().mockReturnValue(undefined) },
+        },
       ],
     })
       .overrideGuard(JwtAuthGuard)
@@ -163,6 +199,7 @@ describe('Sprint 23 post-production operations (e2e)', () => {
       .compile();
 
     app = moduleFixture.createNestApplication();
+    operationsService = moduleFixture.get(OperationsService);
     app.useGlobalPipes(
       new ValidationPipe({ transform: true, whitelist: true }),
     );
@@ -276,5 +313,130 @@ describe('Sprint 23 post-production operations (e2e)', () => {
           }),
         );
       });
+  });
+
+  it('supervises anomaly, alert, automatic incident, escalation and resolution', async () => {
+    const firstAlert = await operationsService.syncOperationalAlert(
+      'tenant-ops-a',
+      {
+        type: OperationalAlertType.SLO_BREACH,
+        source: 'production-readiness.slo',
+        reference: 'slo:api:p95',
+        checkStatus: 'KO',
+        severity: OperationalAlertSeverity.CRITICAL,
+        message: 'P95 API au-dessus du seuil post-prod.',
+        metadata: { objective: 'api-p95', thresholdMs: 750, observedMs: 1200 },
+      },
+      9001,
+    );
+
+    await operationsService.syncOperationalAlert(
+      'tenant-ops-a',
+      {
+        type: OperationalAlertType.SLO_BREACH,
+        source: 'production-readiness.slo',
+        reference: 'slo:api:p95',
+        checkStatus: 'KO',
+        severity: OperationalAlertSeverity.CRITICAL,
+        message: 'P95 API toujours au-dessus du seuil post-prod.',
+        metadata: { objective: 'api-p95', thresholdMs: 750, observedMs: 1210 },
+      },
+      9001,
+    );
+
+    const alerts = await request(app.getHttpServer())
+      .get('/ops/alerts')
+      .query({ status: OperationalAlertStatus.OPEN })
+      .expect(200);
+    expect(alerts.body).toHaveLength(1);
+    expect(alerts.body[0]).toEqual(
+      expect.objectContaining({
+        type: OperationalAlertType.SLO_BREACH,
+        occurrenceCount: 2,
+      }),
+    );
+
+    const automaticIncident = await operationsService.syncAutomaticIncident(
+      'tenant-ops-a',
+      {
+        sourceType: 'ALERT',
+        reference: `operational-alert:${firstAlert.alert?.id}`,
+        title: 'SLO API post-prod critique',
+        description: 'Incident automatique créé depuis une alerte SLO critique.',
+        alertSeverity: 'CRITICAL',
+        impactedService: 'production-readiness',
+        evidenceUrl: 'https://evidence.sprint24.test/slo-api',
+        evidenceLabel: 'Rapport SLO',
+        metadata: { alertId: firstAlert.alert?.id },
+      },
+      9001,
+    );
+    expect(automaticIncident).toEqual(
+      expect.objectContaining({ created: true, updated: false }),
+    );
+
+    const openIncidents = await request(app.getHttpServer())
+      .get('/ops/incidents')
+      .query({ status: OperationIncidentStatus.OPEN })
+      .expect(200);
+    expect(openIncidents.body).toHaveLength(1);
+
+    await request(app.getHttpServer())
+      .post('/ops/escalations/run')
+      .send({
+        escalationUserId: 9015,
+        criticalUnassignedDelayMinutes: 1,
+        criticalUnresolvedDelayMinutes: 1,
+        now: '2099-05-08T08:00:00.000Z',
+      })
+      .expect(201)
+      .expect(({ body }) => {
+        expect(body.escalatedIncidents).toHaveLength(1);
+        expect(body.escalatedAlerts).toHaveLength(1);
+        expect(body.escalatedIncidents[0].status).toBe(
+          OperationIncidentStatus.ESCALATED,
+        );
+      });
+
+    const notifications = await request(app.getHttpServer())
+      .get('/ops/journal')
+      .query({ type: 'NOTIFICATION' })
+      .expect(200);
+    expect(notifications.body.length).toBeGreaterThanOrEqual(1);
+
+    await request(app.getHttpServer())
+      .patch(`/ops/alerts/${firstAlert.alert?.id}/resolve`)
+      .send({ resolutionSummary: 'SLO API revenu sous seuil.' })
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.status).toBe(OperationalAlertStatus.RESOLVED);
+        expect(body.resolvedById).toBe(9001);
+      });
+
+    await request(app.getHttpServer())
+      .patch(`/ops/incidents/${openIncidents.body[0].id}/resolve`)
+      .send({
+        resolutionSummary: 'Capacité API restaurée.',
+        evidenceUrl: 'https://evidence.sprint24.test/slo-api-resolution',
+      })
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.status).toBe(OperationIncidentStatus.RESOLVED);
+      });
+
+    const alertAudit = await request(app.getHttpServer())
+      .get('/audit')
+      .query({
+        entityType: AuditEntityType.OPERATION_ALERT,
+        entityId: `operational-alert:${firstAlert.alert?.id}`,
+      })
+      .expect(200);
+    expect(alertAudit.body.map((entry: any) => entry.details.action)).toEqual(
+      expect.arrayContaining([
+        'CREATE_OPERATIONAL_ALERT',
+        'DEDUP_OPERATIONAL_ALERT',
+        'RESOLVE_OPERATIONAL_ALERT',
+      ]),
+    );
   });
 });

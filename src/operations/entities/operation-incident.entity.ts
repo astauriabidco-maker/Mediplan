@@ -15,6 +15,7 @@ export enum OperationIncidentSeverity {
 }
 
 export enum OperationIncidentStatus {
+  OPEN = 'OPEN',
   DECLARED = 'DECLARED',
   ASSIGNED = 'ASSIGNED',
   ESCALATED = 'ESCALATED',
@@ -27,11 +28,14 @@ export interface OperationIncidentEvidence {
   url: string;
   addedAt: string;
   addedById: number;
-  type: 'DECLARATION' | 'ESCALATION' | 'RESOLUTION' | 'CLOSURE';
+  type: 'DECLARATION' | 'AUTOMATION' | 'ESCALATION' | 'RESOLUTION' | 'CLOSURE';
 }
 
 export interface OperationIncidentTimelineEntry {
   action:
+    | 'AUTO_CREATE_INCIDENT'
+    | 'AUTO_UPDATE_INCIDENT'
+    | 'AUTO_ESCALATE_INCIDENT'
     | 'DECLARE_INCIDENT'
     | 'ASSIGN_INCIDENT'
     | 'ESCALATE_INCIDENT'
@@ -120,6 +124,9 @@ export class OperationIncident {
 
   @Column({ type: 'jsonb', default: () => "'[]'" })
   timeline: OperationIncidentTimelineEntry[];
+
+  @Column({ type: 'jsonb', nullable: true })
+  metadata: Record<string, unknown> | null;
 
   @CreateDateColumn()
   createdAt: Date;

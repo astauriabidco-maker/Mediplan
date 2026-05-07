@@ -22,7 +22,13 @@ import {
   OperationIncidentFiltersDto,
   OperationIncidentParamDto,
   ResolveOperationIncidentDto,
+  RunOperationalEscalationDto,
 } from './dto/operation-incident.dto';
+import {
+  OperationalAlertFiltersDto,
+  OperationalAlertParamDto,
+  ResolveOperationalAlertDto,
+} from './dto/operational-alert.dto';
 import {
   CreateOperationsJournalEntryDto,
   OperationsJournalQueryDto,
@@ -45,6 +51,48 @@ export class OperationsController {
     return this.operationsService.findJournalEntries(
       resolveTenantId(req, queryTenantId),
       filters,
+    );
+  }
+
+  @Get('alerts')
+  @Permissions('operations:read', 'audit:read')
+  findAlerts(
+    @Request() req: AuthenticatedRequest,
+    @Query() filters: OperationalAlertFiltersDto,
+    @Query('tenantId') queryTenantId?: string,
+  ) {
+    return this.operationsService.findAlerts(
+      resolveTenantId(req, queryTenantId),
+      filters,
+    );
+  }
+
+  @Get('alerts/:id')
+  @Permissions('operations:read', 'audit:read')
+  getAlert(
+    @Request() req: AuthenticatedRequest,
+    @Param() params: OperationalAlertParamDto,
+    @Query('tenantId') queryTenantId?: string,
+  ) {
+    return this.operationsService.getAlert(
+      resolveTenantId(req, queryTenantId),
+      params.id,
+    );
+  }
+
+  @Patch('alerts/:id/resolve')
+  @Permissions('operations:write')
+  resolveAlert(
+    @Request() req: AuthenticatedRequest,
+    @Param() params: OperationalAlertParamDto,
+    @Body() dto: ResolveOperationalAlertDto,
+    @Query('tenantId') queryTenantId?: string,
+  ) {
+    return this.operationsService.resolveAlert(
+      resolveTenantId(req, queryTenantId),
+      params.id,
+      dto,
+      req.user.id,
     );
   }
 
@@ -190,6 +238,20 @@ export class OperationsController {
     return this.operationsService.closeIncident(
       resolveTenantId(req, queryTenantId),
       params.id,
+      dto,
+      req.user.id,
+    );
+  }
+
+  @Post('escalations/run')
+  @Permissions('operations:write')
+  runOperationalEscalation(
+    @Request() req: AuthenticatedRequest,
+    @Body() dto: RunOperationalEscalationDto,
+    @Query('tenantId') queryTenantId?: string,
+  ) {
+    return this.operationsService.runOperationalEscalation(
+      resolveTenantId(req, queryTenantId),
       dto,
       req.user.id,
     );

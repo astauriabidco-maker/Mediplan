@@ -1,10 +1,13 @@
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AlertTriangle,
+  BellRing,
   CheckCircle2,
   DatabaseBackup,
   Gauge,
   History,
+  Pause,
+  Play,
   RefreshCw,
   ServerCog,
   ShieldCheck,
@@ -12,6 +15,7 @@ import {
 import React from 'react';
 import {
   opsApi,
+  OpsAlert,
   OpsDashboardSummary,
   OpsSignalStatus,
   OpsStatus,
@@ -44,6 +48,10 @@ const formatDateTime = (value?: string | null) => {
     timeStyle: 'short',
   }).format(new Date(value));
 };
+
+const POLLING_INTERVALS = [15_000, 30_000, 60_000] as const;
+
+const formatInterval = (value: number) => `${value / 1000}s`;
 
 const buildDefaultPeriod = () => {
   const to = new Date();
@@ -78,7 +86,7 @@ const StatusBadge = ({
 );
 
 const KpiStrip = ({ summary }: { summary: OpsDashboardSummary }) => (
-  <section className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+  <section className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
     {summary.kpis.map((kpi) => (
       <article
         key={kpi.key}
@@ -94,6 +102,171 @@ const KpiStrip = ({ summary }: { summary: OpsDashboardSummary }) => (
         <p className="mt-1 text-sm text-slate-400">{kpi.detail}</p>
       </article>
     ))}
+  </section>
+);
+
+const NotificationPanel = ({ summary }: { summary: OpsDashboardSummary }) => (
+  <section className="rounded-lg border border-slate-800 bg-slate-950/50 p-5">
+    <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+      <div className="flex items-center gap-2">
+        <BellRing size={18} className="text-cyan-300" />
+        <h2 className="text-lg font-bold text-white">
+          Notifications et escalade
+        </h2>
+      </div>
+      <StatusBadge
+        status={summary.notifications.status}
+        label={statusLabel[summary.notifications.status]}
+      />
+    </div>
+    <div className="mt-4 grid grid-cols-3 gap-2">
+      <div className="rounded-md border border-slate-800 bg-slate-900 p-3">
+        <p className="text-xs font-bold uppercase tracking-wide text-slate-500">
+          État
+        </p>
+        <p className="mt-2 text-sm font-bold text-white">
+          {summary.notifications.label}
+        </p>
+      </div>
+      <div className="rounded-md border border-slate-800 bg-slate-900 p-3">
+        <p className="text-xs font-bold uppercase tracking-wide text-slate-500">
+          À traiter
+        </p>
+        <p className="mt-2 text-sm font-black text-white">
+          {summary.notifications.pendingAlerts}
+        </p>
+      </div>
+      <div className="rounded-md border border-slate-800 bg-slate-900 p-3">
+        <p className="text-xs font-bold uppercase tracking-wide text-slate-500">
+          Escalades
+        </p>
+        <p className="mt-2 text-sm font-black text-white">
+          {summary.notifications.escalatedIncidents}
+        </p>
+      </div>
+    </div>
+    <p className="mt-3 text-sm text-slate-400">
+      {summary.notifications.detail}
+    </p>
+    <p className="mt-1 text-xs text-slate-500">
+      Dernier signal: {formatDateTime(summary.notifications.lastActivityAt)}
+    </p>
+  </section>
+);
+
+const AlertActionButton = ({
+  children,
+  disabled,
+  onClick,
+}: {
+  children: React.ReactNode;
+  disabled?: boolean;
+  onClick: () => void;
+}) => (
+  <button
+    type="button"
+    onClick={onClick}
+    disabled={disabled}
+    className="inline-flex items-center justify-center rounded-md border border-slate-700 bg-slate-950 px-2.5 py-1.5 text-xs font-bold text-slate-100 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+  >
+    {children}
+  </button>
+);
+
+const AlertsPanel = ({
+  summary,
+  isMutating,
+  onResolve,
+  onRerunCheck,
+  onOpenIncident,
+}: {
+  summary: OpsDashboardSummary;
+  isMutating: boolean;
+  onResolve: (alert: OpsAlert) => void;
+  onRerunCheck: (alert: OpsAlert) => void;
+  onOpenIncident: (alert: OpsAlert) => void;
+}) => (
+  <section className="space-y-3">
+    <div className="flex items-center justify-between gap-3">
+      <div className="flex items-center gap-2">
+        <AlertTriangle size={18} className="text-amber-300" />
+        <h2 className="text-lg font-bold text-white">Alertes ouvertes</h2>
+      </div>
+      <span className="text-xs font-bold uppercase tracking-wide text-slate-500">
+        {summary.alerts.length} ouverte
+      </span>
+    </div>
+    {summary.alerts.length === 0 ? (
+      <EmptyState
+        title="Aucune alerte ouverte"
+        message="Le flux d'alertes opérationnelles ne remonte aucun élément actif."
+        icon={CheckCircle2}
+        tone="emerald"
+        compact
+      />
+    ) : (
+      <ol className="space-y-3">
+        {summary.alerts.map((alert) => (
+          <li
+            key={alert.id}
+            className="rounded-lg border border-slate-800 bg-slate-900 p-4"
+          >
+            <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+              <div>
+                <p className="font-bold text-white">{alert.title}</p>
+                <p className="mt-1 text-sm text-slate-400">{alert.detail}</p>
+                <p className="mt-2 text-xs text-slate-500">
+                  {alert.ruleCode ?? alert.type ?? alert.source} ·{' '}
+                  {formatDateTime(alert.detectedAt)}
+                </p>
+              </div>
+              <div className="flex shrink-0 flex-wrap justify-end gap-2">
+                <StatusBadge
+                  status={
+                    alert.severity === 'HIGH'
+                      ? 'CRITICAL'
+                      : alert.severity === 'MEDIUM'
+                        ? 'WARNING'
+                        : 'OK'
+                  }
+                  label={alert.severity}
+                />
+                <StatusBadge
+                  status={
+                    alert.notificationStatus === 'PENDING' ? 'WARNING' : 'OK'
+                  }
+                  label={
+                    alert.notificationStatus === 'PENDING'
+                      ? 'Notification'
+                      : 'Acquittée'
+                  }
+                />
+              </div>
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <AlertActionButton
+                disabled={isMutating || !alert.actions.canResolve}
+                onClick={() => onResolve(alert)}
+              >
+                Résoudre alerte
+              </AlertActionButton>
+              <AlertActionButton
+                disabled={isMutating || !alert.actions.canRerunCheck}
+                onClick={() => onRerunCheck(alert)}
+              >
+                Relancer contrôle
+              </AlertActionButton>
+              <AlertActionButton
+                disabled={isMutating || !alert.actions.canOpenIncident}
+                onClick={() => onOpenIncident(alert)}
+              >
+                Ouvrir incident
+              </AlertActionButton>
+            </div>
+          </li>
+        ))}
+      </ol>
+    )}
   </section>
 );
 
@@ -273,10 +446,15 @@ const IncidentsPanel = ({ summary }: { summary: OpsDashboardSummary }) => (
                 <p className="mt-1 text-xs text-slate-400">
                   {incident.detail}
                 </p>
+                {incident.escalationReason && (
+                  <p className="mt-1 text-xs text-amber-200">
+                    Escalade: {incident.escalationReason}
+                  </p>
+                )}
               </div>
               <StatusBadge
                 status={incident.status}
-                label={statusLabel[incident.status]}
+                label={incident.lifecycleStatus ?? statusLabel[incident.status]}
               />
             </div>
             <p className="mt-2 text-xs text-slate-500">
@@ -333,6 +511,11 @@ const GatesPanel = ({ summary }: { summary: OpsDashboardSummary }) => (
 
 export const OpsDashboardPage = () => {
   const { impersonatedTenantId } = useAuth();
+  const queryClient = useQueryClient();
+  const [pollingEnabled, setPollingEnabled] = React.useState(true);
+  const [pollingInterval, setPollingInterval] =
+    React.useState<number>(30_000);
+  const [actionMessage, setActionMessage] = React.useState<string | null>(null);
   const period = React.useMemo(
     () => ({
       ...buildDefaultPeriod(),
@@ -344,8 +527,70 @@ export const OpsDashboardPage = () => {
   const summaryQuery = useQuery({
     queryKey: opsQueryKeys.dashboard.summary(period),
     queryFn: () => opsApi.summary(period),
+    refetchInterval: pollingEnabled ? pollingInterval : false,
+    refetchIntervalInBackground: false,
     ...queryCacheProfiles.live,
   });
+
+  const refreshOps = React.useCallback(async () => {
+    await queryClient.invalidateQueries({
+      queryKey: opsQueryKeys.dashboard.all(),
+    });
+  }, [queryClient]);
+
+  const resolveAlertMutation = useMutation({
+    mutationFn: (alert: OpsAlert) =>
+      opsApi.resolveAlert(alert, 'Résolution depuis le tableau de bord ops.'),
+    onSuccess: async () => {
+      setActionMessage('Alerte résolue. Rafraîchissement des signaux ops.');
+      await refreshOps();
+    },
+    onError: () => {
+      setActionMessage('Résolution impossible pour cette alerte.');
+    },
+  });
+
+  const rerunCheckMutation = useMutation({
+    mutationFn: (alert: OpsAlert) => opsApi.rerunShiftCheck(alert.shiftId!),
+    onSuccess: async () => {
+      setActionMessage('Contrôle relancé. Les signaux vont se mettre à jour.');
+      await refreshOps();
+    },
+    onError: () => {
+      setActionMessage('Relance du contrôle indisponible.');
+    },
+  });
+
+  const openIncidentMutation = useMutation({
+    mutationFn: (alert: OpsAlert) =>
+      opsApi.declareIncident(
+        {
+          title: `Alerte ${alert.severity}: ${alert.title}`.slice(0, 160),
+          description: [
+            alert.detail,
+            alert.ruleCode ? `Règle: ${alert.ruleCode}` : null,
+            `Alerte source: ${alert.id}`,
+          ]
+            .filter(Boolean)
+            .join('\n'),
+          severity: alert.severity,
+          impactedService: alert.source,
+        },
+        { tenantId: period.tenantId },
+      ),
+    onSuccess: async () => {
+      setActionMessage('Incident ouvert depuis l’alerte.');
+      await refreshOps();
+    },
+    onError: () => {
+      setActionMessage('Ouverture d’incident indisponible.');
+    },
+  });
+
+  const isActionMutating =
+    resolveAlertMutation.isPending ||
+    rerunCheckMutation.isPending ||
+    openIncidentMutation.isPending;
 
   if (summaryQuery.isLoading) {
     return <PageSkeleton title="Chargement tableau ops" rows={4} sidePanel />;
@@ -392,6 +637,35 @@ export const OpsDashboardPage = () => {
         </div>
         <div className="flex flex-wrap items-center gap-3">
           <StatusBadge status={summary.status} label={summary.statusLabel} />
+          <div className="inline-flex items-center rounded-md border border-slate-700 bg-slate-900 p-1">
+            <button
+              type="button"
+              onClick={() => setPollingEnabled((enabled) => !enabled)}
+              className="inline-flex h-8 w-8 items-center justify-center rounded text-slate-100 hover:bg-slate-800"
+              aria-label={
+                pollingEnabled
+                  ? 'Mettre le rafraîchissement en pause'
+                  : 'Activer le rafraîchissement'
+              }
+            >
+              {pollingEnabled ? <Pause size={15} /> : <Play size={15} />}
+            </button>
+            <select
+              value={pollingInterval}
+              onChange={(event) =>
+                setPollingInterval(Number(event.target.value))
+              }
+              disabled={!pollingEnabled}
+              aria-label="Intervalle de rafraîchissement"
+              className="h-8 rounded bg-slate-900 px-2 text-xs font-bold text-slate-100 outline-none disabled:opacity-50"
+            >
+              {POLLING_INTERVALS.map((interval) => (
+                <option key={interval} value={interval}>
+                  {formatInterval(interval)}
+                </option>
+              ))}
+            </select>
+          </div>
           <button
             type="button"
             onClick={() => summaryQuery.refetch()}
@@ -430,13 +704,27 @@ export const OpsDashboardPage = () => {
 
       <KpiStrip summary={summary} />
 
+      {actionMessage && (
+        <p className="rounded-md border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-slate-300">
+          {actionMessage}
+        </p>
+      )}
+
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(420px,0.85fr)]">
         <div className="space-y-6">
+          <AlertsPanel
+            summary={summary}
+            isMutating={isActionMutating}
+            onResolve={(alert) => resolveAlertMutation.mutate(alert)}
+            onRerunCheck={(alert) => rerunCheckMutation.mutate(alert)}
+            onOpenIncident={(alert) => openIncidentMutation.mutate(alert)}
+          />
           <AnomaliesPanel summary={summary} />
           <SlaPanel summary={summary} />
           <GatesPanel summary={summary} />
         </div>
         <div className="space-y-5">
+          <NotificationPanel summary={summary} />
           <BackupPanel summary={summary} />
           <IncidentsPanel summary={summary} />
         </div>

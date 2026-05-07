@@ -54,10 +54,12 @@ export interface OpsDashboardSummary {
     detail: string;
     status: OpsSignalStatus;
   }>;
+  alerts: OpsAlert[];
   anomalies: OpsAnomaly[];
   sla: OpsSlaIndicator[];
   backups: OpsBackupPanel;
   incidents: OpsIncident[];
+  notifications: OpsNotificationState;
   gates: ProductionGateStatus[];
   gatesSummary: {
     passed: number;
@@ -74,6 +76,27 @@ export interface OpsAnomaly {
   severity: 'HIGH' | 'MEDIUM' | 'LOW';
   detectedAt: string;
   source: string;
+}
+
+export interface OpsAlert {
+  id: number;
+  sourceKind: 'AGENT_ALERT' | 'OPERATIONAL_ALERT';
+  title: string;
+  detail: string;
+  severity: 'HIGH' | 'MEDIUM' | 'LOW';
+  detectedAt: string;
+  source: string;
+  agentId?: number;
+  shiftId?: number;
+  ruleCode?: string;
+  type?: string;
+  acknowledged: boolean;
+  notificationStatus: 'PENDING' | 'ACKNOWLEDGED' | 'UNKNOWN';
+  actions: {
+    canResolve: boolean;
+    canRerunCheck: boolean;
+    canOpenIncident: boolean;
+  };
 }
 
 export interface OpsSlaIndicator {
@@ -99,9 +122,92 @@ export interface OpsIncident {
   id: string;
   title: string;
   status: OpsSignalStatus;
+  lifecycleStatus?: OpsIncidentLifecycleStatus;
+  severity?: OpsIncidentSeverity;
   openedAt: string;
   detail: string;
   source: string;
+  sourceIncidentId?: number;
+  escalatedAt?: string | null;
+  escalationReason?: string | null;
+  notificationStatus?:
+    | 'DECLARED'
+    | 'ASSIGNED'
+    | 'ESCALATED'
+    | 'RESOLVED'
+    | 'CLOSED';
+}
+
+export type OpsIncidentSeverity = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+export type OpsIncidentLifecycleStatus =
+  | 'DECLARED'
+  | 'ASSIGNED'
+  | 'ESCALATED'
+  | 'RESOLVED'
+  | 'CLOSED';
+
+export interface OpsNotificationState {
+  status: OpsSignalStatus;
+  label: string;
+  detail: string;
+  pendingAlerts: number;
+  escalatedIncidents: number;
+  lastActivityAt?: string;
+}
+
+interface OpsRawAgentAlert {
+  id: number;
+  agentId: number;
+  tenantId: string;
+  type: string;
+  severity: 'HIGH' | 'MEDIUM' | 'LOW';
+  message: string;
+  metadata?: Record<string, unknown> | null;
+  isAcknowledged: boolean;
+  isResolved: boolean;
+  resolvedAt?: string | null;
+  resolutionReason?: string | null;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+interface OpsRawOperationalAlert {
+  id: number;
+  tenantId: string;
+  type: string;
+  severity: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW';
+  status: 'OPEN' | 'RESOLVED';
+  source: string;
+  sourceReference: string;
+  message: string;
+  metadata?: Record<string, unknown> | null;
+  openedAt: string;
+  lastSeenAt: string;
+  occurrenceCount: number;
+  resolvedAt?: string | null;
+  resolutionSummary?: string | null;
+}
+
+interface OpsRawIncident {
+  id: number;
+  title: string;
+  description: string;
+  severity: OpsIncidentSeverity;
+  status: OpsIncidentLifecycleStatus;
+  impactedService?: string | null;
+  declaredAt: string;
+  escalatedAt?: string | null;
+  escalationReason?: string | null;
+  updatedAt?: string;
+}
+
+export interface DeclareOpsIncidentInput {
+  title: string;
+  description: string;
+  severity: OpsIncidentSeverity;
+  impactedService?: string;
+  evidenceUrl?: string;
+  evidenceLabel?: string;
 }
 
 const nowIso = () => new Date().toISOString();
@@ -134,6 +240,129 @@ const countGates = (gates: ProductionGateStatus[]) => ({
   unknown: gates.filter((gate) => gate.status === 'UNKNOWN').length,
   total: gates.length,
 });
+
+const numberFromMetadata = (
+  metadata: Record<string, unknown> | null | undefined,
+  key: string,
+): number | undefined => {
+  const value = metadata?.[key];
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string' && value.trim() !== '') {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+  return undefined;
+};
+
+const stringFromMetadata = (
+  metadata: Record<string, unknown> | null | undefined,
+  key: string,
+): string | undefined => {
+  const value = metadata?.[key];
+  return typeof value === 'string' && value.trim() !== ''
+    ? value
+    : undefined;
+};
+
+const incidentStatusFromSeverity = (
+  severity?: OpsIncidentSeverity,
+  lifecycleStatus?: OpsIncidentLifecycleStatus,
+): OpsSignalStatus => {
+  if (lifecycleStatus === 'ESCALATED' || severity === 'CRITICAL') {
+    return 'CRITICAL';
+  }
+  if (severity === 'HIGH') return 'CRITICAL';
+  if (severity === 'MEDIUM' || lifecycleStatus === 'DECLARED') {
+    return 'WARNING';
+  }
+  if (severity === 'LOW') return 'OK';
+  return 'UNKNOWN';
+};
+
+const toUiAlertSeverity = (
+  severity: OpsRawOperationalAlert['severity'] | OpsRawAgentAlert['severity'],
+): OpsAlert['severity'] => (severity === 'CRITICAL' ? 'HIGH' : severity);
+
+const buildAlerts = (
+  agentAlerts: OpsRawAgentAlert[] | null,
+  operationalAlerts: OpsRawOperationalAlert[] | null,
+): OpsAlert[] => {
+  const openAgentAlerts = Array.isArray(agentAlerts) ? agentAlerts : [];
+  const agentItems = openAgentAlerts
+    .filter((alert) => !alert.isResolved)
+    .map((alert) => {
+      const shiftId = numberFromMetadata(alert.metadata, 'shiftId');
+      return {
+        id: alert.id,
+        sourceKind: 'AGENT_ALERT' as const,
+        title: alert.message,
+        detail: [
+          alert.type,
+          `Agent ${alert.agentId}`,
+          shiftId ? `Shift ${shiftId}` : null,
+        ]
+          .filter(Boolean)
+          .join(' · '),
+        severity: toUiAlertSeverity(alert.severity),
+        detectedAt: alert.createdAt,
+        source: 'agent-alerts',
+        agentId: alert.agentId,
+        shiftId,
+        ruleCode: stringFromMetadata(alert.metadata, 'ruleCode'),
+        type: alert.type,
+        acknowledged: alert.isAcknowledged,
+        notificationStatus: alert.isAcknowledged
+          ? ('ACKNOWLEDGED' as const)
+          : ('PENDING' as const),
+        actions: {
+          canResolve: true,
+          canRerunCheck: Boolean(shiftId),
+          canOpenIncident: true,
+        },
+      };
+    });
+
+  const openOperationalAlerts = Array.isArray(operationalAlerts)
+    ? operationalAlerts
+    : [];
+  const operationalItems = openOperationalAlerts
+    .filter((alert) => alert.status === 'OPEN')
+    .map((alert) => ({
+      id: alert.id,
+      sourceKind: 'OPERATIONAL_ALERT' as const,
+      title: alert.message,
+      detail: [
+        alert.type,
+        alert.source,
+        alert.sourceReference,
+        alert.occurrenceCount > 1 ? `${alert.occurrenceCount} occurrences` : null,
+      ]
+        .filter(Boolean)
+        .join(' · '),
+      severity: toUiAlertSeverity(alert.severity),
+      detectedAt: alert.lastSeenAt || alert.openedAt,
+      source: alert.source,
+      type: alert.type,
+      acknowledged: false,
+      notificationStatus: 'PENDING' as const,
+      actions: {
+        canResolve: true,
+        canRerunCheck: false,
+        canOpenIncident: true,
+      },
+    }));
+
+  return [...agentItems, ...operationalItems]
+    .sort((left, right) => {
+      const severityOrder = { HIGH: 0, MEDIUM: 1, LOW: 2 };
+      return (
+        severityOrder[left.severity] - severityOrder[right.severity] ||
+        new Date(right.detectedAt).getTime() -
+          new Date(left.detectedAt).getTime()
+      );
+    })
+    .slice(0, 12);
+};
 
 const buildAnomalies = ({
   generatedAt,
@@ -216,12 +445,40 @@ const buildIncidents = ({
   observability,
   readiness,
   history,
+  rawIncidents,
 }: {
   generatedAt: string;
   observability: ProductionObservabilityHealth | null;
   readiness: ProductionDecision | null;
   history: ProductionSignoffHistory | null;
+  rawIncidents: OpsRawIncident[] | null;
 }): OpsIncident[] => {
+  const incidentFeed = Array.isArray(rawIncidents) ? rawIncidents : [];
+  const operationIncidents = incidentFeed
+    .filter(
+      (incident) =>
+        incident.status !== 'RESOLVED' && incident.status !== 'CLOSED',
+    )
+    .map((incident) => ({
+      id: `ops-incident-${incident.id}`,
+      title: incident.title,
+      status: incidentStatusFromSeverity(incident.severity, incident.status),
+      lifecycleStatus: incident.status,
+      severity: incident.severity,
+      openedAt: incident.declaredAt,
+      detail: incident.description,
+      source: incident.impactedService ?? 'ops/incidents',
+      sourceIncidentId: incident.id,
+      escalatedAt: incident.escalatedAt,
+      escalationReason: incident.escalationReason,
+      notificationStatus: incident.status,
+    }))
+    .slice(0, 8);
+
+  if (operationIncidents.length > 0) {
+    return operationIncidents;
+  }
+
   const incidents: OpsIncident[] = [];
   const refused = observability?.counters.refusedPublications ?? 0;
   const highAlerts = observability?.counters.highAlerts ?? 0;
@@ -274,6 +531,65 @@ const buildIncidents = ({
   });
 
   return incidents.slice(0, 6);
+};
+
+const buildNotifications = ({
+  alerts,
+  incidents,
+}: {
+  alerts: OpsAlert[];
+  incidents: OpsIncident[];
+}): OpsNotificationState => {
+  const pendingAlerts = alerts.filter(
+    (alert) => alert.notificationStatus === 'PENDING',
+  ).length;
+  const escalatedIncidents = incidents.filter(
+    (incident) => incident.notificationStatus === 'ESCALATED',
+  ).length;
+  const lastActivityAt = [
+    ...alerts.map((alert) => alert.detectedAt),
+    ...incidents.map((incident) => incident.escalatedAt ?? incident.openedAt),
+  ]
+    .filter(Boolean)
+    .sort()
+    .at(-1);
+
+  if (escalatedIncidents > 0) {
+    return {
+      status: 'CRITICAL',
+      label: 'Escalade active',
+      detail: `${escalatedIncidents} incident${escalatedIncidents > 1 ? 's' : ''} escaladé${escalatedIncidents > 1 ? 's' : ''}.`,
+      pendingAlerts,
+      escalatedIncidents,
+      lastActivityAt,
+    };
+  }
+
+  if (pendingAlerts > 0) {
+    return {
+      status: 'WARNING',
+      label: 'Notifications à traiter',
+      detail: `${pendingAlerts} alerte${pendingAlerts > 1 ? 's' : ''} non acquittée${pendingAlerts > 1 ? 's' : ''}.`,
+      pendingAlerts,
+      escalatedIncidents,
+      lastActivityAt,
+    };
+  }
+
+  return {
+    status: alerts.length > 0 || incidents.length > 0 ? 'OK' : 'UNKNOWN',
+    label:
+      alerts.length > 0 || incidents.length > 0
+        ? 'Suivi à jour'
+        : 'Aucun signal',
+    detail:
+      alerts.length > 0 || incidents.length > 0
+        ? 'Les alertes ouvertes sont acquittées et aucun incident n’est escaladé.'
+        : 'Aucune notification ou escalade active remontée.',
+    pendingAlerts,
+    escalatedIncidents,
+    lastActivityAt,
+  };
 };
 
 const buildSla = ({
@@ -388,17 +704,24 @@ const buildSummary = ({
   backupMetrics,
   readiness,
   history,
+  alertFeed,
+  operationalAlertFeed,
+  incidentFeed,
 }: {
   apiHealth: ReadyHealth | null;
   observability: ProductionObservabilityHealth | null;
   backupMetrics: BackupMetrics | null;
   readiness: ProductionDecision | null;
   history: ProductionSignoffHistory | null;
+  alertFeed: OpsRawAgentAlert[] | null;
+  operationalAlertFeed: OpsRawOperationalAlert[] | null;
+  incidentFeed: OpsRawIncident[] | null;
 }): OpsDashboardSummary => {
   const generatedAt = nowIso();
   const gates = readiness ? [readiness.gates.freeze, ...readiness.gates.checks] : [];
   const gatesSummary = countGates(gates);
   const backupGate = gates.find((gate) => gate.key === 'BACKUP');
+  const alerts = buildAlerts(alertFeed, operationalAlertFeed);
   const anomalies = buildAnomalies({
     generatedAt,
     readiness,
@@ -417,6 +740,19 @@ const buildSummary = ({
     backupMetrics?.planningComplianceSnapshot?.totals ??
     backupMetrics?.datasetCounts ??
     {};
+  const incidents = buildIncidents({
+    generatedAt,
+    observability,
+    readiness,
+    history,
+    rawIncidents: incidentFeed,
+  });
+  const notifications = buildNotifications({ alerts, incidents });
+  const highAlerts =
+    alerts.filter((alert) => alert.severity === 'HIGH').length ||
+    observability?.counters.highAlerts ||
+    0;
+  const openAlerts = alerts.length || observability?.counters.openAlerts || 0;
 
   return {
     tenantId:
@@ -436,14 +772,21 @@ const buildSummary = ({
       {
         key: 'alerts',
         label: 'Alertes ouvertes',
-        value: String(observability?.counters.openAlerts ?? 0),
-        detail: `${observability?.counters.highAlerts ?? 0} HIGH`,
+        value: String(openAlerts),
+        detail: `${highAlerts} HIGH · ${notifications.pendingAlerts} non acquittée`,
         status:
-          (observability?.counters.highAlerts ?? 0) > 0
+          highAlerts > 0
             ? 'CRITICAL'
-            : (observability?.counters.openAlerts ?? 0) > 0
+            : openAlerts > 0
               ? 'WARNING'
               : 'OK',
+      },
+      {
+        key: 'notifications',
+        label: 'Notifications',
+        value: notifications.label,
+        detail: notifications.detail,
+        status: notifications.status,
       },
       {
         key: 'readiness',
@@ -475,6 +818,7 @@ const buildSummary = ({
             : gateSignalStatus(backupGate),
       },
     ],
+    alerts,
     anomalies,
     sla: buildSla({
       observability,
@@ -496,12 +840,8 @@ const buildSummary = ({
       totals: backupTotals,
       gate: backupGate,
     },
-    incidents: buildIncidents({
-      generatedAt,
-      observability,
-      readiness,
-      history,
-    }),
+    incidents,
+    notifications,
     gates,
     gatesSummary,
   };
@@ -511,7 +851,16 @@ export const opsApi = {
   summary: async (
     params?: OpsDashboardParams,
   ): Promise<OpsDashboardSummary> => {
-    const [apiHealth, observability, backupMetrics, readiness, history] =
+    const [
+      apiHealth,
+      observability,
+      backupMetrics,
+      readiness,
+      history,
+      alertFeed,
+      operationalAlertFeed,
+      incidentFeed,
+    ] =
       await Promise.allSettled([
         api
           .get<ReadyHealth>('/api/health/ready')
@@ -527,6 +876,29 @@ export const opsApi = {
           .then((response) => response.data),
         productionReadinessApi.getDecision(params),
         productionReadinessApi.getSignoffHistory(params),
+        api
+          .get<OpsRawAgentAlert[]>('/api/agent-alerts', {
+            params: {
+              tenantId: params?.tenantId,
+              isResolved: false,
+            },
+          })
+          .then((response) => response.data),
+        api
+          .get<OpsRawOperationalAlert[]>('/api/ops/alerts', {
+            params: {
+              tenantId: params?.tenantId,
+              status: 'OPEN',
+            },
+          })
+          .then((response) => response.data),
+        api
+          .get<OpsRawIncident[]>('/api/ops/incidents', {
+            params: {
+              tenantId: params?.tenantId,
+            },
+          })
+          .then((response) => response.data),
       ]);
 
     return buildSummary({
@@ -535,6 +907,38 @@ export const opsApi = {
       backupMetrics: settledValue(backupMetrics),
       readiness: settledValue(readiness),
       history: settledValue(history),
+      alertFeed: settledValue(alertFeed),
+      operationalAlertFeed: settledValue(operationalAlertFeed),
+      incidentFeed: settledValue(incidentFeed),
     });
+  },
+  resolveAlert: async (alert: Pick<OpsAlert, 'id' | 'sourceKind'>, reason: string) => {
+    if (alert.sourceKind === 'OPERATIONAL_ALERT') {
+      const response = await api.patch(`/api/ops/alerts/${alert.id}/resolve`, {
+        resolutionSummary: reason,
+      });
+      return response.data;
+    }
+
+    const response = await api.patch(`/api/planning/alerts/${alert.id}/resolve`, {
+      reason,
+      recommendationId: `ops-alert:${alert.id}`,
+    });
+    return response.data;
+  },
+  rerunShiftCheck: async (shiftId: number) => {
+    const response = await api.post(`/api/planning/shifts/${shiftId}/revalidate`);
+    return response.data;
+  },
+  declareIncident: async (
+    input: DeclareOpsIncidentInput,
+    params?: Pick<OpsDashboardParams, 'tenantId'>,
+  ) => {
+    const response = await api.post('/api/ops/incidents', input, {
+      params: {
+        tenantId: params?.tenantId,
+      },
+    });
+    return response.data;
   },
 };
