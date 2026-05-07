@@ -7,11 +7,12 @@ verifiables et non destructives. Le planning couvre backups, restore drill,
 monitoring health, rotation secrets/env et incident review avec owners,
 frequences, commandes, preuves et decision `READY` / `NO-GO`.
 
-Le generateur de checklist est:
+Le scheduler de routines est:
 
 ```bash
 node scripts/ops-routine-scheduler.mjs --dry-run
-node scripts/ops-routine-scheduler.mjs --mock --report-dir preprod-reports
+node scripts/ops-routine-scheduler.mjs --mock --routines all --report-dir preprod-reports
+node scripts/ops-routine-scheduler.mjs --api --routines daily,backup,audit,slo
 ```
 
 Depuis Sprint 23 Phase 6, les paquets runbook automatises sont exposes via:
@@ -25,14 +26,22 @@ npm run ops:weekly-report
 Ces commandes generent uniquement des rapports Markdown/JSON. Elles ne lancent
 pas les controles operationnels listes dans les runbooks.
 
+Il orchestre les routines `daily`, `weekly`, `escalation`, `backup`, `audit`
+et `slo` selon `--routines`. Le mode par defaut reste `--dry-run`: il planifie
+et historise sans executer de probe. Le mode `--mock` execute uniquement des
+controles locaux/mockes et les scripts de rapport non destructifs. Le mode
+`--api` lance des probes `GET` et les scripts de rapport existants.
+
 Il produit:
 
 - `preprod-reports/ops-routine-scheduler-YYYY-MM-DD.md`;
 - `preprod-reports/ops-routine-scheduler-YYYY-MM-DD.json`.
+- `preprod-reports/ops-routine-journal.jsonl`.
 
-Le script n'execute aucune commande operationnelle. Il ne cree pas de cron, ne
-modifie pas Docker, ne lance pas de migration, ne restaure pas de donnees et ne
-fait aucun reset. Il ecrit uniquement les rapports Markdown/JSON.
+Le script ne cree pas de cron, ne modifie pas Docker, ne lance pas de migration,
+ne lance pas de seed, ne restaure pas de donnees, ne resout pas d'alerte et ne
+fait aucun reset git/data. Il ecrit uniquement les rapports Markdown/JSON et le
+journal JSONL local.
 
 ## Decision READY / NO-GO
 
@@ -146,13 +155,15 @@ Validation syntaxique:
 
 ```bash
 node --check scripts/ops-routine-scheduler.mjs
+npm run ops:routines:smoke
 ```
 
 Validation non destructive:
 
 ```bash
 node scripts/ops-routine-scheduler.mjs --dry-run
-node scripts/ops-routine-scheduler.mjs --mock
+node scripts/ops-routine-scheduler.mjs --mock --routines backup,audit,slo
+node scripts/ops-routine-scheduler.mjs --dry-run --routines weekly,escalation --tenant HGD-DOUALA
 ```
 
 Pour eviter d'ajouter des rapports au depot pendant une verification locale:

@@ -5,6 +5,7 @@ import { OperationIncident } from './entities/operation-incident.entity';
 import { OperationalAlert } from './entities/operational-alert.entity';
 import { OperationsJournalEntry } from './entities/operations-journal-entry.entity';
 import { OperationsController } from './operations.controller';
+import { OpsPreActionValidationService } from './ops-pre-action-validation.service';
 import { OpsNotificationService } from './ops-notification.service';
 import { OperationsService } from './operations.service';
 
@@ -18,7 +19,11 @@ import { OperationsService } from './operations.service';
     AuditModule,
   ],
   controllers: [OperationsController],
-  providers: [OperationsService, OpsNotificationService],
+  providers: [
+    OperationsService,
+    OpsNotificationService,
+    OpsPreActionValidationService,
+  ],
   exports: [OperationsService, OpsNotificationService],
 })
 export class OperationsModule {}

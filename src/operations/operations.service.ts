@@ -56,9 +56,29 @@ import {
   UpdateOperationsJournalEntryDto,
 } from './dto/operations-journal.dto';
 import {
+  OperationsRunbookAction,
+  OperationsRunbookCheck,
+  OperationsRunbookDto,
+  OperationsRunbookEvidence,
+  OperationsRunbookNext,
+  OperationsRunbookReference,
+  OperationsRunbookRequirement,
+  OperationsRunbookSourceType,
+  OperationsRunbookStep,
+} from './dto/operations-runbook.dto';
+import {
   OpsNotificationEventType,
   OpsNotificationStatus,
 } from './dto/ops-notification.dto';
+import {
+  OpsActionCenterItem,
+  OpsActionCenterItemType,
+  OpsActionCenterPriority,
+  OpsActionCenterQueryDto,
+  OpsActionCenterResponse,
+  OpsActionCenterStatus,
+} from './dto/ops-action-center.dto';
+import { OpsPreActionValidationService } from './ops-pre-action-validation.service';
 import { OpsNotificationService } from './ops-notification.service';
 
 export const OPERATION_INCIDENT_AUDIT_ACTIONS = [
@@ -93,6 +113,16 @@ interface OperationalEscalationRecord {
   thresholdMinutes: number;
   ageMinutes: number;
   escalationUserId: number | null;
+}
+
+interface RunbookBuildContext {
+  description: string;
+  isOpen: boolean;
+  isAssigned: boolean;
+  isResolved: boolean;
+  hasEvidence: boolean;
+  ownerId: number | null;
+  metadata: Record<string, unknown> | null;
 }
 
 export interface OperationalEscalationResult {
@@ -161,7 +191,76 @@ export class OperationsService {
     private readonly alertRepository: Repository<OperationalAlert>,
     private readonly auditService: AuditService,
     private readonly opsNotificationService: OpsNotificationService,
+    private readonly preActionValidationService: OpsPreActionValidationService,
   ) {}
+
+  async getActionCenter(
+    tenantId: string,
+    filters: OpsActionCenterQueryDto = {},
+  ): Promise<OpsActionCenterResponse> {
+    const limit = Math.min(filters.limit || 100, 500);
+    const [alerts, incidents, journalEntries] = await Promise.all([
+      this.alertRepository.find({
+        where: {
+          tenantId,
+          status: OperationalAlertStatus.OPEN,
+        },
+        order: { severity: 'DESC', openedAt: 'ASC', id: 'ASC' },
+        take: 500,
+      }),
+      this.incidentRepository.find({
+        where: {
+          tenantId,
+          status: In([
+            OperationIncidentStatus.OPEN,
+            OperationIncidentStatus.DECLARED,
+            OperationIncidentStatus.ASSIGNED,
+            OperationIncidentStatus.ESCALATED,
+          ]),
+        },
+        order: { severity: 'DESC', declaredAt: 'ASC', id: 'ASC' },
+        take: 500,
+      }),
+      this.journalRepository.find({
+        where: {
+          tenantId,
+          status: In([
+            OperationsJournalEntryStatus.RECORDED,
+            OperationsJournalEntryStatus.OPEN,
+            OperationsJournalEntryStatus.IN_PROGRESS,
+          ]),
+        },
+        order: { severity: 'DESC', occurredAt: 'ASC', id: 'ASC' },
+        take: 500,
+      }),
+    ]);
+
+    const items = [
+      ...alerts.map((alert) => this.toAlertActionCenterItem(alert)),
+      ...incidents.flatMap((incident) =>
+        this.toIncidentActionCenterItems(incident),
+      ),
+      ...journalEntries.flatMap((entry) =>
+        this.toJournalActionCenterItems(entry),
+      ),
+    ]
+      .filter((item) => !filters.status || item.status === filters.status)
+      .filter((item) => !filters.type || item.type === filters.type)
+      .sort((left, right) => this.compareActionCenterItems(left, right))
+      .slice(0, limit);
+
+    return {
+      tenantId,
+      generatedAt: new Date().toISOString(),
+      total: items.length,
+      filters: {
+        status: filters.status ?? null,
+        type: filters.type ?? null,
+        limit,
+      },
+      items,
+    };
+  }
 
   findJournalEntries(
     tenantId: string,
@@ -291,6 +390,13 @@ export class OperationsService {
     actorId: number,
   ) {
     const alert = await this.getAlertOrThrow(tenantId, id);
+    this.preActionValidationService.assertAllowed({
+      action: 'RESOLVE_ALERT',
+      tenantId,
+      resourceTenantId: alert.tenantId,
+      currentState: alert.status,
+      hasRequiredEvidence: Boolean(dto.resolutionSummary),
+    });
     return this.resolveOpenAlert(
       tenantId,
       alert,
@@ -318,6 +424,13 @@ export class OperationsService {
     });
 
     if (!alert) return null;
+    this.preActionValidationService.assertAllowed({
+      action: 'RESOLVE_ALERT',
+      tenantId,
+      resourceTenantId: alert.tenantId,
+      currentState: alert.status,
+      hasRequiredEvidence: Boolean(resolutionSummary),
+    });
 
     return this.resolveOpenAlert(tenantId, alert, resolutionSummary, actorId);
   }
@@ -454,6 +567,13 @@ export class OperationsService {
     dto: DeclareOperationIncidentDto,
     actorId: number,
   ) {
+    this.preActionValidationService.assertAllowed({
+      action: 'DECLARE_INCIDENT',
+      tenantId,
+      hasRequiredEvidence: Boolean(
+        dto.title && dto.description && dto.severity,
+      ),
+    });
     const now = new Date();
     const evidence = this.createEvidence(
       dto.evidenceUrl,
@@ -624,8 +744,13 @@ export class OperationsService {
     actorId: number,
   ) {
     const incident = await this.getIncidentOrThrow(tenantId, id);
-    this.assertNotClosed(incident);
-    this.assertNotResolved(incident, 'A resolved incident cannot be assigned');
+    this.preActionValidationService.assertAllowed({
+      action: 'ASSIGN_INCIDENT',
+      tenantId,
+      resourceTenantId: incident.tenantId,
+      currentState: incident.status,
+      hasRequiredEvidence: Boolean(dto.assignedToId),
+    });
     const before = this.toAuditSnapshot(incident);
     const previousStatus = incident.status;
     const now = new Date();
@@ -666,8 +791,13 @@ export class OperationsService {
     actorId: number,
   ) {
     const incident = await this.getIncidentOrThrow(tenantId, id);
-    this.assertNotClosed(incident);
-    this.assertNotResolved(incident, 'A resolved incident cannot be escalated');
+    this.preActionValidationService.assertAllowed({
+      action: 'ESCALATE_INCIDENT',
+      tenantId,
+      resourceTenantId: incident.tenantId,
+      currentState: incident.status,
+      hasRequiredEvidence: Boolean(dto.escalatedToId && dto.reason),
+    });
     const before = this.toAuditSnapshot(incident);
     const previousStatus = incident.status;
     const now = new Date();
@@ -723,18 +853,13 @@ export class OperationsService {
     actorId: number,
   ) {
     const incident = await this.getIncidentOrThrow(tenantId, id);
-    this.assertNotClosed(incident);
-    if (
-      incident.status === OperationIncidentStatus.DECLARED ||
-      incident.status === OperationIncidentStatus.OPEN
-    ) {
-      throw new BadRequestException(
-        'Incident must be assigned or escalated before resolution',
-      );
-    }
-    if (incident.status === OperationIncidentStatus.RESOLVED) {
-      throw new BadRequestException('Incident is already resolved');
-    }
+    this.preActionValidationService.assertAllowed({
+      action: 'RESOLVE_INCIDENT',
+      tenantId,
+      resourceTenantId: incident.tenantId,
+      currentState: incident.status,
+      hasRequiredEvidence: Boolean(dto.resolutionSummary && dto.evidenceUrl),
+    });
     const before = this.toAuditSnapshot(incident);
     const previousStatus = incident.status;
     const now = new Date();
@@ -795,9 +920,13 @@ export class OperationsService {
     actorId: number,
   ) {
     const incident = await this.getIncidentOrThrow(tenantId, id);
-    if (incident.status !== OperationIncidentStatus.RESOLVED) {
-      throw new BadRequestException('Only a resolved incident can be closed');
-    }
+    this.preActionValidationService.assertAllowed({
+      action: 'CLOSE_INCIDENT',
+      tenantId,
+      resourceTenantId: incident.tenantId,
+      currentState: incident.status,
+      hasRequiredEvidence: Boolean(dto.closureSummary && dto.evidenceUrl),
+    });
     const before = this.toAuditSnapshot(incident);
     const previousStatus = incident.status;
     const now = new Date();
@@ -851,11 +980,113 @@ export class OperationsService {
     return savedIncident;
   }
 
+  async generateAlertRunbook(
+    tenantId: string,
+    id: number,
+  ): Promise<OperationsRunbookDto> {
+    const alert = await this.getAlertOrThrow(tenantId, id);
+    return this.buildRunbook(
+      {
+        sourceType: 'ALERT',
+        id: alert.id,
+        tenantId: alert.tenantId,
+        title: alert.message,
+        status: alert.status,
+        severity: alert.severity,
+        occurredAt: alert.openedAt.toISOString(),
+        source: alert.source,
+        sourceReference: alert.sourceReference,
+      },
+      {
+        description: alert.message,
+        isOpen: alert.status === OperationalAlertStatus.OPEN,
+        isAssigned: false,
+        isResolved: alert.status === OperationalAlertStatus.RESOLVED,
+        hasEvidence: false,
+        ownerId: null,
+        metadata: alert.metadata,
+      },
+    );
+  }
+
+  async generateIncidentRunbook(
+    tenantId: string,
+    id: number,
+  ): Promise<OperationsRunbookDto> {
+    const incident = await this.getIncidentOrThrow(tenantId, id);
+    return this.buildRunbook(
+      {
+        sourceType: 'INCIDENT',
+        id: incident.id,
+        tenantId: incident.tenantId,
+        title: incident.title,
+        status: incident.status,
+        severity: incident.severity,
+        occurredAt: incident.declaredAt.toISOString(),
+        impactedService: incident.impactedService,
+      },
+      {
+        description: incident.description,
+        isOpen: ![
+          OperationIncidentStatus.RESOLVED,
+          OperationIncidentStatus.CLOSED,
+        ].includes(incident.status),
+        isAssigned: Boolean(incident.assignedToId || incident.escalatedToId),
+        isResolved: [
+          OperationIncidentStatus.RESOLVED,
+          OperationIncidentStatus.CLOSED,
+        ].includes(incident.status),
+        hasEvidence: this.evidenceOf(incident).length > 0,
+        ownerId: incident.assignedToId ?? incident.escalatedToId,
+        metadata: incident.metadata,
+      },
+    );
+  }
+
+  async generateJournalRunbook(
+    tenantId: string,
+    id: number,
+  ): Promise<OperationsRunbookDto> {
+    const entry = await this.getJournalEntryOrThrow(tenantId, id);
+    return this.buildRunbook(
+      {
+        sourceType: 'JOURNAL',
+        id: entry.id,
+        tenantId: entry.tenantId,
+        title: entry.title,
+        status: entry.status,
+        severity: entry.severity,
+        occurredAt: entry.occurredAt.toISOString(),
+        relatedReference: entry.relatedReference,
+      },
+      {
+        description: entry.description ?? entry.title,
+        isOpen: ![
+          OperationsJournalEntryStatus.RESOLVED,
+          OperationsJournalEntryStatus.CLOSED,
+        ].includes(entry.status),
+        isAssigned: Boolean(entry.ownerId),
+        isResolved: [
+          OperationsJournalEntryStatus.RESOLVED,
+          OperationsJournalEntryStatus.CLOSED,
+        ].includes(entry.status),
+        hasEvidence: Boolean(entry.evidenceUrl),
+        ownerId: entry.ownerId,
+        metadata: entry.metadata,
+      },
+    );
+  }
+
   async runOperationalEscalation(
     tenantId: string,
     dto: RunOperationalEscalationDto = {},
     actorId: number,
   ): Promise<OperationalEscalationResult> {
+    this.preActionValidationService.assertAllowed({
+      action: 'RUN_OPERATIONAL_ESCALATION',
+      tenantId,
+      hasRequiredEvidence: true,
+    });
     const now = dto.now ? new Date(dto.now) : new Date();
     const rules = this.resolveEscalationRules(dto);
     const escalationUserId = dto.escalationUserId ?? null;
@@ -984,6 +1215,355 @@ export class OperationsService {
         journalEntries: skippedJournalEntries,
       },
     };
+  }
+
+  private toAlertActionCenterItem(
+    alert: OperationalAlert,
+  ): OpsActionCenterItem {
+    const escalation = this.latestOperationalEscalation(alert.metadata);
+    const status = escalation
+      ? OpsActionCenterStatus.ESCALATED
+      : OpsActionCenterStatus.OPEN;
+
+    return {
+      id: `operational-alert:${alert.id}`,
+      type: OpsActionCenterItemType.OPERATIONAL_ALERT,
+      priority: this.toActionPriority(alert.severity),
+      status,
+      title: `Alerte ouverte: ${alert.type}`,
+      reason: alert.message,
+      requiredEvidence: ['Preuve de remediation ou decision de maintien'],
+      suggestedActions: [
+        'Qualifier impact production',
+        'Declarer ou rattacher un incident si impact confirme',
+        'Resoudre alerte avec resume et preuve',
+      ],
+      sourceReference: {
+        entity: 'OperationalAlert',
+        id: alert.id,
+        tenantId: alert.tenantId,
+        reference: `${alert.source}:${alert.sourceReference}`,
+      },
+      timestamps: {
+        createdAt: this.toIsoString(alert.createdAt),
+        updatedAt: this.toIsoString(alert.updatedAt),
+        occurredAt: this.toIsoString(alert.openedAt) || '',
+        lastSeenAt: this.toIsoString(alert.lastSeenAt),
+        escalatedAt: escalation?.escalatedAt ?? null,
+        resolvedAt: this.toIsoString(alert.resolvedAt),
+      },
+    };
+  }
+
+  private toIncidentActionCenterItems(
+    incident: OperationIncident,
+  ): OpsActionCenterItem[] {
+    const items: OpsActionCenterItem[] = [];
+    const isAutomaticIncident = this.isAutomaticIncident(incident);
+
+    if (
+      isAutomaticIncident ||
+      incident.status === OperationIncidentStatus.ESCALATED
+    ) {
+      items.push(this.toIncidentPrimaryActionCenterItem(incident));
+    }
+
+    if (this.isIncidentMissingEvidence(incident)) {
+      items.push(this.toIncidentMissingEvidenceActionCenterItem(incident));
+    }
+
+    return items;
+  }
+
+  private toIncidentPrimaryActionCenterItem(
+    incident: OperationIncident,
+  ): OpsActionCenterItem {
+    const isEscalated = incident.status === OperationIncidentStatus.ESCALATED;
+    const auto = this.autoMetadataOf(incident);
+    const reference =
+      typeof auto.reference === 'string'
+        ? auto.reference
+        : this.incidentAlertReference(incident);
+
+    return {
+      id: isEscalated
+        ? `operation-incident:${incident.id}:escalation`
+        : `operation-incident:${incident.id}:auto`,
+      type: isEscalated
+        ? OpsActionCenterItemType.INCIDENT_ESCALATION
+        : OpsActionCenterItemType.AUTO_INCIDENT,
+      priority: this.toActionPriority(incident.severity),
+      status: this.toIncidentActionStatus(incident),
+      title: incident.title,
+      reason: isEscalated
+        ? incident.escalationReason ||
+          'Incident escalade en attente de prise en charge'
+        : incident.description,
+      requiredEvidence: this.isIncidentMissingEvidence(incident)
+        ? ['Preuve initiale ou rapport automatique']
+        : [],
+      suggestedActions: isEscalated
+        ? [
+            'Confirmer le responsable d escalade',
+            'Documenter la decision de mitigation',
+            'Resoudre avec preuve de correction',
+          ]
+        : [
+            'Qualifier le signal automatique',
+            'Assigner un responsable operations',
+            'Ajouter une preuve si le signal est confirme',
+          ],
+      sourceReference: {
+        entity: 'OperationIncident',
+        id: incident.id,
+        tenantId: incident.tenantId,
+        reference,
+      },
+      timestamps: {
+        createdAt: this.toIsoString(incident.createdAt),
+        updatedAt: this.toIsoString(incident.updatedAt),
+        occurredAt: this.toIsoString(incident.declaredAt) || '',
+        escalatedAt: this.toIsoString(incident.escalatedAt),
+        resolvedAt: this.toIsoString(incident.resolvedAt),
+      },
+    };
+  }
+
+  private toIncidentMissingEvidenceActionCenterItem(
+    incident: OperationIncident,
+  ): OpsActionCenterItem {
+    return {
+      id: `operation-incident:${incident.id}:missing-evidence`,
+      type: OpsActionCenterItemType.MISSING_EVIDENCE,
+      priority: this.toActionPriority(incident.severity),
+      status: OpsActionCenterStatus.WAITING_EVIDENCE,
+      title: `Preuve manquante: ${incident.title}`,
+      reason: 'Incident actif sans preuve attachee',
+      requiredEvidence: ['URL de preuve incident', 'Libelle de preuve'],
+      suggestedActions: [
+        'Joindre la preuve de detection ou de diagnostic',
+        'Completer le journal de production',
+      ],
+      sourceReference: {
+        entity: 'OperationIncident',
+        id: incident.id,
+        tenantId: incident.tenantId,
+        reference: this.incidentAlertReference(incident),
+      },
+      timestamps: {
+        createdAt: this.toIsoString(incident.createdAt),
+        updatedAt: this.toIsoString(incident.updatedAt),
+        occurredAt: this.toIsoString(incident.declaredAt) || '',
+        escalatedAt: this.toIsoString(incident.escalatedAt),
+        resolvedAt: this.toIsoString(incident.resolvedAt),
+      },
+    };
+  }
+
+  private toJournalActionCenterItems(
+    entry: OperationsJournalEntry,
+  ): OpsActionCenterItem[] {
+    if (entry.type === OperationsJournalEntryType.DECISION) {
+      return [this.toJournalDecisionActionCenterItem(entry)];
+    }
+
+    if (
+      entry.type === OperationsJournalEntryType.EVIDENCE &&
+      !entry.evidenceUrl
+    ) {
+      return [this.toJournalMissingEvidenceActionCenterItem(entry)];
+    }
+
+    if (
+      entry.type === OperationsJournalEntryType.ACTION ||
+      entry.type === OperationsJournalEntryType.INCIDENT
+    ) {
+      return [this.toJournalActionCenterItem(entry)];
+    }
+
+    return [];
+  }
+
+  private toJournalDecisionActionCenterItem(
+    entry: OperationsJournalEntry,
+  ): OpsActionCenterItem {
+    return {
+      id: `operations-journal:${entry.id}:decision`,
+      type: OpsActionCenterItemType.DECISION_REQUIRED,
+      priority: this.toActionPriority(entry.severity),
+      status: OpsActionCenterStatus.WAITING_DECISION,
+      title: entry.title,
+      reason: entry.description || 'Decision production en attente',
+      requiredEvidence: ['Decision documentee', 'Responsable decision'],
+      suggestedActions: [
+        'Capturer la decision go/no-go ou mitigation',
+        'Rattacher une reference de preuve',
+        'Passer l entree en resolu apres validation',
+      ],
+      sourceReference: this.toJournalSourceReference(entry),
+      timestamps: this.toJournalActionTimestamps(entry),
+    };
+  }
+
+  private toJournalMissingEvidenceActionCenterItem(
+    entry: OperationsJournalEntry,
+  ): OpsActionCenterItem {
+    return {
+      id: `operations-journal:${entry.id}:missing-evidence`,
+      type: OpsActionCenterItemType.MISSING_EVIDENCE,
+      priority: this.toActionPriority(entry.severity),
+      status: OpsActionCenterStatus.WAITING_EVIDENCE,
+      title: `Preuve manquante: ${entry.title}`,
+      reason: entry.description || 'Entree de preuve sans URL de preuve',
+      requiredEvidence: ['URL de preuve', 'Libelle de preuve'],
+      suggestedActions: [
+        'Ajouter l URL de preuve',
+        'Rattacher la reference audit ou production',
+      ],
+      sourceReference: this.toJournalSourceReference(entry),
+      timestamps: this.toJournalActionTimestamps(entry),
+    };
+  }
+
+  private toJournalActionCenterItem(
+    entry: OperationsJournalEntry,
+  ): OpsActionCenterItem {
+    const escalation = this.latestOperationalEscalation(entry.metadata);
+
+    return {
+      id: `operations-journal:${entry.id}:action`,
+      type: OpsActionCenterItemType.JOURNAL_ACTION,
+      priority: this.toActionPriority(entry.severity),
+      status: escalation
+        ? OpsActionCenterStatus.ESCALATED
+        : this.toJournalActionStatus(entry),
+      title: entry.title,
+      reason: entry.description || 'Action production ouverte',
+      requiredEvidence: entry.evidenceUrl ? [] : ['Preuve de traitement'],
+      suggestedActions: [
+        'Assigner un responsable si necessaire',
+        'Completer les preuves',
+        'Resoudre ou fermer apres verification',
+      ],
+      sourceReference: this.toJournalSourceReference(entry),
+      timestamps: {
+        ...this.toJournalActionTimestamps(entry),
+        escalatedAt: escalation?.escalatedAt ?? null,
+      },
+    };
+  }
+
+  private toJournalSourceReference(entry: OperationsJournalEntry) {
+    return {
+      entity: 'OperationsJournalEntry' as const,
+      id: entry.id,
+      tenantId: entry.tenantId,
+      reference: entry.relatedReference || `operations-journal:${entry.id}`,
+    };
+  }
+
+  private toJournalActionTimestamps(entry: OperationsJournalEntry) {
+    return {
+      createdAt: this.toIsoString(entry.createdAt),
+      updatedAt: this.toIsoString(entry.updatedAt),
+      occurredAt: this.toIsoString(entry.occurredAt) || '',
+      resolvedAt: this.toIsoString(entry.resolvedAt),
+    };
+  }
+
+  private toIncidentActionStatus(
+    incident: OperationIncident,
+  ): OpsActionCenterStatus {
+    if (incident.status === OperationIncidentStatus.ESCALATED) {
+      return OpsActionCenterStatus.ESCALATED;
+    }
+
+    if (incident.status === OperationIncidentStatus.ASSIGNED) {
+      return OpsActionCenterStatus.IN_PROGRESS;
+    }
+
+    return OpsActionCenterStatus.OPEN;
+  }
+
+  private toJournalActionStatus(
+    entry: OperationsJournalEntry,
+  ): OpsActionCenterStatus {
+    if (entry.status === OperationsJournalEntryStatus.IN_PROGRESS) {
+      return OpsActionCenterStatus.IN_PROGRESS;
+    }
+
+    return OpsActionCenterStatus.OPEN;
+  }
+
+  private isIncidentMissingEvidence(incident: OperationIncident) {
+    return !incident.evidenceUrl && this.evidenceOf(incident).length === 0;
+  }
+
+  private isAutomaticIncident(incident: OperationIncident) {
+    const metadata = this.metadataOf(incident);
+    return (
+      metadata.source === 'operations:auto-incident' ||
+      Object.keys(this.autoMetadataOf(incident)).length > 0
+    );
+  }
+
+  private latestOperationalEscalation(
+    metadata: Record<string, unknown> | null,
+  ) {
+    return this.operationalEscalations(metadata).at(-1) ?? null;
+  }
+
+  private compareActionCenterItems(
+    left: OpsActionCenterItem,
+    right: OpsActionCenterItem,
+  ) {
+    const priorityDelta =
+      this.actionPriorityRank(right.priority) -
+      this.actionPriorityRank(left.priority);
+    if (priorityDelta !== 0) return priorityDelta;
+
+    const leftTime = Date.parse(left.timestamps.occurredAt);
+    const rightTime = Date.parse(right.timestamps.occurredAt);
+    if (leftTime !== rightTime) return leftTime - rightTime;
+
+    return left.id.localeCompare(right.id);
+  }
+
+  private actionPriorityRank(priority: OpsActionCenterPriority) {
+    switch (priority) {
+      case OpsActionCenterPriority.CRITICAL:
+        return 4;
+      case OpsActionCenterPriority.HIGH:
+        return 3;
+      case OpsActionCenterPriority.MEDIUM:
+        return 2;
+      case OpsActionCenterPriority.LOW:
+        return 1;
+    }
+  }
+
+  private toActionPriority(
+    severity:
+      | OperationIncidentSeverity
+      | OperationalAlertSeverity
+      | OperationsJournalEntrySeverity,
+  ): OpsActionCenterPriority {
+    switch (severity) {
+      case OperationIncidentSeverity.CRITICAL:
+        return OpsActionCenterPriority.CRITICAL;
+      case OperationIncidentSeverity.HIGH:
+        return OpsActionCenterPriority.HIGH;
+      case OperationIncidentSeverity.MEDIUM:
+        return OpsActionCenterPriority.MEDIUM;
+      case OperationIncidentSeverity.LOW:
+        return OpsActionCenterPriority.LOW;
+    }
+    return OpsActionCenterPriority.LOW;
+  }
+
+  private toIsoString(value: Date | string | null | undefined) {
+    if (!value) return null;
+    return value instanceof Date ? value.toISOString() : value;
   }
 
   private async escalateIncidentOperationally(
@@ -1171,6 +1751,426 @@ export class OperationsService {
     });
   }
 
+  private buildRunbook(
+    reference: OperationsRunbookReference,
+    context: RunbookBuildContext,
+  ): OperationsRunbookDto {
+    const actions = this.runbookActions(reference, context);
+    const checks = this.runbookChecks(reference, context);
+    const expectedEvidence = this.runbookExpectedEvidence(reference, context);
+    const next = this.runbookNext(reference, context, actions);
+    const steps = this.runbookSteps(
+      reference,
+      context,
+      checks,
+      expectedEvidence,
+      actions,
+    );
+
+    return {
+      id: `${reference.sourceType.toLowerCase()}-${reference.id}-runbook`,
+      generatedAt: new Date().toISOString(),
+      reference,
+      requiredPermissions: this.runbookRequirements(context),
+      why: this.runbookWhy(reference, context),
+      next,
+      steps,
+      checks,
+      actions,
+      expectedEvidence,
+    };
+  }
+
+  private runbookWhy(
+    reference: OperationsRunbookReference,
+    context: RunbookBuildContext,
+  ) {
+    if (context.isResolved) {
+      return `${reference.sourceType} ${reference.id} is already resolved; preserve evidence and confirm closure criteria.`;
+    }
+
+    const service = reference.impactedService
+      ? ` on ${reference.impactedService}`
+      : '';
+    return `${reference.severity} ${reference.sourceType.toLowerCase()} ${reference.id}${service} requires guided triage because it is still ${reference.status}.`;
+  }
+
+  private runbookRequirements(
+    context: RunbookBuildContext,
+  ): OperationsRunbookRequirement[] {
+    const requirements: OperationsRunbookRequirement[] = [
+      {
+        role: 'Ops reader or auditor',
+        permission: 'operations:read',
+        reason: 'Read the source record, linked context and generated runbook.',
+      },
+      {
+        role: 'Auditor',
+        permission: 'audit:read',
+        reason: 'Inspect traceability and evidence references when needed.',
+      },
+    ];
+
+    if (!context.isResolved) {
+      requirements.push({
+        role: 'Ops lead or incident manager',
+        permission: 'operations:write',
+        reason: 'Assign, escalate, resolve or close the operational item.',
+      });
+    }
+
+    return requirements;
+  }
+
+  private runbookNext(
+    reference: OperationsRunbookReference,
+    context: RunbookBuildContext,
+    actions: OperationsRunbookAction[],
+  ): OperationsRunbookNext {
+    const recommendedAction =
+      actions.find((action) => action.enabled && action.id !== 'read-source') ??
+      actions.find((action) => action.enabled) ??
+      null;
+    const waitingOn: string[] = [];
+
+    if (!context.isAssigned && context.isOpen) waitingOn.push('owner');
+    if (!context.hasEvidence) waitingOn.push('evidence');
+    if (!context.isResolved) waitingOn.push('resolution');
+
+    return {
+      why: this.runbookWhy(reference, context),
+      whatToDoNext: recommendedAction
+        ? recommendedAction.label
+        : 'Review evidence and keep the record available for audit.',
+      priority: this.runbookPriority(reference.severity),
+      recommendedActionId: recommendedAction?.id ?? null,
+      waitingOn,
+    };
+  }
+
+  private runbookSteps(
+    reference: OperationsRunbookReference,
+    context: RunbookBuildContext,
+    checks: OperationsRunbookCheck[],
+    expectedEvidence: OperationsRunbookEvidence[],
+    actions: OperationsRunbookAction[],
+  ): OperationsRunbookStep[] {
+    const scopeChecks = checks.filter((check) =>
+      ['source-status', 'impact-scope', 'tenant-scope'].includes(check.id),
+    );
+    const resolutionChecks = checks.filter((check) =>
+      ['owner-set', 'mitigation-tested', 'evidence-attached'].includes(
+        check.id,
+      ),
+    );
+
+    const steps: OperationsRunbookStep[] = [
+      {
+        order: 1,
+        title: 'Qualify the signal',
+        why: 'Avoid acting on stale or cross-tenant operational context.',
+        instruction:
+          'Confirm source, tenant, status, severity and impacted scope before changing state.',
+        requiredRole: 'Ops reader or auditor',
+        requiredPermission: 'operations:read',
+        checks: scopeChecks,
+        evidence: [],
+        actions: actions.filter((action) => action.id === 'read-source'),
+      },
+      {
+        order: 2,
+        title: 'Take ownership',
+        why: 'Every open operational item needs an accountable owner or escalation target.',
+        instruction:
+          'Assign the item when ownership is clear; escalate when impact or delay exceeds the local threshold.',
+        requiredRole: 'Ops lead or incident manager',
+        requiredPermission: 'operations:write',
+        checks: checks.filter((check) => check.id === 'owner-set'),
+        evidence: expectedEvidence.filter((evidence) =>
+          evidence.requiredFor.includes('assignment'),
+        ),
+        actions: actions.filter((action) =>
+          ['assign-incident', 'escalate-incident', 'run-escalation'].includes(
+            action.id,
+          ),
+        ),
+      },
+      {
+        order: 3,
+        title: 'Mitigate and prove',
+        why: 'Resolution should be supported by observable checks and durable evidence.',
+        instruction:
+          'Run the control checks, attach proof, then resolve or update the source record.',
+        requiredRole: 'Ops lead or incident manager',
+        requiredPermission: 'operations:write',
+        checks: resolutionChecks,
+        evidence: expectedEvidence,
+        actions: actions.filter((action) =>
+          ['resolve-alert', 'resolve-incident', 'update-journal'].includes(
+            action.id,
+          ),
+        ),
+      },
+      {
+        order: 4,
+        title: 'Close the loop',
+        why: 'Closure separates technical recovery from audited operational completion.',
+        instruction:
+          'Close only after resolution evidence is present and stakeholder impact has been reviewed.',
+        requiredRole: 'Ops lead or incident manager',
+        requiredPermission: 'operations:write',
+        checks: checks.filter((check) => check.id === 'evidence-attached'),
+        evidence: expectedEvidence.filter((evidence) =>
+          evidence.requiredFor.includes('closure'),
+        ),
+        actions: actions.filter((action) => action.id === 'close-incident'),
+      },
+    ];
+
+    return steps.filter(
+      (step) =>
+        step.actions.length > 0 ||
+        step.checks.length > 0 ||
+        reference.sourceType !== 'ALERT',
+    );
+  }
+
+  private runbookChecks(
+    reference: OperationsRunbookReference,
+    context: RunbookBuildContext,
+  ): OperationsRunbookCheck[] {
+    const checks: OperationsRunbookCheck[] = [
+      {
+        id: 'tenant-scope',
+        label: 'Tenant scope confirmed',
+        expected: `Record belongs to tenant ${reference.tenantId}.`,
+        blocking: true,
+      },
+      {
+        id: 'source-status',
+        label: 'Current status reviewed',
+        expected: `Status is ${reference.status}; operator understands whether mutation is allowed.`,
+        blocking: true,
+      },
+      {
+        id: 'impact-scope',
+        label: 'Impact scope described',
+        expected:
+          reference.impactedService || reference.source
+            ? 'Source or impacted service is identified.'
+            : 'Operator records the impacted workflow or service before escalation.',
+        blocking: this.runbookPriority(reference.severity) !== 'LOW',
+      },
+      {
+        id: 'owner-set',
+        label: 'Owner or escalation target set',
+        expected: context.ownerId
+          ? `Owner/escalation target is user ${context.ownerId}.`
+          : 'Assign an owner or escalation target for open HIGH/CRITICAL work.',
+        blocking: context.isOpen,
+      },
+      {
+        id: 'mitigation-tested',
+        label: 'Mitigation check executed',
+        expected: this.mitigationExpectation(reference, context),
+        blocking: !context.isResolved,
+      },
+      {
+        id: 'evidence-attached',
+        label: 'Evidence attached',
+        expected: context.hasEvidence
+          ? 'Existing evidence is present; verify it still proves recovery.'
+          : 'Attach proof URL, export, screenshot or audit reference before resolution/closure.',
+        blocking: !context.isResolved,
+      },
+    ];
+
+    return checks;
+  }
+
+  private mitigationExpectation(
+    reference: OperationsRunbookReference,
+    context: RunbookBuildContext,
+  ) {
+    const source = reference.source ?? reference.relatedReference;
+    if (
+      source?.includes('backup') ||
+      reference.title.toLowerCase().includes('backup')
+    ) {
+      return 'Latest backup and restore/freshness control are green.';
+    }
+    if (source?.includes('audit')) {
+      return 'Audit chain verification has been replayed successfully.';
+    }
+    if (reference.title.toLowerCase().includes('slo')) {
+      return 'SLO metric has returned below threshold for the agreed observation window.';
+    }
+    if (context.description.toLowerCase().includes('planning')) {
+      return 'Planning workflow smoke check succeeds for the impacted service.';
+    }
+    return 'Relevant operational control has been replayed and returns OK.';
+  }
+
+  private runbookExpectedEvidence(
+    reference: OperationsRunbookReference,
+    context: RunbookBuildContext,
+  ): OperationsRunbookEvidence[] {
+    const evidence: OperationsRunbookEvidence[] = [
+      {
+        label: 'Triage note',
+        expected: 'Short summary of observed impact, source and decision.',
+        requiredFor: ['assignment', 'escalation'],
+      },
+      {
+        label: 'Recovery proof',
+        expected: this.mitigationExpectation(reference, context),
+        requiredFor: ['resolution'],
+      },
+      {
+        label: 'Audit closure proof',
+        expected:
+          'Final evidence URL or audit reference proving the item can be closed.',
+        requiredFor: ['closure'],
+      },
+    ];
+
+    if (reference.sourceReference || reference.relatedReference) {
+      evidence.unshift({
+        label: 'Source reference',
+        expected: `Reference ${reference.sourceReference ?? reference.relatedReference} is reachable and matches this runbook.`,
+        requiredFor: ['assignment', 'resolution'],
+      });
+    }
+
+    return evidence;
+  }
+
+  private runbookActions(
+    reference: OperationsRunbookReference,
+    context: RunbookBuildContext,
+  ): OperationsRunbookAction[] {
+    const sourceEndpoint = this.runbookSourceEndpoint(reference);
+    const actions: OperationsRunbookAction[] = [
+      {
+        id: 'read-source',
+        label: 'Review source record',
+        method: 'GET',
+        endpoint: sourceEndpoint,
+        requiredPermission: 'operations:read',
+        enabled: true,
+        why: 'Open the canonical record before mutating operational state.',
+      },
+    ];
+
+    if (reference.sourceType === 'ALERT') {
+      actions.push(
+        {
+          id: 'resolve-alert',
+          label: 'Resolve alert when control is green',
+          method: 'PATCH',
+          endpoint: `/ops/alerts/${reference.id}/resolve`,
+          requiredPermission: 'operations:write',
+          enabled: context.isOpen,
+          why: 'Close the alert once the failing control is back to nominal.',
+        },
+        {
+          id: 'run-escalation',
+          label: 'Run operational escalation',
+          method: 'POST',
+          endpoint: '/ops/escalations/run',
+          requiredPermission: 'operations:write',
+          enabled:
+            context.isOpen && ['HIGH', 'CRITICAL'].includes(reference.severity),
+          why: 'Notify or mark stale HIGH/CRITICAL work before delay grows.',
+        },
+      );
+    }
+
+    if (reference.sourceType === 'INCIDENT') {
+      actions.push(
+        {
+          id: 'assign-incident',
+          label: 'Assign incident owner',
+          method: 'PATCH',
+          endpoint: `/ops/incidents/${reference.id}/assign`,
+          requiredPermission: 'operations:write',
+          enabled: context.isOpen && !context.isAssigned,
+          why: 'An open incident should have a named accountable responder.',
+        },
+        {
+          id: 'escalate-incident',
+          label: 'Escalate incident',
+          method: 'PATCH',
+          endpoint: `/ops/incidents/${reference.id}/escalate`,
+          requiredPermission: 'operations:write',
+          enabled: context.isOpen,
+          why: 'Escalate when impact, severity or elapsed time exceeds the local runbook threshold.',
+        },
+        {
+          id: 'resolve-incident',
+          label: 'Resolve incident with proof',
+          method: 'PATCH',
+          endpoint: `/ops/incidents/${reference.id}/resolve`,
+          requiredPermission: 'operations:write',
+          enabled: context.isOpen && context.isAssigned,
+          why: 'Resolution requires an assigned/escalated incident and evidence URL.',
+        },
+        {
+          id: 'close-incident',
+          label: 'Close resolved incident',
+          method: 'PATCH',
+          endpoint: `/ops/incidents/${reference.id}/close`,
+          requiredPermission: 'operations:write',
+          enabled: reference.status === OperationIncidentStatus.RESOLVED,
+          why: 'Closure records operational acceptance after technical resolution.',
+        },
+      );
+    }
+
+    if (reference.sourceType === 'JOURNAL') {
+      actions.push(
+        {
+          id: 'update-journal',
+          label: 'Update journal entry',
+          method: 'PATCH',
+          endpoint: `/ops/journal/${reference.id}`,
+          requiredPermission: 'operations:write',
+          enabled: !context.isResolved,
+          why: 'Record owner, status, evidence and resolution timestamp on the journal entry.',
+        },
+        {
+          id: 'run-escalation',
+          label: 'Run operational escalation',
+          method: 'POST',
+          endpoint: '/ops/escalations/run',
+          requiredPermission: 'operations:write',
+          enabled:
+            !context.isResolved &&
+            ['HIGH', 'CRITICAL'].includes(reference.severity),
+          why: 'Escalate stale HIGH/CRITICAL journal entries.',
+        },
+      );
+    }
+
+    return actions;
+  }
+
+  private runbookSourceEndpoint(reference: OperationsRunbookReference) {
+    const paths: Record<OperationsRunbookSourceType, string> = {
+      ALERT: 'alerts',
+      INCIDENT: 'incidents',
+      JOURNAL: 'journal',
+    };
+    return `/ops/${paths[reference.sourceType]}/${reference.id}`;
+  }
+
+  private runbookPriority(severity: string): OperationsRunbookNext['priority'] {
+    if (severity === 'CRITICAL') return 'CRITICAL';
+    if (severity === 'HIGH') return 'HIGH';
+    if (severity === 'MEDIUM') return 'MEDIUM';
+    return 'LOW';
+  }
+
   private async getIncidentOrThrow(tenantId: string, id: number) {
     const incident = await this.incidentRepository.findOne({
       where: { tenantId, id },
@@ -1259,18 +2259,6 @@ export class OperationsService {
       throw new BadRequestException(
         'Resolved journal entries require a resolution timestamp',
       );
-    }
-  }
-
-  private assertNotClosed(incident: OperationIncident) {
-    if (incident.status === OperationIncidentStatus.CLOSED) {
-      throw new BadRequestException('A closed incident cannot be changed');
-    }
-  }
-
-  private assertNotResolved(incident: OperationIncident, message: string) {
-    if (incident.status === OperationIncidentStatus.RESOLVED) {
-      throw new BadRequestException(message);
     }
   }
 

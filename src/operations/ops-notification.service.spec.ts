@@ -75,6 +75,7 @@ describe('OpsNotificationService', () => {
       metadata: {
         alertId: 77,
         webhookUrl: 'https://hooks.example.test/secret-token',
+        note: 'Authorization: Bearer super-secret-token',
         nested: { apiToken: 'sensitive' },
       },
       recipients: ['ops@mediplan.test'],
@@ -97,7 +98,77 @@ describe('OpsNotificationService', () => {
           notificationStatus: OpsNotificationStatus.DRY_RUN,
           payloadMetadata: expect.objectContaining({
             webhookUrl: '[REDACTED]',
+            note: '[REDACTED]',
             nested: { apiToken: '[REDACTED]' },
+          }),
+        }),
+      }),
+    );
+  });
+
+  it('applies severity and tenant policy for channels and role recipients', async () => {
+    (axios.post as jest.Mock).mockResolvedValue({ status: 200 });
+    configService = createConfigService({
+      OPS_NOTIFICATION_HIGH_CHANNELS: 'webhook,slack',
+      OPS_NOTIFICATION_HIGH_RECIPIENT_ROLES: 'OPS',
+      OPS_NOTIFICATION_TENANT_TENANT_A_HIGH_CHANNELS: 'log,webhook',
+      OPS_NOTIFICATION_TENANT_TENANT_A_HIGH_RECIPIENT_ROLES: 'OPS,ON_CALL',
+      OPS_NOTIFICATION_RECIPIENTS_OPS: 'ops@mediplan.test',
+      OPS_NOTIFICATION_TENANT_TENANT_A_RECIPIENTS_ON_CALL:
+        'astreinte@mediplan.test',
+      OPS_NOTIFICATION_WEBHOOK_URL: 'https://ops.example.test/hook',
+      OPS_NOTIFICATION_SLACK_WEBHOOK_URL: 'https://slack.example.test/hook',
+    });
+
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        OpsNotificationService,
+        {
+          provide: getRepositoryToken(OperationsJournalEntry),
+          useValue: journalRepository,
+        },
+        { provide: ConfigService, useValue: configService },
+      ],
+    }).compile();
+    service = moduleRef.get(OpsNotificationService);
+
+    const result = await service.notify({
+      tenant: 'tenant-a',
+      severity: OperationIncidentSeverity.HIGH,
+      eventType: OpsNotificationEventType.ALERT,
+      title: 'Latence API',
+      message: 'p95 degrade',
+    });
+
+    expect(result.status).toBe(OpsNotificationStatus.SENT);
+    expect(result.channels).toEqual([
+      OpsNotificationChannel.LOG,
+      OpsNotificationChannel.WEBHOOK,
+    ]);
+    expect(result.policy).toEqual(
+      expect.objectContaining({
+        tenant: 'tenant-a',
+        severity: OperationIncidentSeverity.HIGH,
+        recipientRoles: ['OPS', 'ON_CALL'],
+      }),
+    );
+    expect(axios.post).toHaveBeenCalledTimes(1);
+    expect(axios.post).toHaveBeenCalledWith(
+      'https://ops.example.test/hook',
+      expect.objectContaining({
+        recipients: ['ops@mediplan.test', 'astreinte@mediplan.test'],
+      }),
+      expect.any(Object),
+    );
+    expect(journalRepository.save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          notificationPolicy: expect.objectContaining({
+            channels: [
+              OpsNotificationChannel.LOG,
+              OpsNotificationChannel.WEBHOOK,
+            ],
+            recipientRoles: ['OPS', 'ON_CALL'],
           }),
         }),
       }),
@@ -202,6 +273,64 @@ describe('OpsNotificationService', () => {
         status: OperationsJournalEntryStatus.IN_PROGRESS,
       }),
     );
+  });
+
+  it('suppresses repeated notifications for the same source reference until repeat delay expires', async () => {
+    const nowSpy = jest.spyOn(Date, 'now').mockReturnValue(1_000);
+    (axios.post as jest.Mock).mockResolvedValue({ status: 200 });
+    configService = createConfigService({
+      OPS_NOTIFICATION_HIGH_CHANNELS: 'webhook',
+      OPS_NOTIFICATION_HIGH_THROTTLE_WINDOW_MS: 1000,
+      OPS_NOTIFICATION_HIGH_DEDUPE_WINDOW_MS: 1000,
+      OPS_NOTIFICATION_HIGH_REPEAT_DELAY_MS: 60000,
+      OPS_NOTIFICATION_WEBHOOK_URL: 'https://ops.example.test/hook',
+    });
+
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        OpsNotificationService,
+        {
+          provide: getRepositoryToken(OperationsJournalEntry),
+          useValue: journalRepository,
+        },
+        { provide: ConfigService, useValue: configService },
+      ],
+    }).compile();
+    service = moduleRef.get(OpsNotificationService);
+
+    const payload = {
+      tenant: 'tenant-a',
+      severity: OperationIncidentSeverity.HIGH,
+      eventType: OpsNotificationEventType.ALERT,
+      title: 'CPU',
+      message: 'CPU elevee',
+      source: 'monitoring',
+      reference: 'node-1',
+    };
+
+    const first = await service.notify(payload);
+    const second = await service.notify(payload);
+
+    expect(first.status).toBe(OpsNotificationStatus.SENT);
+    expect(second.status).toBe(OpsNotificationStatus.THROTTLED);
+    expect(second.suppressedUntil).toBe(new Date(61_000).toISOString());
+    expect(axios.post).toHaveBeenCalledTimes(1);
+    expect(journalRepository.save).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        status: OperationsJournalEntryStatus.RESOLVED,
+        metadata: expect.objectContaining({
+          notificationStatus: OpsNotificationStatus.THROTTLED,
+          suppressedUntil: new Date(61_000).toISOString(),
+        }),
+      }),
+    );
+
+    nowSpy.mockReturnValue(62_000);
+
+    const repeated = await service.notify(payload);
+    expect(repeated.status).toBe(OpsNotificationStatus.SENT);
+    expect(axios.post).toHaveBeenCalledTimes(2);
+    nowSpy.mockRestore();
   });
 
   it('builds incident escalation payloads for reuse by incident flows', async () => {

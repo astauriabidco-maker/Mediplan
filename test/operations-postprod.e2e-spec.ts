@@ -25,6 +25,7 @@ import {
 } from '../src/operations/entities/operational-alert.entity';
 import { OperationsJournalEntry } from '../src/operations/entities/operations-journal-entry.entity';
 import { OpsNotificationService } from '../src/operations/ops-notification.service';
+import { OpsPreActionValidationService } from '../src/operations/ops-pre-action-validation.service';
 import { OperationsController } from '../src/operations/operations.controller';
 import { OperationsService } from '../src/operations/operations.service';
 
@@ -174,6 +175,7 @@ describe('Sprint 23 post-production operations (e2e)', () => {
         },
         { provide: getRepositoryToken(AuditLog), useValue: auditRepository },
         OpsNotificationService,
+        OpsPreActionValidationService,
         {
           provide: ConfigService,
           useValue: { get: jest.fn().mockReturnValue(undefined) },
@@ -438,5 +440,102 @@ describe('Sprint 23 post-production operations (e2e)', () => {
         'RESOLVE_OPERATIONAL_ALERT',
       ]),
     );
+  });
+
+  it('guides exploitation through action center, runbook and pre-action validation', async () => {
+    const alertResult = await operationsService.syncOperationalAlert(
+      'tenant-ops-a',
+      {
+        type: OperationalAlertType.BACKUP_STALE,
+        source: 'backup.readiness',
+        reference: 'backup:HGD-DOUALA:daily',
+        checkStatus: 'KO',
+        severity: OperationalAlertSeverity.HIGH,
+        message: 'Backup quotidien non confirmé.',
+        metadata: { dataset: 'tenant-backup', expectedFreshnessHours: 24 },
+      },
+      9001,
+    );
+
+    await operationsService.syncAutomaticIncident(
+      'tenant-ops-a',
+      {
+        sourceType: 'ALERT',
+        reference: `operational-alert:${alertResult.alert?.id}`,
+        title: 'Backup préproduction en retard',
+        description: 'Incident automatique issu du contrôle backup.',
+        alertSeverity: 'HIGH',
+        impactedService: 'backup',
+        metadata: { alertId: alertResult.alert?.id },
+      },
+      9001,
+    );
+
+    const actionCenter = await request(app.getHttpServer())
+      .get('/ops/action-center')
+      .query({ limit: 10 })
+      .expect(200);
+    expect(actionCenter.body).toEqual(
+      expect.objectContaining({
+        tenantId: 'tenant-ops-a',
+        total: expect.any(Number),
+      }),
+    );
+    expect(actionCenter.body.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'OPERATIONAL_ALERT',
+          priority: 'HIGH',
+          sourceReference: expect.objectContaining({
+            reference: expect.stringContaining('backup:HGD-DOUALA:daily'),
+          }),
+        }),
+        expect.objectContaining({
+          type: 'AUTO_INCIDENT',
+          requiredEvidence: expect.arrayContaining([expect.any(String)]),
+        }),
+      ]),
+    );
+
+    const runbook = await request(app.getHttpServer())
+      .get(`/ops/alerts/${alertResult.alert?.id}/runbook`)
+      .expect(200);
+    expect(runbook.body).toEqual(
+      expect.objectContaining({
+        reference: expect.objectContaining({
+          sourceType: 'ALERT',
+          id: alertResult.alert?.id,
+        }),
+        next: expect.objectContaining({
+          priority: 'HIGH',
+          waitingOn: expect.arrayContaining(['owner', 'evidence']),
+        }),
+      }),
+    );
+    expect(runbook.body.steps.length).toBeGreaterThanOrEqual(3);
+    expect(runbook.body.actions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'resolve-alert',
+          requiredPermission: 'operations:write',
+        }),
+      ]),
+    );
+
+    await request(app.getHttpServer())
+      .patch(`/ops/alerts/${alertResult.alert?.id}/resolve`)
+      .send({ resolutionSummary: '' })
+      .expect(400)
+      .expect(({ body }) => {
+        expect(JSON.stringify(body)).toContain('Missing required evidence');
+      });
+
+    await request(app.getHttpServer())
+      .patch(`/ops/alerts/${alertResult.alert?.id}/resolve`)
+      .send({ resolutionSummary: 'Backup relancé et preuve jointe au journal.' })
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.status).toBe(OperationalAlertStatus.RESOLVED);
+      });
   });
 });

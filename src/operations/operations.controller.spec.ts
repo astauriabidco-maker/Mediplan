@@ -13,13 +13,19 @@ import {
   OperationsJournalEntryStatus,
   OperationsJournalEntryType,
 } from './entities/operations-journal-entry.entity';
+import {
+  OpsActionCenterItemType,
+  OpsActionCenterStatus,
+} from './dto/ops-action-center.dto';
 import { OperationsController } from './operations.controller';
+import { OpsPreActionValidationService } from './ops-pre-action-validation.service';
 import { OperationsService } from './operations.service';
 
 type RequestOverrides = Partial<AuthenticatedRequest['user']>;
 type OperationsServiceMock = jest.Mocked<
   Pick<
     OperationsService,
+    | 'getActionCenter'
     | 'findIncidents'
     | 'findIncident'
     | 'declareIncident'
@@ -34,6 +40,9 @@ type OperationsServiceMock = jest.Mocked<
     | 'findAlerts'
     | 'getAlert'
     | 'resolveAlert'
+    | 'generateAlertRunbook'
+    | 'generateIncidentRunbook'
+    | 'generateJournalRunbook'
     | 'runOperationalEscalation'
   >
 >;
@@ -54,6 +63,7 @@ const createRequest = (overrides: RequestOverrides = {}) =>
   }) as AuthenticatedRequest;
 
 const createServiceMock = (): OperationsServiceMock => ({
+  getActionCenter: jest.fn(),
   findIncidents: jest.fn(),
   findIncident: jest.fn(),
   declareIncident: jest.fn(),
@@ -68,17 +78,25 @@ const createServiceMock = (): OperationsServiceMock => ({
   findAlerts: jest.fn(),
   getAlert: jest.fn(),
   resolveAlert: jest.fn(),
+  generateAlertRunbook: jest.fn(),
+  generateIncidentRunbook: jest.fn(),
+  generateJournalRunbook: jest.fn(),
   runOperationalEscalation: jest.fn(),
 });
 
 describe('OperationsController', () => {
   let controller: OperationsController;
   let operationsService: OperationsServiceMock;
+  let preActionValidationService: { assertAllowed: jest.Mock };
 
   beforeEach(() => {
     operationsService = createServiceMock();
+    preActionValidationService = {
+      assertAllowed: jest.fn().mockReturnValue({ allowed: true }),
+    };
     controller = new OperationsController(
       operationsService as unknown as OperationsService,
+      preActionValidationService as unknown as OpsPreActionValidationService,
     );
   });
 
@@ -104,6 +122,22 @@ describe('OperationsController', () => {
     await controller.findIncident(req, { id: 12 }, 'tenant-b');
 
     expect(operationsService.findIncident).toHaveBeenCalledWith('tenant-b', 12);
+  });
+
+  it('resolves tenants and filters for action center reads', async () => {
+    const req = createRequest({ role: 'ADMIN' });
+    const filters = {
+      status: OpsActionCenterStatus.WAITING_DECISION,
+      type: OpsActionCenterItemType.DECISION_REQUIRED,
+      limit: 25,
+    };
+
+    await controller.getActionCenter(req, filters, 'tenant-b');
+
+    expect(operationsService.getActionCenter).toHaveBeenCalledWith(
+      'tenant-a',
+      filters,
+    );
   });
 
   it('resolves tenants for journal reads', async () => {
@@ -149,6 +183,27 @@ describe('OperationsController', () => {
       44,
       resolution,
       77,
+    );
+  });
+
+  it('resolves tenants for generated runbooks', async () => {
+    const req = createRequest({ role: 'ADMIN' });
+
+    await controller.generateAlertRunbook(req, { id: 44 }, 'tenant-b');
+    await controller.generateIncidentRunbook(req, { id: 12 }, 'tenant-b');
+    await controller.generateJournalRunbook(req, 4, 'tenant-b');
+
+    expect(operationsService.generateAlertRunbook).toHaveBeenCalledWith(
+      'tenant-a',
+      44,
+    );
+    expect(operationsService.generateIncidentRunbook).toHaveBeenCalledWith(
+      'tenant-a',
+      12,
+    );
+    expect(operationsService.generateJournalRunbook).toHaveBeenCalledWith(
+      'tenant-a',
+      4,
     );
   });
 

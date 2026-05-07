@@ -23,7 +23,12 @@ import {
   OperationsJournalEntryStatus,
   OperationsJournalEntryType,
 } from './entities/operations-journal-entry.entity';
+import {
+  OpsActionCenterItemType,
+  OpsActionCenterStatus,
+} from './dto/ops-action-center.dto';
 import { OpsNotificationService } from './ops-notification.service';
+import { OpsPreActionValidationService } from './ops-pre-action-validation.service';
 import { OperationsService } from './operations.service';
 
 type RepositoryMock = {
@@ -119,6 +124,33 @@ const createAlert = (overrides: Partial<OperationalAlert> = {}) =>
     ...overrides,
   }) as OperationalAlert;
 
+const createJournalEntry = (
+  overrides: Partial<OperationsJournalEntry> = {},
+): OperationsJournalEntry =>
+  ({
+    id: 71,
+    tenantId: 'tenant-a',
+    type: OperationsJournalEntryType.ACTION,
+    status: OperationsJournalEntryStatus.OPEN,
+    severity: OperationsJournalEntrySeverity.HIGH,
+    title: 'Verifier sauvegarde',
+    description: 'Controle backup a terminer',
+    occurredAt: new Date('2026-05-07T06:00:00.000Z'),
+    resolvedAt: null,
+    ownerId: null,
+    createdById: 1,
+    updatedById: null,
+    auditLogId: null,
+    relatedAuditLogId: null,
+    relatedReference: null,
+    evidenceUrl: null,
+    evidenceLabel: null,
+    metadata: null,
+    createdAt: new Date('2026-05-07T06:00:00.000Z'),
+    updatedAt: new Date('2026-05-07T06:00:00.000Z'),
+    ...overrides,
+  }) as OperationsJournalEntry;
+
 describe('OperationsService', () => {
   let service: OperationsService;
   let incidentRepository: RepositoryMock;
@@ -130,6 +162,7 @@ describe('OperationsService', () => {
     notifyIncidentEscalated: jest.Mock;
     notify: jest.Mock;
   };
+  let preActionValidationService: OpsPreActionValidationService;
 
   beforeEach(async () => {
     incidentRepository = createRepositoryMock();
@@ -147,6 +180,7 @@ describe('OperationsService', () => {
       notifyIncidentEscalated: jest.fn().mockResolvedValue(undefined),
       notify: jest.fn().mockResolvedValue({ status: 'DRY_RUN' }),
     };
+    preActionValidationService = new OpsPreActionValidationService();
 
     const moduleRef = await Test.createTestingModule({
       providers: [
@@ -165,6 +199,10 @@ describe('OperationsService', () => {
         },
         { provide: AuditService, useValue: auditService },
         { provide: OpsNotificationService, useValue: opsNotificationService },
+        {
+          provide: OpsPreActionValidationService,
+          useValue: preActionValidationService,
+        },
       ],
     }).compile();
 
@@ -726,6 +764,172 @@ describe('OperationsService', () => {
     );
   });
 
+  it('generates a guided runbook from an open operational alert', async () => {
+    alertRepository.findOne.mockResolvedValue(
+      createAlert({
+        severity: OperationalAlertSeverity.CRITICAL,
+        type: OperationalAlertType.BACKUP_STALE,
+        source: 'tenant-backups.metrics',
+        sourceReference: 'backup:freshness',
+        message: 'Dernier backup trop ancien',
+      }),
+    );
+
+    const runbook = await service.generateAlertRunbook('tenant-a', 44);
+
+    expect(alertRepository.findOne).toHaveBeenCalledWith({
+      where: { tenantId: 'tenant-a', id: 44 },
+    });
+    expect(runbook).toEqual(
+      expect.objectContaining({
+        id: 'alert-44-runbook',
+        reference: expect.objectContaining({
+          sourceType: 'ALERT',
+          id: 44,
+          tenantId: 'tenant-a',
+          severity: OperationalAlertSeverity.CRITICAL,
+          sourceReference: 'backup:freshness',
+        }),
+        next: expect.objectContaining({
+          priority: 'CRITICAL',
+          recommendedActionId: 'resolve-alert',
+          waitingOn: expect.arrayContaining(['evidence', 'resolution']),
+        }),
+      }),
+    );
+    expect(runbook.steps).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          title: 'Mitigate and prove',
+          requiredPermission: 'operations:write',
+        }),
+      ]),
+    );
+    expect(runbook.actions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'resolve-alert',
+          endpoint: '/ops/alerts/44/resolve',
+          enabled: true,
+        }),
+        expect.objectContaining({
+          id: 'run-escalation',
+          endpoint: '/ops/escalations/run',
+          enabled: true,
+        }),
+      ]),
+    );
+    expect(runbook.expectedEvidence).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          label: 'Source reference',
+          requiredFor: expect.arrayContaining(['resolution']),
+        }),
+      ]),
+    );
+  });
+
+  it('generates incident runbook actions based on ownership and status', async () => {
+    incidentRepository.findOne.mockResolvedValue(
+      createIncident({
+        status: OperationIncidentStatus.ASSIGNED,
+        assignedToId: 77,
+        evidence: [
+          {
+            label: 'Declaration',
+            url: 'https://evidence.test/incidents/12/declaration',
+            addedAt: '2026-05-07T08:00:00.000Z',
+            addedById: 42,
+            type: 'DECLARATION',
+          },
+        ],
+      }),
+    );
+
+    const runbook = await service.generateIncidentRunbook('tenant-a', 12);
+
+    expect(runbook.reference).toEqual(
+      expect.objectContaining({
+        sourceType: 'INCIDENT',
+        impactedService: 'planning',
+      }),
+    );
+    expect(runbook.next).toEqual(
+      expect.objectContaining({
+        recommendedActionId: 'escalate-incident',
+        waitingOn: ['resolution'],
+      }),
+    );
+    expect(runbook.actions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'assign-incident',
+          enabled: false,
+        }),
+        expect.objectContaining({
+          id: 'resolve-incident',
+          endpoint: '/ops/incidents/12/resolve',
+          enabled: true,
+        }),
+      ]),
+    );
+    expect(runbook.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'owner-set',
+          expected: 'Owner/escalation target is user 77.',
+        }),
+      ]),
+    );
+  });
+
+  it('generates journal runbooks without enabling writes on closed records', async () => {
+    journalRepository.findOne.mockResolvedValue({
+      id: 4,
+      tenantId: 'tenant-a',
+      type: OperationsJournalEntryType.ACTION,
+      status: OperationsJournalEntryStatus.CLOSED,
+      severity: OperationsJournalEntrySeverity.MEDIUM,
+      title: 'Verifier sauvegarde',
+      description: 'Controle termine',
+      occurredAt: new Date('2026-05-06T08:00:00.000Z'),
+      resolvedAt: new Date('2026-05-06T09:00:00.000Z'),
+      ownerId: 77,
+      createdById: 1,
+      updatedById: 42,
+      auditLogId: 55,
+      relatedAuditLogId: 12,
+      relatedReference: 'backup:freshness',
+      evidenceUrl: 'https://evidence.test/backup-ok',
+      evidenceLabel: 'Backup OK',
+      metadata: null,
+    });
+
+    const runbook = await service.generateJournalRunbook('tenant-a', 4);
+
+    expect(runbook.next).toEqual(
+      expect.objectContaining({
+        priority: 'MEDIUM',
+        recommendedActionId: 'read-source',
+        waitingOn: [],
+      }),
+    );
+    expect(runbook.actions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'update-journal',
+          endpoint: '/ops/journal/4',
+          enabled: false,
+        }),
+      ]),
+    );
+    expect(runbook.requiredPermissions).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ permission: 'operations:write' }),
+      ]),
+    );
+  });
+
   it('scopes incident lookup by tenant', async () => {
     await expect(service.findIncident('tenant-b', 12)).rejects.toBeInstanceOf(
       NotFoundException,
@@ -872,6 +1076,113 @@ describe('OperationsService', () => {
     expect(journalRepository.findOne).toHaveBeenCalledWith({
       where: { tenantId: 'tenant-b', id: 404 },
     });
+  });
+
+  it('aggregates the production action center from alerts, automatic incidents and journal decisions', async () => {
+    alertRepository.find.mockResolvedValue([
+      createAlert({
+        id: 44,
+        severity: OperationalAlertSeverity.HIGH,
+        openedAt: new Date('2026-05-07T05:00:00.000Z'),
+      }),
+    ]);
+    incidentRepository.find.mockResolvedValue([
+      createIncident({
+        id: 12,
+        status: OperationIncidentStatus.OPEN,
+        severity: OperationIncidentSeverity.CRITICAL,
+        declaredAt: new Date('2026-05-07T08:00:00.000Z'),
+        metadata: {
+          source: 'operations:auto-incident',
+          auto: {
+            sourceType: 'BACKUP',
+            reference: 'backup:nightly',
+          },
+        },
+      }),
+    ]);
+    journalRepository.find.mockResolvedValue([
+      createJournalEntry({
+        id: 71,
+        type: OperationsJournalEntryType.DECISION,
+        status: OperationsJournalEntryStatus.OPEN,
+        severity: OperationsJournalEntrySeverity.CRITICAL,
+        title: 'Decision go/no-go production',
+        occurredAt: new Date('2026-05-07T04:00:00.000Z'),
+      }),
+    ]);
+
+    const result = await service.getActionCenter('tenant-a', { limit: 10 });
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        tenantId: 'tenant-a',
+        total: 4,
+        filters: {
+          status: null,
+          type: null,
+          limit: 10,
+        },
+      }),
+    );
+    expect(result.items.map((item) => item.type)).toEqual([
+      OpsActionCenterItemType.DECISION_REQUIRED,
+      OpsActionCenterItemType.AUTO_INCIDENT,
+      OpsActionCenterItemType.MISSING_EVIDENCE,
+      OpsActionCenterItemType.OPERATIONAL_ALERT,
+    ]);
+    expect(result.items[0]).toEqual(
+      expect.objectContaining({
+        id: 'operations-journal:71:decision',
+        priority: 'CRITICAL',
+        status: OpsActionCenterStatus.WAITING_DECISION,
+        sourceReference: expect.objectContaining({
+          entity: 'OperationsJournalEntry',
+          id: 71,
+          tenantId: 'tenant-a',
+        }),
+      }),
+    );
+    expect(alertRepository.find).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          tenantId: 'tenant-a',
+          status: OperationalAlertStatus.OPEN,
+        },
+      }),
+    );
+  });
+
+  it('filters action center items by normalized status and type', async () => {
+    alertRepository.find.mockResolvedValue([createAlert()]);
+    incidentRepository.find.mockResolvedValue([
+      createIncident({
+        metadata: {
+          source: 'operations:auto-incident',
+          auto: { sourceType: 'ALERT', reference: 'agent-alert:7001' },
+        },
+      }),
+    ]);
+    journalRepository.find.mockResolvedValue([
+      createJournalEntry({
+        type: OperationsJournalEntryType.DECISION,
+      }),
+    ]);
+
+    const result = await service.getActionCenter('tenant-a', {
+      status: OpsActionCenterStatus.WAITING_EVIDENCE,
+      type: OpsActionCenterItemType.MISSING_EVIDENCE,
+    });
+
+    expect(result.total).toBe(1);
+    expect(result.items).toEqual([
+      expect.objectContaining({
+        id: 'operation-incident:12:missing-evidence',
+        type: OpsActionCenterItemType.MISSING_EVIDENCE,
+        status: OpsActionCenterStatus.WAITING_EVIDENCE,
+        requiredEvidence: ['URL de preuve incident', 'Libelle de preuve'],
+      }),
+    ]);
   });
 
   it('auto-escalates stale high/critical incidents, alerts and journal entries once', async () => {

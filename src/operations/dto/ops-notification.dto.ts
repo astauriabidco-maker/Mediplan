@@ -29,6 +29,7 @@ export enum OpsNotificationStatus {
   SENT = 'SENT',
   PARTIAL = 'PARTIAL',
   FAILED = 'FAILED',
+  THROTTLED = 'THROTTLED',
 }
 
 export class OpsNotificationPayloadDto {
@@ -61,6 +62,21 @@ export class OpsNotificationPayloadDto {
 
   @IsOptional()
   @IsArray()
+  @IsString({ each: true })
+  recipientRoles?: string[];
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(240)
+  source?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(240)
+  reference?: string;
+
+  @IsOptional()
+  @IsArray()
   @IsEnum(OpsNotificationChannel, { each: true })
   channels?: OpsNotificationChannel[];
 
@@ -74,10 +90,22 @@ export interface OpsNotificationResult {
   channels: OpsNotificationChannel[];
   attempts: OpsNotificationAttempt[];
   journalEntryId: number | null;
+  suppressedUntil?: string;
+  policy: OpsNotificationResolvedPolicy;
 }
 
 export interface OpsNotificationAttempt {
   channel: OpsNotificationChannel;
   status: OpsNotificationStatus;
   message: string;
+}
+
+export interface OpsNotificationResolvedPolicy {
+  severity: OperationIncidentSeverity;
+  tenant: string;
+  channels: OpsNotificationChannel[];
+  recipientRoles: string[];
+  throttleWindowMs: number;
+  dedupeWindowMs: number;
+  repeatDelayMs: number;
 }

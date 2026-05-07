@@ -34,12 +34,33 @@ import {
   OperationsJournalQueryDto,
   UpdateOperationsJournalEntryDto,
 } from './dto/operations-journal.dto';
+import { OpsActionCenterQueryDto } from './dto/ops-action-center.dto';
+import {
+  OpsPreAction,
+  OpsPreActionValidationService,
+} from './ops-pre-action-validation.service';
 import { OperationsService } from './operations.service';
 
 @Controller('ops')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class OperationsController {
-  constructor(private readonly operationsService: OperationsService) {}
+  constructor(
+    private readonly operationsService: OperationsService,
+    private readonly preActionValidationService: OpsPreActionValidationService,
+  ) {}
+
+  @Get('action-center')
+  @Permissions('operations:read', 'audit:read')
+  getActionCenter(
+    @Request() req: AuthenticatedRequest,
+    @Query() filters: OpsActionCenterQueryDto,
+    @Query('tenantId') queryTenantId?: string,
+  ) {
+    return this.operationsService.getActionCenter(
+      resolveTenantId(req, queryTenantId),
+      filters,
+    );
+  }
 
   @Get('journal')
   @Permissions('operations:read', 'audit:read')
@@ -80,6 +101,19 @@ export class OperationsController {
     );
   }
 
+  @Get('alerts/:id/runbook')
+  @Permissions('operations:read', 'audit:read')
+  generateAlertRunbook(
+    @Request() req: AuthenticatedRequest,
+    @Param() params: OperationalAlertParamDto,
+    @Query('tenantId') queryTenantId?: string,
+  ) {
+    return this.operationsService.generateAlertRunbook(
+      resolveTenantId(req, queryTenantId),
+      params.id,
+    );
+  }
+
   @Patch('alerts/:id/resolve')
   @Permissions('operations:write')
   resolveAlert(
@@ -88,8 +122,12 @@ export class OperationsController {
     @Body() dto: ResolveOperationalAlertDto,
     @Query('tenantId') queryTenantId?: string,
   ) {
+    const tenantId = resolveTenantId(req, queryTenantId);
+    this.validatePreAction('RESOLVE_ALERT', req, tenantId, {
+      hasRequiredEvidence: Boolean(dto.resolutionSummary),
+    });
     return this.operationsService.resolveAlert(
-      resolveTenantId(req, queryTenantId),
+      tenantId,
       params.id,
       dto,
       req.user.id,
@@ -104,6 +142,19 @@ export class OperationsController {
     @Query('tenantId') queryTenantId?: string,
   ) {
     return this.operationsService.getJournalEntry(
+      resolveTenantId(req, queryTenantId),
+      Number(id),
+    );
+  }
+
+  @Get('journal/:id/runbook')
+  @Permissions('operations:read', 'audit:read')
+  generateJournalRunbook(
+    @Request() req: AuthenticatedRequest,
+    @Param('id') id: number,
+    @Query('tenantId') queryTenantId?: string,
+  ) {
+    return this.operationsService.generateJournalRunbook(
       resolveTenantId(req, queryTenantId),
       Number(id),
     );
@@ -165,6 +216,19 @@ export class OperationsController {
     );
   }
 
+  @Get('incidents/:id/runbook')
+  @Permissions('operations:read', 'audit:read')
+  generateIncidentRunbook(
+    @Request() req: AuthenticatedRequest,
+    @Param() params: OperationIncidentParamDto,
+    @Query('tenantId') queryTenantId?: string,
+  ) {
+    return this.operationsService.generateIncidentRunbook(
+      resolveTenantId(req, queryTenantId),
+      params.id,
+    );
+  }
+
   @Post('incidents')
   @Permissions('operations:write')
   declareIncident(
@@ -172,11 +236,13 @@ export class OperationsController {
     @Body() dto: DeclareOperationIncidentDto,
     @Query('tenantId') queryTenantId?: string,
   ) {
-    return this.operationsService.declareIncident(
-      resolveTenantId(req, queryTenantId),
-      dto,
-      req.user.id,
-    );
+    const tenantId = resolveTenantId(req, queryTenantId);
+    this.validatePreAction('DECLARE_INCIDENT', req, tenantId, {
+      hasRequiredEvidence: Boolean(
+        dto.title && dto.description && dto.severity,
+      ),
+    });
+    return this.operationsService.declareIncident(tenantId, dto, req.user.id);
   }
 
   @Patch('incidents/:id/assign')
@@ -187,8 +253,12 @@ export class OperationsController {
     @Body() dto: AssignOperationIncidentDto,
     @Query('tenantId') queryTenantId?: string,
   ) {
+    const tenantId = resolveTenantId(req, queryTenantId);
+    this.validatePreAction('ASSIGN_INCIDENT', req, tenantId, {
+      hasRequiredEvidence: Boolean(dto.assignedToId),
+    });
     return this.operationsService.assignIncident(
-      resolveTenantId(req, queryTenantId),
+      tenantId,
       params.id,
       dto,
       req.user.id,
@@ -203,8 +273,12 @@ export class OperationsController {
     @Body() dto: EscalateOperationIncidentDto,
     @Query('tenantId') queryTenantId?: string,
   ) {
+    const tenantId = resolveTenantId(req, queryTenantId);
+    this.validatePreAction('ESCALATE_INCIDENT', req, tenantId, {
+      hasRequiredEvidence: Boolean(dto.escalatedToId && dto.reason),
+    });
     return this.operationsService.escalateIncident(
-      resolveTenantId(req, queryTenantId),
+      tenantId,
       params.id,
       dto,
       req.user.id,
@@ -219,8 +293,12 @@ export class OperationsController {
     @Body() dto: ResolveOperationIncidentDto,
     @Query('tenantId') queryTenantId?: string,
   ) {
+    const tenantId = resolveTenantId(req, queryTenantId);
+    this.validatePreAction('RESOLVE_INCIDENT', req, tenantId, {
+      hasRequiredEvidence: Boolean(dto.resolutionSummary && dto.evidenceUrl),
+    });
     return this.operationsService.resolveIncident(
-      resolveTenantId(req, queryTenantId),
+      tenantId,
       params.id,
       dto,
       req.user.id,
@@ -235,8 +313,12 @@ export class OperationsController {
     @Body() dto: CloseOperationIncidentDto,
     @Query('tenantId') queryTenantId?: string,
   ) {
+    const tenantId = resolveTenantId(req, queryTenantId);
+    this.validatePreAction('CLOSE_INCIDENT', req, tenantId, {
+      hasRequiredEvidence: Boolean(dto.closureSummary && dto.evidenceUrl),
+    });
     return this.operationsService.closeIncident(
-      resolveTenantId(req, queryTenantId),
+      tenantId,
       params.id,
       dto,
       req.user.id,
@@ -250,10 +332,30 @@ export class OperationsController {
     @Body() dto: RunOperationalEscalationDto,
     @Query('tenantId') queryTenantId?: string,
   ) {
+    const tenantId = resolveTenantId(req, queryTenantId);
+    this.validatePreAction('RUN_OPERATIONAL_ESCALATION', req, tenantId);
     return this.operationsService.runOperationalEscalation(
-      resolveTenantId(req, queryTenantId),
+      tenantId,
       dto,
       req.user.id,
     );
+  }
+
+  private validatePreAction(
+    action: OpsPreAction,
+    req: AuthenticatedRequest,
+    tenantId: string,
+    options: { hasRequiredEvidence?: boolean } = {},
+  ) {
+    return this.preActionValidationService.assertAllowed({
+      action,
+      tenantId,
+      actor: {
+        tenantId: req.user.tenantId,
+        role: req.user.role,
+        permissions: req.user.permissions,
+      },
+      hasRequiredEvidence: options.hasRequiredEvidence,
+    });
   }
 }
