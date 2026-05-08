@@ -844,6 +844,100 @@ describe('OpsDashboardPage', () => {
     expect(screen.getAllByText('Aucune alerte ouverte').length).toBeGreaterThan(0);
   });
 
+  it('couvre le parcours pilote externe contrôlé sans données sensibles ni clôture sans preuve valide', async () => {
+    const user = userEvent.setup();
+    authMock.impersonatedTenantId = PILOT_OPS_DEMO_TENANTS.critical;
+    mockMultiTenantSummary.mockResolvedValue(
+      buildPilotOpsDemoMultiTenantSummary({
+        scope: {
+          tenantId: PILOT_OPS_DEMO_TENANTS.critical,
+          allTenants: false,
+        },
+      }),
+    );
+    mockSummary.mockResolvedValue(buildPilotOpsCriticalSummary(buildSummary()));
+    mockGetRunbook.mockResolvedValue(pilotOpsCriticalRunbook);
+    mockResolveActionCenterItem.mockResolvedValue({});
+
+    renderWithQueryClient(<OpsDashboardPage />);
+
+    expect(await screen.findByText('Cockpit multi-tenant')).toBeInTheDocument();
+    expect(
+      screen.getByText(PILOT_OPS_DEMO_TENANTS.healthy),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(PILOT_OPS_DEMO_TENANTS.warning),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(PILOT_OPS_DEMO_TENANTS.critical),
+    ).toBeInTheDocument();
+    expect(
+      screen.getAllByText('SLO API p95 critique réanimation').length,
+    ).toBeGreaterThan(0);
+    expect(
+      screen.getByText('Incident SLO API réanimation'),
+    ).toBeInTheDocument();
+
+    const actionCenter = screen
+      .getByRole('heading', { name: 'Action-center' })
+      .closest('section') as HTMLElement;
+    await user.click(
+      within(actionCenter).getByRole('button', { name: /^runbook$/i }),
+    );
+
+    expect(await screen.findByText('Runbook ouvert')).toBeInTheDocument();
+    expect(
+      screen.getByText(/tenant-demo-critique concentre une violation SLO/),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/Contrôler le hash-chain audit/),
+    ).toBeInTheDocument();
+    expect(screen.getAllByText(/operations:write/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/audit:read/i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/Journal audit immuable/)).toBeInTheDocument();
+
+    await user.type(
+      within(actionCenter).getByRole('textbox', { name: /résumé/i }),
+      'Retour nominal confirmé avec preuve externe contrôlée.',
+    );
+    await user.type(
+      within(actionCenter).getByLabelText(/preuve url/i),
+      'preuve-papier',
+    );
+    await user.click(
+      within(actionCenter).getByRole('button', { name: /^résoudre$/i }),
+    );
+    expect(screen.getByText('URL de preuve invalide.')).toBeInTheDocument();
+    expect(mockResolveActionCenterItem).not.toHaveBeenCalled();
+
+    await user.clear(within(actionCenter).getByLabelText(/preuve url/i));
+    await user.type(
+      within(actionCenter).getByLabelText(/preuve url/i),
+      `https://evidence.example.test/pilot/${PILOT_OPS_DEMO_TENANTS.critical}/audit-ok`,
+    );
+    await user.type(
+      within(actionCenter).getByLabelText(/libellé preuve/i),
+      'Preuve retour nominal + audit immuable',
+    );
+    await user.click(
+      within(actionCenter).getByRole('button', { name: /^résoudre$/i }),
+    );
+
+    await waitFor(() =>
+      expect(mockResolveActionCenterItem).toHaveBeenCalledWith(
+        'operational-alert-12',
+        expect.objectContaining({
+          status: 'RESOLVED',
+          summary: 'Retour nominal confirmé avec preuve externe contrôlée.',
+          evidenceUrl:
+            `https://evidence.example.test/pilot/${PILOT_OPS_DEMO_TENANTS.critical}/audit-ok`,
+          evidenceLabel: 'Preuve retour nominal + audit immuable',
+        }),
+        { tenantId: PILOT_OPS_DEMO_TENANTS.critical },
+      ),
+    );
+  });
+
   it('ouvre un runbook depuis une alerte opérationnelle et un incident exposés', async () => {
     const user = userEvent.setup();
     mockSummary.mockResolvedValue(
