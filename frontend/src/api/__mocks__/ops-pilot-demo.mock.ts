@@ -6,9 +6,9 @@ import type {
 } from '../ops.api';
 
 export const PILOT_OPS_DEMO_TENANTS = {
-  healthy: 'HGD-DOUALA-MEDECINE',
-  warning: 'HGD-DOUALA-URGENCES',
-  critical: 'HGD-DOUALA-REA',
+  healthy: 'tenant-demo-sain',
+  warning: 'tenant-demo-warning',
+  critical: 'tenant-demo-critique',
 } as const;
 
 export type PilotOpsDemoTenantState = keyof typeof PILOT_OPS_DEMO_TENANTS;
@@ -54,7 +54,7 @@ export const pilotOpsDemoTenants: Record<
       status: 'SUCCESS',
       startedAt: '2026-05-05T06:00:00.000Z',
       finishedAt: '2026-05-05T06:02:00.000Z',
-      artifactUrl: 's3://backup/hgd-douala-medecine.json',
+      artifactUrl: 's3://backup/tenant-demo-sain.json',
       error: null,
     },
     actionCenter: {
@@ -85,7 +85,7 @@ export const pilotOpsDemoTenants: Record<
       status: 'SUCCESS',
       startedAt: '2026-05-05T06:05:00.000Z',
       finishedAt: '2026-05-05T06:08:00.000Z',
-      artifactUrl: 's3://backup/hgd-douala-urgences.json',
+      artifactUrl: 's3://backup/tenant-demo-warning.json',
       error: null,
     },
     actionCenter: {
@@ -116,7 +116,7 @@ export const pilotOpsDemoTenants: Record<
       status: 'SUCCESS',
       startedAt: '2026-05-05T06:00:00.000Z',
       finishedAt: '2026-05-05T06:03:00.000Z',
-      artifactUrl: 's3://backup/hgd-douala-rea.json',
+      artifactUrl: 's3://backup/tenant-demo-critique.json',
       error: null,
     },
     actionCenter: {
@@ -179,7 +179,7 @@ export const buildPilotOpsCriticalSummary = (
       status: 'CRITICAL',
       detail: 'Seuil failed > 30min · 1 échantillon',
       reason:
-        'Actual 47minutes breaches failed threshold 30minutes for tenant critique HGD-DOUALA-REA.',
+        'Actual 47minutes breaches failed threshold 30minutes for tenant critique tenant-demo-critique.',
       period: {
         from: '2026-05-05T07:15:00.000Z',
         to: generatedAt,
@@ -192,7 +192,7 @@ export const buildPilotOpsCriticalSummary = (
       id: 12,
       sourceKind: 'OPERATIONAL_ALERT',
       title: 'SLO API p95 critique réanimation',
-      detail: 'SLO · api-gateway · p95=1.8s · tenant HGD-DOUALA-REA',
+      detail: 'SLO · api-gateway · p95=1.8s · tenant tenant-demo-critique',
       severity: 'HIGH',
       detectedAt: '2026-05-05T07:15:00.000Z',
       source: 'observability',
@@ -235,7 +235,7 @@ export const buildPilotOpsCriticalSummary = (
         status: 'WAITING_EVIDENCE',
         title: 'SLO API p95 critique réanimation',
         reason:
-          'Tenant critique HGD-DOUALA-REA en échec SLO, preuve de retour nominal requise avant clôture.',
+          'Tenant critique tenant-demo-critique en échec SLO, preuve de retour nominal requise avant clôture.',
         requiredEvidence: [
           'Capture Grafana p95 < 500ms',
           'Lien ticket incident résolu',
@@ -359,7 +359,7 @@ export const pilotOpsCriticalRunbook: OpsRunbookDto = {
       reason: 'Vérifier que la chaîne audit reste valide avant clôture.',
     },
   ],
-  why: 'Le tenant critique HGD-DOUALA-REA concentre une violation SLO p95 avec incident escaladé.',
+  why: 'Le tenant critique tenant-demo-critique concentre une violation SLO p95 avec incident escaladé.',
   next: {
     why: 'Une preuve de retour nominal et un contrôle audit sont nécessaires.',
     whatToDoNext:
@@ -373,7 +373,7 @@ export const pilotOpsCriticalRunbook: OpsRunbookDto = {
       order: 1,
       title: 'Confirmer le SLO p95 en échec',
       why: 'Identifier la cause de la dégradation.',
-      instruction: 'Comparer p95 api-gateway au seuil 500ms sur HGD-DOUALA-REA.',
+      instruction: 'Comparer p95 api-gateway au seuil 500ms sur tenant-demo-critique.',
       requiredRole: 'Ops',
       requiredPermission: 'operations:read',
       checks: [

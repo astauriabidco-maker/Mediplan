@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   PILOT_OPS_DEMO_TENANTS,
+  buildPilotOpsCriticalResolvedSummary,
   buildPilotOpsCriticalSummary,
   buildPilotOpsDemoMultiTenantSummary,
   pilotOpsCriticalRunbook,
@@ -92,6 +93,28 @@ const baseSummary = {
 } satisfies OpsDashboardSummary;
 
 describe('pilot ops demo fixtures', () => {
+  it('reste limite a des tenants demo non sensibles et allowlistes', () => {
+    const demoPayload = JSON.stringify({
+      multiTenant: buildPilotOpsDemoMultiTenantSummary(),
+      critical: buildPilotOpsCriticalSummary(baseSummary),
+      resolved: buildPilotOpsCriticalResolvedSummary(baseSummary),
+      runbook: pilotOpsCriticalRunbook,
+    });
+    const referencedTenants = Array.from(
+      new Set(demoPayload.match(/tenant-demo-(sain|warning|critique)/g) ?? []),
+    ).sort();
+
+    expect(referencedTenants).toEqual(
+      Object.values(PILOT_OPS_DEMO_TENANTS).sort(),
+    );
+    expect(demoPayload).not.toMatch(
+      /patient|beneficiaire|bénéficiaire|email|telephone|téléphone|phone|nir|ssn/i,
+    );
+    expect(demoPayload).not.toMatch(
+      /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i,
+    );
+  });
+
   it('stabilise trois tenants pilotes sain, warning et critique pour Ops', () => {
     const summary = buildPilotOpsDemoMultiTenantSummary();
 

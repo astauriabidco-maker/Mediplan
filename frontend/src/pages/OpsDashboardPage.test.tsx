@@ -775,8 +775,8 @@ describe('OpsDashboardPage', () => {
 
     renderWithQueryClient(<OpsDashboardPage />);
 
-    expect(await screen.findByText('HGD-DOUALA-REA')).toBeInTheDocument();
-    expect(screen.getByText('HGD-DOUALA-URGENCES')).toBeInTheDocument();
+    expect(await screen.findByText(PILOT_OPS_DEMO_TENANTS.critical)).toBeInTheDocument();
+    expect(screen.getByText(PILOT_OPS_DEMO_TENANTS.warning)).toBeInTheDocument();
     expect(screen.getAllByText(/critique/i).length).toBeGreaterThan(0);
     expect(
       screen.getAllByText('SLO API p95 critique réanimation').length,
@@ -791,7 +791,7 @@ describe('OpsDashboardPage', () => {
     expect(screen.getByText(/Capture Grafana p95 < 500ms/)).toBeInTheDocument();
     expect(screen.getByText(/Mitigation cache appliquée/)).toBeInTheDocument();
     expect(mockMultiTenantSummary).toHaveBeenCalledWith({
-      tenantId: 'HGD-DOUALA-REA',
+      tenantId: PILOT_OPS_DEMO_TENANTS.critical,
     });
 
     const actionCenter = screen
@@ -803,7 +803,7 @@ describe('OpsDashboardPage', () => {
     await waitFor(() =>
       expect(mockGetRunbook).toHaveBeenCalledWith(
         expect.objectContaining({ entity: 'OperationalAlert', id: 12 }),
-        { tenantId: 'HGD-DOUALA-REA' },
+        { tenantId: PILOT_OPS_DEMO_TENANTS.critical },
       ),
     );
 
@@ -813,7 +813,7 @@ describe('OpsDashboardPage', () => {
     );
     await user.type(
       within(actionCenter).getByLabelText(/preuve url/i),
-      'https://grafana.example.test/d/ops-p95?tenant=HGD-DOUALA-REA',
+      `https://grafana.example.test/d/ops-p95?tenant=${PILOT_OPS_DEMO_TENANTS.critical}`,
     );
     await user.type(
       within(actionCenter).getByLabelText(/libellé preuve/i),
@@ -830,10 +830,10 @@ describe('OpsDashboardPage', () => {
           status: 'RESOLVED',
           summary: 'Mitigation cache validée, p95 nominal et audit chain OK.',
           evidenceUrl:
-            'https://grafana.example.test/d/ops-p95?tenant=HGD-DOUALA-REA',
+            `https://grafana.example.test/d/ops-p95?tenant=${PILOT_OPS_DEMO_TENANTS.critical}`,
           evidenceLabel: 'Grafana p95 nominal + audit chain validée',
         }),
-        { tenantId: 'HGD-DOUALA-REA' },
+        { tenantId: PILOT_OPS_DEMO_TENANTS.critical },
       ),
     );
     await waitFor(() => expect(mockSummary).toHaveBeenCalledTimes(2));

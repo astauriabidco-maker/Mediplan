@@ -21,7 +21,7 @@ verification audit.
 | --- | --- |
 | Profil | Exploitation ou manager avec `operations:read`, `operations:write` et `audit:read`. |
 | Route | `/ops` accessible depuis le menu exploitation. |
-| Tenant critique | `HGD-DOUALA-REA` ou tenant equivalent dans le jeu de recette. |
+| Tenant critique | `tenant-demo-critique` ou tenant equivalent dans le jeu de recette. |
 | Signal initial | Au moins un SLO `FAILED`, un item Action Center critique, un runbook disponible et une preuve de notification/audit. |
 | Donnees sensibles | Aucune preuve ne doit contenir de donnees RH nominatives non necessaires. |
 
@@ -30,12 +30,12 @@ verification audit.
 | Etape | Action utilisateur | Resultat attendu | Resultat observe |
 | --- | --- | --- | --- |
 | 1 | Ouvrir `/ops`. | Le tableau de bord Ops se charge avec le tenant courant. | `OK` - surface couverte par `OpsDashboardPage.test.tsx`. |
-| 2 | Identifier le tenant critique dans le cockpit multi-tenant. | Le tenant critique ressort avec alertes, incidents, routines et dernier backup. | `OK` - scenario `HGD-DOUALA-REA` couvert par le test de recette guidee. |
+| 2 | Identifier le tenant critique dans le cockpit multi-tenant. | Le tenant critique ressort avec alertes, incidents, routines et dernier backup. | `OK` - scenario `tenant-demo-critique` couvert par le test de recette guidee. |
 | 3 | Lire le panneau SLO/SLA. | Le SLO en echec affiche valeur courante, seuil, periode et raison. | `OK` - `FAILED`, `47min` et raison explicite verifies. |
 | 4 | Ouvrir l'item Action Center correspondant. | Priorite, statut, preuve requise, commentaire precedent et source reference sont visibles. | `OK` - item critique `WAITING_EVIDENCE` verifie. |
 | 5 | Ouvrir le runbook depuis l'Action Center. | Le runbook explique cause, permissions, controles bloquants et preuves attendues. | `OK` - permissions `operations:write` et `audit:read` verifiees. |
 | 6 | Completer la resolution. | L'operateur renseigne resume, URL de preuve et libelle de preuve. | `OK` - payload resolution verifie avec preuve Grafana et audit chain. |
-| 7 | Resoudre l'item. | La mutation `RESOLVED` est appelee pour le tenant critique, sans changer de tenant. | `OK` - appel attendu avec `tenantId=HGD-DOUALA-REA`. |
+| 7 | Resoudre l'item. | La mutation `RESOLVED` est appelee pour le tenant critique, sans changer de tenant. | `OK` - appel attendu avec un `tenantId` anonymise de type `tenant-demo-critique`. |
 | 8 | Verifier le retour au vert. | Le cockpit revient en statut operationnel, aucune alerte ouverte, SLO `PASSED`. | `OK` - rafraichissement summary et statut operationnel verifies. |
 | 9 | Verifier l'audit ops. | Les filtres Action Center / Runbook / Notification permettent de reconstruire la sequence. | `OK` - contrats audit et journal ops couverts par `ops.contract.test.ts`. |
 

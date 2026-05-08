@@ -18,7 +18,7 @@ Ce jeu sert a rejouer le parcours:
 
 | Inclus | Hors perimetre |
 | --- | --- |
-| Fixtures frontend typees pour `/ops`. | Reset du tenant `HGD-DOUALA` en base. |
+| Fixtures frontend typees pour `/ops`. | Reset d'un tenant hospitalier reel en base. |
 | Tests de stabilite des tenants sain/warning/critique. | Migration ou mutation de donnees preprod. |
 | Documentation Ops du jeu pilote. | Signoff utilisateur hospitalier externe. |
 | Reutilisation du parcours Sprint 30 critique. | Nouveau seed backend. |
@@ -27,9 +27,9 @@ Ce jeu sert a rejouer le parcours:
 
 | Etat Ops | Tenant | Signaux attendus | Usage recette |
 | --- | --- | --- | --- |
-| Sain | `HGD-DOUALA-MEDECINE` | Aucun incident actif, aucune alerte ouverte, backup recent, action-center vide. | Montrer le nominal et verifier que l'UI ne force pas un faux incident. |
-| Warning | `HGD-DOUALA-URGENCES` | Une alerte medium, action non critique, aucun incident actif, backup recent. | Montrer un signal a surveiller sans escalade. |
-| Critique | `HGD-DOUALA-REA` | SLO p95 en echec, incident escalade, alerte critique, action-center `WAITING_EVIDENCE`, runbook et preuve attendue. | Rejouer detection -> runbook -> resolution -> audit. |
+| Sain | `tenant-demo-sain` | Aucun incident actif, aucune alerte ouverte, backup recent, action-center vide. | Montrer le nominal et verifier que l'UI ne force pas un faux incident. |
+| Warning | `tenant-demo-warning` | Une alerte medium, action non critique, aucun incident actif, backup recent. | Montrer un signal a surveiller sans escalade. |
+| Critique | `tenant-demo-critique` | SLO p95 en echec, incident escalade, alerte critique, action-center `WAITING_EVIDENCE`, runbook et preuve attendue. | Rejouer detection -> runbook -> resolution -> audit. |
 
 ## Contrat donnees
 
@@ -54,11 +54,11 @@ Le contrat minimal verifie:
 
 | Etape | Action | Resultat attendu |
 | --- | --- | --- |
-| 1 | Ouvrir `/ops` avec `HGD-DOUALA-REA` impersonne ou selectionne. | Le cockpit multi-tenant affiche aussi `HGD-DOUALA-MEDECINE` et `HGD-DOUALA-URGENCES`. |
+| 1 | Ouvrir `/ops` avec `tenant-demo-critique` impersonne ou selectionne. | Le cockpit multi-tenant affiche aussi `tenant-demo-sain` et `tenant-demo-warning`. |
 | 2 | Comparer les tenants. | Le tenant sain reste vert, le warning reste surveillable, le critique ressort prioritaire. |
 | 3 | Lire le SLO critique. | `Résolution alerte critique`, `47min`, `FAILED` et la raison SLO sont visibles. |
 | 4 | Ouvrir le runbook Action Center. | Les controles bloquants et preuves attendues sont listés. |
-| 5 | Resoudre l'item avec resume, URL et libelle de preuve. | La mutation cible `HGD-DOUALA-REA`, statut `RESOLVED`, preuve Grafana et audit chain. |
+| 5 | Resoudre l'item avec resume, URL et libelle de preuve. | La mutation cible `tenant-demo-critique`, statut `RESOLVED`, preuve Grafana et audit chain. |
 | 6 | Verifier le retour au vert. | Statut global operationnel, SLO `PASSED`, aucune alerte ouverte. |
 
 ## Limites explicites
@@ -66,7 +66,7 @@ Le contrat minimal verifie:
 - Les donnees Sprint 31 Phase 4 sont des fixtures frontend, pas une source de
   verite preprod.
 - Elles ne prouvent pas l'etat d'une base client ou hospitaliere reelle.
-- Elles ne remplacent pas les seeds existants `HGD-DOUALA`.
+- Elles ne remplacent pas les seeds internes existants.
 - Elles ne doivent pas etre utilisees pour declarer un `GO_UTILISATEUR_EXTERNE`
   sans execution pilote reelle et signataires nominatifs.
 
