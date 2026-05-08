@@ -53,10 +53,78 @@ const statusLabel: Record<OpsSignalStatus, string> = {
   UNKNOWN: 'Inconnu',
 };
 
+const operationalStatusLabel: Record<OpsStatus, string> = {
+  OPERATIONAL: 'Opérationnel',
+  DEGRADED: 'Dégradé',
+  CRITICAL: 'Critique',
+  UNKNOWN: 'Inconnu',
+};
+
+const priorityLabel: Record<OpsActionCenterPriority, string> = {
+  LOW: 'Basse',
+  MEDIUM: 'Moyenne',
+  HIGH: 'Haute',
+  CRITICAL: 'Critique',
+};
+
+const actionCenterStatusLabel: Record<OpsActionCenterStatus, string> = {
+  OPEN: 'Ouvert',
+  IN_PROGRESS: 'En cours',
+  ESCALATED: 'Escaladé',
+  WAITING_EVIDENCE: 'Preuve attendue',
+  WAITING_DECISION: 'Décision attendue',
+  RESOLVED: 'Résolu',
+  CLOSED: 'Clos',
+};
+
+const severityLabel: Record<string, string> = {
+  LOW: 'Basse',
+  MEDIUM: 'Moyenne',
+  HIGH: 'Haute',
+  CRITICAL: 'Critique',
+};
+
+const technicalStatusLabel: Record<string, string> = {
+  UP: 'Disponible',
+  DOWN: 'Indisponible',
+  HEALTHY: 'Saine',
+  DEGRADED: 'Dégradée',
+  PASSED: 'Validé',
+  FAILED: 'Échec',
+  UNKNOWN: 'Inconnu',
+  PROD_GO: 'Go prod',
+  PROD_NO_GO: 'No go prod',
+  PENDING: 'En attente',
+  ACKNOWLEDGED: 'Acquittée',
+  SENT: 'Envoyée',
+  DRY_RUN: 'Simulation',
+  PARTIAL: 'Partielle',
+  THROTTLED: 'Différée',
+  ESCALATED: 'Escaladé',
+};
+
+const priorityWeight: Record<OpsActionCenterPriority, number> = {
+  LOW: 0,
+  MEDIUM: 1,
+  HIGH: 2,
+  CRITICAL: 3,
+};
+
 const priorityStatus = (priority: OpsActionCenterItem['priority']) => {
   if (priority === 'CRITICAL' || priority === 'HIGH') return 'CRITICAL';
   if (priority === 'MEDIUM') return 'WARNING';
   return 'OK';
+};
+
+const actionCenterStatusTone = (
+  status: OpsActionCenterStatus,
+  priority: OpsActionCenterPriority,
+): OpsSignalStatus => {
+  if (status === 'RESOLVED' || status === 'CLOSED') return 'OK';
+  if (status === 'WAITING_EVIDENCE' || status === 'WAITING_DECISION') {
+    return 'WARNING';
+  }
+  return priorityStatus(priority);
 };
 
 const tenantStatusToSignal = (
@@ -91,6 +159,35 @@ const ACTION_CENTER_STATUSES: OpsActionCenterStatus[] = [
 ];
 
 const formatInterval = (value: number) => `${value / 1000}s`;
+
+const countLabel = (count: number, singular: string, plural = `${singular}s`) =>
+  `${count} ${count > 1 ? plural : singular}`;
+
+const readableStatus = (status?: string | null) =>
+  status ? technicalStatusLabel[status] ?? status : 'Non renseigné';
+
+const getOpsFocus = (summary: OpsDashboardSummary) => {
+  const action = [...summary.actionCenter.items].sort(
+    (left, right) =>
+      priorityWeight[right.priority] - priorityWeight[left.priority],
+  )[0];
+
+  if (action) {
+    return `Priorité: ${action.title}`;
+  }
+
+  const alert = summary.alerts[0];
+  if (alert) {
+    return `Alerte: ${alert.title}`;
+  }
+
+  const anomaly = summary.anomalies[0];
+  if (anomaly) {
+    return `Signal: ${anomaly.title}`;
+  }
+
+  return 'Aucun blocage actif';
+};
 
 const notificationStatusTone = (status: string): OpsSignalStatus => {
   if (status === 'ACKNOWLEDGED' || status === 'SENT' || status === 'DRY_RUN') {
@@ -138,12 +235,70 @@ const StatusBadge = ({
   </span>
 );
 
+const SectionHeader = ({
+  icon,
+  title,
+  meta,
+  children,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  meta?: string;
+  children?: React.ReactNode;
+}) => (
+  <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+    <div className="flex items-center gap-2">
+      {icon}
+      <h2 className="text-lg font-bold text-white">{title}</h2>
+    </div>
+    <div className="flex flex-wrap items-center gap-2">
+      {meta && (
+        <span className="text-xs font-bold uppercase tracking-wide text-slate-500">
+          {meta}
+        </span>
+      )}
+      {children}
+    </div>
+  </div>
+);
+
+const MetricTile = ({
+  label,
+  value,
+  detail,
+  tone,
+}: {
+  label: string;
+  value: React.ReactNode;
+  detail?: React.ReactNode;
+  tone?: OpsSignalStatus;
+}) => (
+  <div
+    className={cn(
+      'rounded-md border border-slate-800 bg-slate-900 p-3',
+      tone === 'CRITICAL' && 'border-rose-500/30 bg-rose-500/10',
+      tone === 'WARNING' && 'border-amber-500/30 bg-amber-500/10',
+      tone === 'OK' && 'border-emerald-500/20',
+    )}
+  >
+    <p className="text-xs font-bold uppercase tracking-wide text-slate-500">
+      {label}
+    </p>
+    <p className="mt-2 text-sm font-black text-white">{value}</p>
+    {detail && <p className="mt-1 text-xs text-slate-500">{detail}</p>}
+  </div>
+);
+
 const KpiStrip = ({ summary }: { summary: OpsDashboardSummary }) => (
   <section className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
     {summary.kpis.map((kpi) => (
       <article
         key={kpi.key}
-        className="rounded-lg border border-slate-800 bg-slate-900 p-4"
+        className={cn(
+          'rounded-lg border border-slate-800 bg-slate-900 p-4',
+          kpi.status === 'CRITICAL' && 'border-rose-500/40 bg-rose-500/10',
+          kpi.status === 'WARNING' && 'border-amber-500/30',
+        )}
       >
         <div className="flex items-start justify-between gap-3">
           <p className="text-xs font-bold uppercase tracking-wide text-slate-500">
@@ -186,11 +341,15 @@ const MultiTenantCockpit = ({
         <div className="flex flex-wrap gap-2">
           <StatusBadge
             status={summary.totals.criticalTenants > 0 ? 'CRITICAL' : 'OK'}
-            label={`${summary.totals.criticalTenants} critique`}
+            label={countLabel(summary.totals.criticalTenants, 'critique')}
           />
           <StatusBadge
             status={summary.totals.warningTenants > 0 ? 'WARNING' : 'OK'}
-            label={`${summary.totals.warningTenants} à surveiller`}
+            label={countLabel(
+              summary.totals.warningTenants,
+              'tenant à surveiller',
+              'tenants à surveiller',
+            )}
           />
         </div>
       )}
@@ -282,7 +441,7 @@ const MultiTenantCockpit = ({
                 </div>
                 <StatusBadge
                   status={tenantStatusToSignal(tenant.status)}
-                  label={tenant.status}
+                  label={statusLabel[tenantStatusToSignal(tenant.status)]}
                 />
               </div>
 
@@ -350,9 +509,9 @@ const NotificationPanel = ({ summary }: { summary: OpsDashboardSummary }) => (
       {[
         ['État', summary.notifications.label],
         ['À traiter', String(summary.notifications.pendingAlerts)],
-        ['Ack', String(summary.notifications.acknowledgedNotifications)],
+        ['Acquittées', String(summary.notifications.acknowledgedNotifications)],
         ['Rappels', String(summary.notifications.reminders)],
-        ['Quiet hours', String(summary.notifications.quietHoursDeferred)],
+        ['Heures calmes', String(summary.notifications.quietHoursDeferred)],
         ['Escalades', String(summary.notifications.escalatedIncidents)],
       ].map(([label, value]) => (
         <div
@@ -394,7 +553,7 @@ const NotificationPanel = ({ summary }: { summary: OpsDashboardSummary }) => (
               </div>
               <StatusBadge
                 status={notificationStatusTone(entry.status)}
-                label={entry.status}
+                label={readableStatus(entry.status)}
               />
             </div>
 
@@ -419,11 +578,11 @@ const NotificationPanel = ({ summary }: { summary: OpsDashboardSummary }) => (
               </div>
               <div>
                 <dt className="font-bold uppercase tracking-wide text-slate-500">
-                  Ack
+                  Acquittement
                 </dt>
                 <dd className="mt-1 text-slate-300">
                   {entry.acknowledgedAt
-                    ? `${formatDateTime(entry.acknowledgedAt)} · acteur ${entry.acknowledgedById ?? 'N/A'}`
+                    ? `${formatDateTime(entry.acknowledgedAt)} · acteur ${entry.acknowledgedById ?? 'non renseigné'}`
                     : 'En attente'}
                 </dd>
               </div>
@@ -435,14 +594,14 @@ const NotificationPanel = ({ summary }: { summary: OpsDashboardSummary }) => (
                   {entry.reminder.reminderCount > 0 || entry.reminder.isReminder
                     ? `Rappel ${entry.reminder.reminderCount}`
                     : 'Aucun rappel'}{' '}
-                  · Niveau {entry.escalationLevel ?? 'N/A'}
+                  · Niveau {entry.escalationLevel ?? 'non renseigné'}
                 </dd>
               </div>
             </dl>
 
             {(entry.quietHours || entry.suppressedUntil) && (
               <p className="mt-3 text-xs text-amber-200">
-                Quiet hours:{' '}
+                Heures calmes:{' '}
                 {entry.quietHours
                   ? `${entry.quietHours.start}-${entry.quietHours.end}`
                   : 'config non détaillée'}{' '}
@@ -536,7 +695,7 @@ const AlertsPanel = ({
         <h2 className="text-lg font-bold text-white">Alertes ouvertes</h2>
       </div>
       <span className="text-xs font-bold uppercase tracking-wide text-slate-500">
-        {summary.alerts.length} ouverte
+        {countLabel(summary.alerts.length, 'alerte ouverte', 'alertes ouvertes')}
       </span>
     </div>
     {summary.alerts.length === 0 ? (
@@ -574,7 +733,7 @@ const AlertsPanel = ({
                             ? 'WARNING'
                             : 'OK'
                       }
-                      label={alert.severity}
+                      label={severityLabel[alert.severity] ?? alert.severity}
                     />
                     <StatusBadge
                       status={
@@ -594,6 +753,7 @@ const AlertsPanel = ({
                       disabled={isMutating}
                       onClick={() => onOpenRunbook(runbookRequest)}
                     >
+                      <ScrollText size={14} />
                       Ouvrir runbook
                     </AlertActionButton>
                   )}
@@ -601,18 +761,21 @@ const AlertsPanel = ({
                     disabled={isMutating || !alert.actions.canResolve}
                     onClick={() => onResolve(alert)}
                   >
+                    <CheckCircle2 size={14} />
                     Résoudre alerte
                   </AlertActionButton>
                   <AlertActionButton
                     disabled={isMutating || !alert.actions.canRerunCheck}
                     onClick={() => onRerunCheck(alert)}
                   >
+                    <RefreshCw size={14} />
                     Relancer contrôle
                   </AlertActionButton>
                   <AlertActionButton
                     disabled={isMutating || !alert.actions.canOpenIncident}
                     onClick={() => onOpenIncident(alert)}
                   >
+                    <Flag size={14} />
                     Ouvrir incident
                   </AlertActionButton>
                 </div>
@@ -994,7 +1157,7 @@ const ActionCenterPanel = ({
           status={summary.actionCenter.status}
           label={
             summary.actionCenter.available
-              ? `${summary.actionCenter.total} action`
+              ? countLabel(summary.actionCenter.total, 'action')
               : 'Indisponible'
           }
         />
@@ -1041,9 +1204,12 @@ const ActionCenterPanel = ({
                   <div className="flex shrink-0 flex-wrap justify-end gap-2">
                     <StatusBadge
                       status={priorityStatus(item.priority)}
-                      label={item.priority}
+                      label={priorityLabel[item.priority]}
                     />
-                    <StatusBadge status="WARNING" label={item.status} />
+                    <StatusBadge
+                      status={actionCenterStatusTone(item.status, item.priority)}
+                      label={actionCenterStatusLabel[item.status]}
+                    />
                   </div>
                 </div>
                 <div className="mt-3 grid grid-cols-1 gap-2 text-xs text-slate-500 md:grid-cols-3">
@@ -1106,7 +1272,7 @@ const ActionCenterPanel = ({
                     >
                       {ACTION_CENTER_PRIORITIES.map((priority) => (
                         <option key={priority} value={priority}>
-                          {priority}
+                          {priorityLabel[priority]}
                         </option>
                       ))}
                     </select>
@@ -1125,7 +1291,7 @@ const ActionCenterPanel = ({
                     >
                       {ACTION_CENTER_STATUSES.map((status) => (
                         <option key={status} value={status}>
-                          {status}
+                          {actionCenterStatusLabel[status]}
                         </option>
                       ))}
                     </select>
@@ -1144,8 +1310,12 @@ const ActionCenterPanel = ({
                       }
                       className="mt-1 h-9 w-full rounded-md border border-slate-700 bg-slate-950 px-3 text-sm text-slate-100 outline-none focus:border-cyan-400"
                     >
-                      <option value="RESOLVED">RESOLVED</option>
-                      <option value="CLOSED">CLOSED</option>
+                      <option value="RESOLVED">
+                        {actionCenterStatusLabel.RESOLVED}
+                      </option>
+                      <option value="CLOSED">
+                        {actionCenterStatusLabel.CLOSED}
+                      </option>
                     </select>
                   </label>
                   <label className="block text-xs font-bold uppercase tracking-wide text-slate-500">
@@ -1260,8 +1430,11 @@ const ActionCenterPanel = ({
                     Résoudre
                   </AlertActionButton>
                   {itemBusy && (
-                    <span className="inline-flex min-h-8 items-center text-xs font-bold text-cyan-200">
-                      Mutation en cours...
+                    <span
+                      className="inline-flex min-h-8 items-center text-xs font-bold text-cyan-200"
+                      role="status"
+                    >
+                      Mise à jour en cours...
                     </span>
                   )}
                 </div>
@@ -1280,37 +1453,47 @@ const SlaPanel = ({ summary }: { summary: OpsDashboardSummary }) => (
       <Gauge size={18} className="text-cyan-300" />
       <h2 className="text-lg font-bold text-white">SLO / SLA exploitation</h2>
     </div>
-    <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-      {summary.sla.map((sla) => (
-        <article
-          key={sla.id}
-          className="rounded-lg border border-slate-800 bg-slate-950/50 p-4"
-        >
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <h3 className="font-bold text-white">{sla.label}</h3>
-              <p className="mt-1 text-xs text-slate-500">
-                Seuils: cible {sla.target} · {sla.detail}
-              </p>
+    {summary.sla.length === 0 ? (
+      <EmptyState
+        title="Aucun SLO actif"
+        message="Aucun indicateur SLO ou SLA n'est exposé sur la période."
+        icon={CheckCircle2}
+        tone="emerald"
+        compact
+      />
+    ) : (
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+        {summary.sla.map((sla) => (
+          <article
+            key={sla.id}
+            className="rounded-lg border border-slate-800 bg-slate-950/50 p-4"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="font-bold text-white">{sla.label}</h3>
+                <p className="mt-1 text-xs text-slate-500">
+                  Seuils: cible {sla.target} · {sla.detail}
+                </p>
+              </div>
+              <StatusBadge
+                status={sla.status}
+                label={readableStatus(sla.sloStatus ?? statusLabel[sla.status])}
+              />
             </div>
-            <StatusBadge
-              status={sla.status}
-              label={sla.sloStatus ?? statusLabel[sla.status]}
-            />
-          </div>
-          <p className="mt-3 text-xl font-black text-white">{sla.current}</p>
-          {sla.period && (
-            <p className="mt-1 text-xs text-slate-500">
-              Période: {formatDateTime(sla.period.from)} →{' '}
-              {formatDateTime(sla.period.to)}
+            <p className="mt-3 text-xl font-black text-white">{sla.current}</p>
+            {sla.period && (
+              <p className="mt-1 text-xs text-slate-500">
+                Période: {formatDateTime(sla.period.from)} →{' '}
+                {formatDateTime(sla.period.to)}
+              </p>
+            )}
+            <p className="mt-2 text-sm text-slate-400">
+              {sla.reason ?? sla.detail}
             </p>
-          )}
-          <p className="mt-2 text-sm text-slate-400">
-            {sla.reason ?? sla.detail}
-          </p>
-        </article>
-      ))}
-    </div>
+          </article>
+        ))}
+      </div>
+    )}
   </section>
 );
 
@@ -1322,7 +1505,7 @@ const AnomaliesPanel = ({ summary }: { summary: OpsDashboardSummary }) => (
         <h2 className="text-lg font-bold text-white">Anomalies récentes</h2>
       </div>
       <span className="text-xs font-bold uppercase tracking-wide text-slate-500">
-        {summary.anomalies.length} signal
+        {countLabel(summary.anomalies.length, 'signal')}
       </span>
     </div>
     {summary.anomalies.length === 0 ? (
@@ -1353,7 +1536,7 @@ const AnomaliesPanel = ({ summary }: { summary: OpsDashboardSummary }) => (
                       ? 'WARNING'
                       : 'OK'
                 }
-                label={anomaly.severity}
+                label={severityLabel[anomaly.severity] ?? anomaly.severity}
               />
             </div>
             <p className="mt-3 text-xs text-slate-500">
@@ -1399,7 +1582,7 @@ const BackupPanel = ({ summary }: { summary: OpsDashboardSummary }) => {
             Schéma
           </p>
           <p className="mt-2 font-bold text-white">
-            {summary.backups.schemaVersion ?? 'N/A'}
+            {summary.backups.schemaVersion ?? 'Non renseigné'}
           </p>
           <p className="mt-1 text-xs text-slate-500">
             {Object.keys(summary.backups.datasetCounts).length} datasets
@@ -1410,7 +1593,9 @@ const BackupPanel = ({ summary }: { summary: OpsDashboardSummary }) => {
             Gate BACKUP
           </p>
           <p className="mt-2 font-bold text-white">
-            {summary.backups.gate?.status ?? 'Absent'}
+            {summary.backups.gate
+              ? readableStatus(summary.backups.gate.status)
+              : 'Absent'}
           </p>
           <p className="mt-1 text-xs text-slate-500">
             {summary.backups.gate?.source ?? 'Aucune source'}
@@ -1448,14 +1633,18 @@ const IncidentsPanel = ({
         <h2 className="text-lg font-bold text-white">Incidents</h2>
       </div>
       <span className="text-xs font-bold uppercase tracking-wide text-slate-500">
-        {summary.incidents.length} ouvert
+        {countLabel(summary.incidents.length, 'incident ouvert', 'incidents ouverts')}
       </span>
     </div>
 
     {summary.incidents.length === 0 ? (
-      <p className="mt-4 text-sm text-slate-500">
-        Aucun incident post-prod ouvert.
-      </p>
+      <EmptyState
+        title="Aucun incident ouvert"
+        message="Aucun incident post-prod n'est actif pour ce périmètre."
+        icon={CheckCircle2}
+        tone="emerald"
+        compact
+      />
     ) : (
       <ol className="mt-4 space-y-3">
         {summary.incidents.map((incident) => {
@@ -1481,7 +1670,9 @@ const IncidentsPanel = ({
                   </div>
                   <StatusBadge
                     status={incident.status}
-                    label={incident.lifecycleStatus ?? statusLabel[incident.status]}
+                    label={readableStatus(
+                      incident.lifecycleStatus ?? statusLabel[incident.status],
+                    )}
                   />
                 </div>
                 <p className="mt-2 text-xs text-slate-500">
@@ -1493,6 +1684,7 @@ const IncidentsPanel = ({
                       disabled={isMutating}
                       onClick={() => onOpenRunbook(runbookRequest)}
                     >
+                      <ScrollText size={14} />
                       Ouvrir runbook
                     </AlertActionButton>
                   </div>
@@ -1591,7 +1783,8 @@ const DirectionReportsPanel = ({
                   Rapport #{report.id}
                 </p>
                 <p className="mt-1 text-xs text-slate-500">
-                  {formatDateTime(report.timestamp)} · {report.affected} shift
+                  {formatDateTime(report.timestamp)} ·{' '}
+                  {countLabel(report.affected, 'shift')}
                 </p>
               </div>
               <StatusBadge
@@ -1640,7 +1833,7 @@ const GatesPanel = ({ summary }: { summary: OpsDashboardSummary }) => (
                     ? 'CRITICAL'
                     : 'UNKNOWN'
               }
-              label={gate.status}
+              label={readableStatus(gate.status)}
             />
           </div>
           <p className="mt-3 text-xs text-slate-500">
@@ -1880,7 +2073,10 @@ export const OpsDashboardPage = () => {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
-          <StatusBadge status={summary.status} label={summary.statusLabel} />
+          <StatusBadge
+            status={summary.status}
+            label={summary.statusLabel ?? operationalStatusLabel[summary.status]}
+          />
           <div className="inline-flex items-center rounded-md border border-slate-700 bg-slate-900 p-1">
             <button
               type="button"
@@ -1938,9 +2134,9 @@ export const OpsDashboardPage = () => {
               Statut global: {summary.statusLabel}
             </h2>
             <p className="mt-1 text-sm opacity-90">
-              API {summary.health.api?.status ?? 'N/A'} · Observabilité{' '}
-              {summary.health.observability?.status ?? 'N/A'} · Readiness{' '}
-              {summary.health.readiness?.status ?? 'N/A'}
+              API {readableStatus(summary.health.api?.status)} · Observabilité{' '}
+              {readableStatus(summary.health.observability?.status)}{' '}
+              · Readiness {readableStatus(summary.health.readiness?.status)}
             </p>
           </div>
         </div>

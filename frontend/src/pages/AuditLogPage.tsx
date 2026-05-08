@@ -607,6 +607,10 @@ export const AuditLogPage = () => {
                 key={item.key}
                 type="button"
                 onClick={() => setScope(item.key)}
+                aria-pressed={active}
+                aria-label={`${item.label}: ${countsByScope[item.key]} événement${
+                  countsByScope[item.key] > 1 ? 's' : ''
+                }`}
                 className={cn(
                   'min-h-[76px] rounded-md border p-3 text-left transition',
                   active
@@ -643,7 +647,7 @@ export const AuditLogPage = () => {
           title="Aucun événement audit ops"
           message={
             searchTerm
-              ? 'Aucune preuve ne correspond à cette recherche.'
+              ? `Aucune preuve ne correspond à "${searchTerm}".`
               : 'Aucune preuve action-center, SLO, runbook ou notification sur la période.'
           }
         />
@@ -664,6 +668,7 @@ export const AuditLogPage = () => {
           <button
             onClick={() => refetch()}
             disabled={isFetching}
+            aria-label="Actualiser le journal audit ops"
             className="flex items-center gap-2 rounded-md border border-slate-800 bg-slate-900 px-3 py-1.5 text-[10px] font-black uppercase tracking-wide text-slate-400 transition hover:border-slate-700 hover:text-white disabled:cursor-wait disabled:opacity-60"
           >
             <RotateCw size={12} className={isFetching ? 'animate-spin' : undefined} />
@@ -672,6 +677,7 @@ export const AuditLogPage = () => {
           <button
             onClick={() => exportLogsCsv(filteredLogs)}
             disabled={filteredLogs.length === 0}
+            aria-label="Exporter les preuves audit ops en CSV"
             className="flex items-center gap-2 rounded-md border border-slate-800 bg-slate-900 px-3 py-1.5 text-[10px] font-black uppercase tracking-wide text-slate-400 transition hover:border-slate-700 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
           >
             <ArrowDownToLine size={12} /> Exporter CSV

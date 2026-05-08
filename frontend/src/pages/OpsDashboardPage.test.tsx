@@ -6,8 +6,19 @@ import {
   OpsDashboardSummary,
   OpsMultiTenantSummaryResponse,
 } from '../api/ops.api';
+import {
+  PILOT_OPS_DEMO_TENANTS,
+  buildPilotOpsCriticalResolvedSummary,
+  buildPilotOpsCriticalSummary,
+  buildPilotOpsDemoMultiTenantSummary,
+  pilotOpsCriticalRunbook,
+} from '../api/__mocks__/ops-pilot-demo.mock';
 import { renderWithQueryClient } from '../test/render';
 import { OpsDashboardPage } from './OpsDashboardPage';
+
+const authMock = vi.hoisted(() => ({
+  impersonatedTenantId: 'tenant-a',
+}));
 
 vi.mock('../api/ops.api', async () => {
   const actual = await vi.importActual<typeof import('../api/ops.api')>(
@@ -34,7 +45,7 @@ vi.mock('../api/ops.api', async () => {
 
 vi.mock('../store/useAuth', () => ({
   useAuth: () => ({
-    impersonatedTenantId: 'tenant-a',
+    impersonatedTenantId: authMock.impersonatedTenantId,
   }),
 }));
 
@@ -441,6 +452,7 @@ const mockTransitionActionCenterItem = vi.mocked(opsApi.transitionActionCenterIt
 const mockResolveActionCenterItem = vi.mocked(opsApi.resolveActionCenterItem);
 
 beforeEach(() => {
+  authMock.impersonatedTenantId = 'tenant-a';
   mockMultiTenantSummary.mockResolvedValue(buildMultiTenantSummary());
 });
 
@@ -468,7 +480,7 @@ describe('OpsDashboardPage', () => {
       screen.getByText('ops-notification-proof:tenant-a:alert:12'),
     ).toBeInTheDocument();
     expect(screen.getByText(/rappel 1/i)).toBeInTheDocument();
-    expect(screen.getByText(/quiet hours:/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/heures calmes/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText('Action-center')).not.toHaveLength(0);
     expect(screen.getByText('SLO API critique')).toBeInTheDocument();
     expect(screen.getByText('Runbook ouvert')).toBeInTheDocument();
@@ -483,7 +495,7 @@ describe('OpsDashboardPage', () => {
       screen.getByText('Actual 45minutes is within warning threshold 60minutes.'),
     ).toBeInTheDocument();
     expect(screen.getByText('Routine success rate')).toBeInTheDocument();
-    expect(screen.getAllByText('FAILED')).not.toHaveLength(0);
+    expect(screen.getAllByText(/echec|échec/i)).not.toHaveLength(0);
     expect(screen.getAllByText('Backups')).not.toHaveLength(0);
     expect(screen.getByText('Publication refusée')).toBeInTheDocument();
     expect(screen.getByText('SMOKE')).toBeInTheDocument();
@@ -743,95 +755,44 @@ describe('OpsDashboardPage', () => {
     );
   });
 
-  it('couvre le parcours ops multi-tenant: détecter, comprendre, corriger et vérifier', async () => {
+  it('couvre une recette guidée ops: tenant critique, SLO en échec, action-center, runbook, résolution et audit', async () => {
     const user = userEvent.setup();
-    const correctedSummary = buildSummary({
-      status: 'OPERATIONAL',
-      statusLabel: 'Opérationnel',
-      alerts: [],
-      anomalies: [],
-      incidents: [],
-      actionCenter: {
-        available: true,
-        status: 'OK',
-        generatedAt: '2026-05-05T08:10:00.000Z',
-        total: 0,
-        items: [],
-      },
-      kpis: [
-        {
-          key: 'alerts',
-          label: 'Alertes ouvertes',
-          value: '0',
-          detail: 'Aucune alerte ouverte',
-          status: 'OK',
+    authMock.impersonatedTenantId = PILOT_OPS_DEMO_TENANTS.critical;
+    mockMultiTenantSummary.mockResolvedValue(
+      buildPilotOpsDemoMultiTenantSummary({
+        scope: {
+          tenantId: PILOT_OPS_DEMO_TENANTS.critical,
+          allTenants: false,
         },
-      ],
-    });
-    mockSummary.mockResolvedValueOnce(buildSummary()).mockResolvedValue(correctedSummary);
+      }),
+    );
+    const correctedSummary = buildPilotOpsCriticalResolvedSummary(buildSummary());
+    mockSummary
+      .mockResolvedValueOnce(buildPilotOpsCriticalSummary(buildSummary()))
+      .mockResolvedValue(correctedSummary);
     mockResolveActionCenterItem.mockResolvedValue({});
-    mockGetRunbook.mockResolvedValue({
-      id: 'alert-12-runbook',
-      generatedAt: '2026-05-05T08:07:00.000Z',
-      template: {
-        id: 7,
-        version: 3,
-        tenantId: 'tenant-a',
-        service: 'api',
-        type: 'SLO',
-      },
-      reference: {
-        sourceType: 'ALERT',
-        id: 12,
-        tenantId: 'tenant-a',
-        title: 'SLO API critique',
-        status: 'OPEN',
-        severity: 'CRITICAL',
-        occurredAt: '2026-05-05T08:01:00.000Z',
-        source: 'observability',
-        sourceReference: 'slo:api:p95',
-      },
-      requiredPermissions: [
-        {
-          role: 'Ops',
-          permission: 'operations:write',
-          reason: 'Résoudre après retour nominal documenté.',
-        },
-      ],
-      why: 'Le tenant A concentre une violation SLO critique.',
-      next: {
-        why: 'Une preuve de retour nominal est nécessaire.',
-        whatToDoNext: 'Assigner, corriger puis résoudre l’item.',
-        priority: 'CRITICAL',
-        recommendedActionId: 'resolve-alert',
-        waitingOn: ['evidence'],
-      },
-      steps: [
-        {
-          order: 1,
-          title: 'Comprendre le blocage SLO',
-          why: 'Identifier la cause de la dégradation.',
-          instruction: 'Comparer la valeur observée au seuil.',
-          requiredRole: 'Ops',
-          requiredPermission: 'operations:read',
-        },
-      ],
-      checks: [],
-      actions: [],
-      expectedEvidence: [
-        {
-          label: 'Preuve retour nominal',
-          expected: 'Lien monitoring ou ticket incident',
-          requiredFor: ['resolve-alert'],
-        },
-      ],
-    });
+    mockGetRunbook.mockResolvedValue(pilotOpsCriticalRunbook);
 
     renderWithQueryClient(<OpsDashboardPage />);
 
-    expect(await screen.findByText('tenant-b')).toBeInTheDocument();
-    expect(screen.getByText('SLO API critique')).toBeInTheDocument();
-    expect(screen.getByText('Open alert age')).toBeInTheDocument();
+    expect(await screen.findByText('HGD-DOUALA-REA')).toBeInTheDocument();
+    expect(screen.getByText('HGD-DOUALA-URGENCES')).toBeInTheDocument();
+    expect(screen.getAllByText(/critique/i).length).toBeGreaterThan(0);
+    expect(
+      screen.getAllByText('SLO API p95 critique réanimation').length,
+    ).toBeGreaterThan(0);
+    expect(screen.getByText('Résolution alerte critique')).toBeInTheDocument();
+    expect(screen.getByText('47min')).toBeInTheDocument();
+    expect(screen.getAllByText(/echec|échec/i).length).toBeGreaterThan(0);
+    expect(
+      screen.getByText(/Actual 47minutes breaches failed threshold 30minutes/),
+    ).toBeInTheDocument();
+    expect(screen.getByText('Incident SLO API réanimation')).toBeInTheDocument();
+    expect(screen.getByText(/Capture Grafana p95 < 500ms/)).toBeInTheDocument();
+    expect(screen.getByText(/Mitigation cache appliquée/)).toBeInTheDocument();
+    expect(mockMultiTenantSummary).toHaveBeenCalledWith({
+      tenantId: 'HGD-DOUALA-REA',
+    });
 
     const actionCenter = screen
       .getByRole('heading', { name: 'Action-center' })
@@ -842,13 +803,21 @@ describe('OpsDashboardPage', () => {
     await waitFor(() =>
       expect(mockGetRunbook).toHaveBeenCalledWith(
         expect.objectContaining({ entity: 'OperationalAlert', id: 12 }),
-        { tenantId: 'tenant-a' },
+        { tenantId: 'HGD-DOUALA-REA' },
       ),
     );
 
     await user.type(
       within(actionCenter).getByRole('textbox', { name: /résumé/i }),
-      'Correctif appliqué et monitoring nominal.',
+      'Mitigation cache validée, p95 nominal et audit chain OK.',
+    );
+    await user.type(
+      within(actionCenter).getByLabelText(/preuve url/i),
+      'https://grafana.example.test/d/ops-p95?tenant=HGD-DOUALA-REA',
+    );
+    await user.type(
+      within(actionCenter).getByLabelText(/libellé preuve/i),
+      'Grafana p95 nominal + audit chain validée',
     );
     await user.click(
       within(actionCenter).getByRole('button', { name: /^résoudre$/i }),
@@ -859,13 +828,19 @@ describe('OpsDashboardPage', () => {
         'operational-alert-12',
         expect.objectContaining({
           status: 'RESOLVED',
-          summary: 'Correctif appliqué et monitoring nominal.',
+          summary: 'Mitigation cache validée, p95 nominal et audit chain OK.',
+          evidenceUrl:
+            'https://grafana.example.test/d/ops-p95?tenant=HGD-DOUALA-REA',
+          evidenceLabel: 'Grafana p95 nominal + audit chain validée',
         }),
-        { tenantId: 'tenant-a' },
+        { tenantId: 'HGD-DOUALA-REA' },
       ),
     );
     await waitFor(() => expect(mockSummary).toHaveBeenCalledTimes(2));
     expect(await screen.findByText('Statut global: Opérationnel')).toBeInTheDocument();
+    expect(screen.getByText('Résolution alerte critique')).toBeInTheDocument();
+    expect(screen.getByText('12min')).toBeInTheDocument();
+    expect(screen.getByText('L’alerte critique a été résolue dans la fenêtre SLO.')).toBeInTheDocument();
     expect(screen.getAllByText('Aucune alerte ouverte').length).toBeGreaterThan(0);
   });
 
@@ -993,6 +968,7 @@ describe('OpsDashboardPage', () => {
           failedNotifications: 0,
           entries: [],
         },
+        sla: [],
       }),
     );
 
@@ -1002,8 +978,9 @@ describe('OpsDashboardPage', () => {
     expect(anomalies).toBeInTheDocument();
     expect(screen.getByText('Aucune alerte ouverte')).toBeInTheDocument();
     expect(screen.getByText('Aucune anomalie active')).toBeInTheDocument();
+    expect(screen.getByText('Aucun SLO actif')).toBeInTheDocument();
     const incidents = screen.getByText('Incidents').closest('section');
     expect(incidents).not.toBeNull();
-    expect(within(incidents as HTMLElement).getByText(/aucun incident/i)).toBeInTheDocument();
+    expect(within(incidents as HTMLElement).getAllByText(/aucun incident/i).length).toBeGreaterThan(0);
   });
 });

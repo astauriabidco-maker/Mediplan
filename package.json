@@ -76,6 +76,8 @@
     "production:decision": "node scripts/production-decision-final.mjs --dry-run",
     "production:evidence-pack": "node scripts/production-decision-evidence-pack.mjs",
     "ci:product:verify": "node scripts/ci-product-verify.mjs",
+    "sprint30:phase6": "npm --prefix frontend run test -- --run src/api/ops.contract.test.ts src/api/ops.api.test.ts src/api/queryKeys.test.ts src/pages/OpsDashboardPage.test.tsx src/pages/AuditLogPage.test.tsx && npm --prefix frontend run build && git diff --check",
+    "sprint31:phase5": "npm --prefix frontend run test -- --run src/api/__mocks__/ops-pilot-demo.mock.test.ts src/api/ops.contract.test.ts src/api/ops.api.test.ts src/api/queryKeys.test.ts src/pages/OpsDashboardPage.test.tsx src/pages/AuditLogPage.test.tsx && npm --prefix frontend run build && git diff --check",
     "ci:frontend": "npm run frontend:build && npm run frontend:budget:check && npm run frontend:lint && npm run frontend:test && npm run frontend:audit && npm run frontend:smoke:routes",
     "ci:product": "npm run ci:frontend && npm run ci:quality",
     "seed:hgd": "ts-node -r tsconfig-paths/register seed-hgd.ts",
