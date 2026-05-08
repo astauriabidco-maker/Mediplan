@@ -111,6 +111,66 @@ const readiness = {
   },
 };
 
+const slo = {
+  tenantId: 'tenant-a',
+  generatedAt: '2026-05-05T08:06:00.000Z',
+  period: {
+    from: '2026-05-01T00:00:00.000Z',
+    to: '2026-05-07T00:00:00.000Z',
+  },
+  status: 'FAILED',
+  objectives: {
+    alert_resolution_delay: {
+      id: 'alert_resolution_delay',
+      label: 'Alert resolution delay',
+      status: 'PASSED',
+      actual: { value: 12, unit: 'minutes', sampleSize: 2 },
+      thresholds: { pass: 30, warning: 60, unit: 'minutes', direction: 'lte' },
+      reason: 'Actual 12minutes meets target <= 30minutes.',
+    },
+    open_alert_age: {
+      id: 'open_alert_age',
+      label: 'Open alert age',
+      status: 'WARNING',
+      actual: { value: 45, unit: 'minutes', sampleSize: 1 },
+      thresholds: { pass: 30, warning: 60, unit: 'minutes', direction: 'lte' },
+      reason: 'Actual 45minutes is within warning threshold 60minutes.',
+    },
+    incident_mttr: {
+      id: 'incident_mttr',
+      label: 'Incident MTTR',
+      status: 'PASSED',
+      actual: { value: null, unit: 'minutes', sampleSize: 0 },
+      thresholds: { pass: 120, warning: 240, unit: 'minutes', direction: 'lte' },
+      reason: 'No resolved or closed incident during the period.',
+    },
+    backup_freshness: {
+      id: 'backup_freshness',
+      label: 'Backup freshness',
+      status: 'FAILED',
+      actual: { value: 30, unit: 'hours', sampleSize: 1 },
+      thresholds: { pass: 24, warning: 48, unit: 'hours', direction: 'lte' },
+      reason: 'Actual 30hours breaches failed threshold 48hours.',
+    },
+    routine_success_rate: {
+      id: 'routine_success_rate',
+      label: 'Routine success rate',
+      status: 'FAILED',
+      actual: { value: 50, unit: 'percent', sampleSize: 2 },
+      thresholds: { pass: 95, warning: 80, unit: 'percent', direction: 'gte' },
+      reason: 'Actual 50percent breaches failed threshold 80percent.',
+    },
+    notification_delivery: {
+      id: 'notification_delivery',
+      label: 'Notification delivery',
+      status: 'FAILED',
+      actual: { value: 0, unit: 'percent', sampleSize: 1 },
+      thresholds: { pass: 99, warning: 95, unit: 'percent', direction: 'gte' },
+      reason: 'Actual 0percent breaches failed threshold 95percent.',
+    },
+  },
+} as const;
+
 describe('opsApi', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -206,6 +266,58 @@ describe('opsApi', () => {
           ],
         });
       }
+      if (url === '/api/ops/journal') {
+        return Promise.resolve({
+          data: [
+            {
+              id: 21,
+              tenantId: 'tenant-a',
+              type: 'NOTIFICATION',
+              status: 'RESOLVED',
+              severity: 'HIGH',
+              title: 'Notification ops: SLO API critique',
+              description: 'Une alerte SLO a été envoyée.',
+              occurredAt: '2026-05-05T08:02:00.000Z',
+              resolvedAt: '2026-05-05T08:05:00.000Z',
+              relatedReference: 'operational-alert:12',
+              metadata: {
+                eventType: 'ALERT',
+                notificationStatus: 'ACKNOWLEDGED',
+                channels: ['WEBHOOK', 'SLACK'],
+                attempts: [
+                  {
+                    channel: 'SLACK',
+                    status: 'SENT',
+                    message: 'Notification delivered',
+                  },
+                ],
+                notificationProof: {
+                  proofId: 'ops-notification-proof:tenant-a:alert:12',
+                  generatedAt: '2026-05-05T08:02:00.000Z',
+                },
+                acknowledgement: {
+                  proofId: 'ops-notification-proof:tenant-a:alert:12',
+                  acknowledgedAt: '2026-05-05T08:05:00.000Z',
+                  acknowledgedById: 42,
+                },
+                reminder: {
+                  isReminder: true,
+                  reminderCount: 1,
+                  nextReminderAt: '2026-05-05T10:02:00.000Z',
+                },
+                escalationLevel: 2,
+                notificationPolicy: {
+                  quietHours: {
+                    start: '22:00',
+                    end: '06:00',
+                    timezone: 'local',
+                  },
+                },
+              },
+            },
+          ],
+        });
+      }
       if (url === '/api/ops/action-center') {
         return Promise.resolve({
           data: {
@@ -238,6 +350,34 @@ describe('opsApi', () => {
             ],
           },
         });
+      }
+      if (url === '/api/ops/journal') {
+        return Promise.resolve({
+          data: [
+            {
+              id: 31,
+              tenantId: 'tenant-a',
+              type: 'NOTIFICATION',
+              status: 'OPEN',
+              severity: 'HIGH',
+              title: 'Notification alerte haute',
+              description: 'Une notification doit être acquittée.',
+              occurredAt: '2026-05-05T08:02:00.000Z',
+              resolvedAt: null,
+              relatedReference: 'alert:12',
+              evidenceUrl: null,
+              evidenceLabel: null,
+              metadata: {
+                notificationStatus: 'PENDING',
+                channels: ['EMAIL'],
+                attempts: [{ channel: 'EMAIL', status: 'SENT' }],
+              },
+            },
+          ],
+        });
+      }
+      if (url === '/api/ops/slo') {
+        return Promise.resolve({ data: slo });
       }
       if (url === '/api/planning/compliance/reports') {
         return Promise.resolve({
@@ -299,10 +439,35 @@ describe('opsApi', () => {
         tenantId: 'tenant-a',
       },
     });
+    expect(axiosMock.get).toHaveBeenCalledWith('/api/ops/journal', {
+      params: {
+        tenantId: 'tenant-a',
+        type: 'NOTIFICATION',
+        from: '2026-05-01T00:00:00.000Z',
+        to: '2026-05-07T00:00:00.000Z',
+        limit: 8,
+      },
+    });
+    expect(axiosMock.get).toHaveBeenCalledWith('/api/ops/journal', {
+      params: {
+        tenantId: 'tenant-a',
+        type: 'NOTIFICATION',
+        from: '2026-05-01T00:00:00.000Z',
+        to: '2026-05-07T00:00:00.000Z',
+        limit: 8,
+      },
+    });
     expect(axiosMock.get).toHaveBeenCalledWith('/api/ops/action-center', {
       params: {
         tenantId: 'tenant-a',
         limit: 8,
+      },
+    });
+    expect(axiosMock.get).toHaveBeenCalledWith('/api/ops/slo', {
+      params: {
+        tenantId: 'tenant-a',
+        from: '2026-05-01T00:00:00.000Z',
+        to: '2026-05-07T00:00:00.000Z',
       },
     });
     expect(axiosMock.get).toHaveBeenCalledWith(
@@ -361,7 +526,39 @@ describe('opsApi', () => {
       ]),
     );
     expect(summary.notifications.status).toBe('CRITICAL');
+    expect(summary.notifications.acknowledgedNotifications).toBe(1);
+    expect(summary.notifications.reminders).toBe(1);
+    expect(summary.notifications.entries).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 21,
+          proofId: 'ops-notification-proof:tenant-a:alert:12',
+          acknowledgedById: 42,
+          escalationLevel: 2,
+        }),
+      ]),
+    );
     expect(summary.backups.exportable).toBe(true);
+    expect(summary.sla).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'open_alert_age',
+          current: '45min',
+          target: '<= 30min',
+          status: 'WARNING',
+          sloStatus: 'WARNING',
+          reason: expect.stringContaining('warning threshold'),
+          period: slo.period,
+        }),
+        expect.objectContaining({
+          id: 'routine_success_rate',
+          current: '50%',
+          target: '>= 95%',
+          status: 'CRITICAL',
+          sloStatus: 'FAILED',
+        }),
+      ]),
+    );
     expect(summary.actionCenter).toEqual(
       expect.objectContaining({
         available: true,
@@ -374,6 +571,74 @@ describe('opsApi', () => {
     );
     expect(summary.routines.items.map((item) => item.id)).toContain(
       'ops-routines',
+    );
+  });
+
+  it('consomme le résumé cockpit multi-tenant', async () => {
+    axiosMock.get.mockImplementation((url: string) => {
+      if (url === '/api/ops/multi-tenant-summary') {
+        return Promise.resolve({
+          data: {
+            generatedAt: '2026-05-05T08:08:00.000Z',
+            scope: { tenantId: null, allTenants: true },
+            totals: {
+              tenants: 2,
+              criticalTenants: 1,
+              warningTenants: 1,
+              openAlerts: 5,
+              activeIncidents: 2,
+              failedRoutines: 1,
+              actionCenterItems: 4,
+            },
+            tenants: [
+              {
+                tenantId: 'tenant-a',
+                status: 'CRITICAL',
+                alerts: {
+                  open: 3,
+                  critical: 1,
+                  bySeverity: { CRITICAL: 1 },
+                },
+                incidents: { active: 1, critical: 1, escalated: 1 },
+                routines: {
+                  failed: 1,
+                  lastFailedAt: '2026-05-05T07:55:00.000Z',
+                },
+                lastBackup: {
+                  routine: 'tenant-backup-export',
+                  status: 'SUCCESS',
+                  startedAt: '2026-05-05T06:00:00.000Z',
+                  finishedAt: '2026-05-05T06:03:00.000Z',
+                  artifactUrl: 's3://backup/tenant-a.json',
+                  error: null,
+                },
+                actionCenter: {
+                  total: 3,
+                  critical: 1,
+                  topItems: [],
+                },
+              },
+            ],
+          },
+        });
+      }
+      throw new Error(`Unexpected URL ${url}`);
+    });
+
+    const summary = await opsApi.multiTenantSummary({ tenantId: 'tenant-a' });
+
+    expect(axiosMock.get).toHaveBeenCalledWith(
+      '/api/ops/multi-tenant-summary',
+      {
+        params: { tenantId: 'tenant-a' },
+      },
+    );
+    expect(summary.totals.actionCenterItems).toBe(4);
+    expect(summary.tenants[0]).toEqual(
+      expect.objectContaining({
+        tenantId: 'tenant-a',
+        status: 'CRITICAL',
+      }),
     );
   });
 
@@ -421,6 +686,36 @@ describe('opsApi', () => {
       { entity: 'OperationalAlert', id: 12 },
       { tenantId: 'tenant-a' },
     );
+    await opsApi.assignActionCenterItem(
+      'operational-alert-12',
+      { assignedToId: 88, comment: 'Pris en charge' },
+      { tenantId: 'tenant-a' },
+    );
+    await opsApi.commentActionCenterItem(
+      'operational-alert-12',
+      { comment: 'Retour monitoring OK' },
+      { tenantId: 'tenant-a' },
+    );
+    await opsApi.prioritizeActionCenterItem(
+      'operational-alert-12',
+      { priority: 'HIGH', comment: 'SLO sensible' },
+      { tenantId: 'tenant-a' },
+    );
+    await opsApi.transitionActionCenterItem(
+      'operational-alert-12',
+      { status: 'IN_PROGRESS', comment: 'Analyse lancée' },
+      { tenantId: 'tenant-a' },
+    );
+    await opsApi.resolveActionCenterItem(
+      'operational-alert-12',
+      {
+        status: 'RESOLVED',
+        summary: 'Retour nominal confirmé',
+        evidenceUrl: 'https://ci.example.test/evidence',
+        evidenceLabel: 'Monitoring P95',
+      },
+      { tenantId: 'tenant-a' },
+    );
 
     expect(axiosMock.patch).toHaveBeenCalledWith(
       '/api/planning/alerts/44/resolve',
@@ -452,5 +747,35 @@ describe('opsApi', () => {
         tenantId: 'tenant-a',
       },
     });
+    expect(axiosMock.patch).toHaveBeenCalledWith(
+      '/api/ops/action-center/operational-alert-12/assign',
+      { assignedToId: 88, comment: 'Pris en charge' },
+      { params: { tenantId: 'tenant-a' } },
+    );
+    expect(axiosMock.post).toHaveBeenCalledWith(
+      '/api/ops/action-center/operational-alert-12/comments',
+      { comment: 'Retour monitoring OK' },
+      { params: { tenantId: 'tenant-a' } },
+    );
+    expect(axiosMock.patch).toHaveBeenCalledWith(
+      '/api/ops/action-center/operational-alert-12/priority',
+      { priority: 'HIGH', comment: 'SLO sensible' },
+      { params: { tenantId: 'tenant-a' } },
+    );
+    expect(axiosMock.patch).toHaveBeenCalledWith(
+      '/api/ops/action-center/operational-alert-12/status',
+      { status: 'IN_PROGRESS', comment: 'Analyse lancée' },
+      { params: { tenantId: 'tenant-a' } },
+    );
+    expect(axiosMock.patch).toHaveBeenCalledWith(
+      '/api/ops/action-center/operational-alert-12/resolve',
+      {
+        status: 'RESOLVED',
+        summary: 'Retour nominal confirmé',
+        evidenceUrl: 'https://ci.example.test/evidence',
+        evidenceLabel: 'Monitoring P95',
+      },
+      { params: { tenantId: 'tenant-a' } },
+    );
   });
 });

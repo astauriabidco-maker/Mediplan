@@ -8,14 +8,44 @@ export interface AuditLog {
         nom: string;
         prenom: string;
         jobTitle: string;
-    };
-    action: 'CREATE' | 'UPDATE' | 'DELETE' | 'VALIDATE' | 'REJECT' | 'AUTO_GENERATE';
-    entityType: 'SHIFT' | 'LEAVE' | 'PLANNING';
+    } | null;
+    action: 'CREATE' | 'READ' | 'UPDATE' | 'DELETE' | 'VALIDATE' | 'REJECT' | 'AUTO_GENERATE';
+    entityType:
+        | 'SHIFT'
+        | 'LEAVE'
+        | 'PLANNING'
+        | 'AGENT'
+        | 'CONTRACT'
+        | 'PAYROLL'
+        | 'DOCUMENT'
+        | 'HOSPITAL_SERVICE'
+        | 'WORK_POLICY'
+        | 'OPERATION_INCIDENT'
+        | 'OPERATION_ALERT';
     entityId: string;
-    details: any;
+    details: unknown;
+    tenantId?: string;
+    chainSequence?: number | null;
+    eventHash?: string | null;
 }
 
-export const fetchAuditLogs = async (): Promise<AuditLog[]> => {
-    const response = await api.get<AuditLog[]>('/api/audit');
+export interface AuditLogFilters {
+    tenantId?: string;
+    actorId?: number;
+    action?: AuditLog['action'];
+    entityType?: AuditLog['entityType'];
+    entityId?: string;
+    detailAction?: string;
+    from?: string;
+    to?: string;
+    limit?: number;
+}
+
+export const fetchAuditLogs = async (
+    filters: AuditLogFilters = {},
+): Promise<AuditLog[]> => {
+    const response = await api.get<AuditLog[]>('/api/audit', {
+        params: filters,
+    });
     return response.data;
 };

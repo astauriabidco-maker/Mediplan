@@ -122,6 +122,17 @@ describe('queryKeys', () => {
     ]);
   });
 
+  it('groups ops multi-tenant cockpit by tenant scope', () => {
+    const params = { tenantId: 'tenant-a' };
+
+    expect(opsQueryKeys.dashboard.multiTenantSummary(params)).toEqual([
+      'ops',
+      'dashboard',
+      'multi-tenant',
+      params,
+    ]);
+  });
+
   it('invalidates resolution-sensitive manager and planning domains', async () => {
     const queryClient = {
       invalidateQueries: vi.fn().mockResolvedValue(undefined),

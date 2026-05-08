@@ -5,24 +5,32 @@ import {
   CheckCircle2,
   DatabaseBackup,
   ExternalLink,
+  Flag,
   Gauge,
   History,
+  MessageSquare,
   Pause,
   Play,
   RefreshCw,
   ScrollText,
   ServerCog,
   ShieldCheck,
+  UserCheck,
 } from 'lucide-react';
 import React from 'react';
 import {
   opsApi,
   OpsActionCenterItem,
+  OpsActionCenterPriority,
+  OpsActionCenterStatus,
   OpsAlert,
   OpsDashboardSummary,
+  OpsIncident,
+  OpsMultiTenantSummaryResponse,
   OpsRunbookDto,
   OpsSignalStatus,
   OpsStatus,
+  OpsTenantOperationalStatus,
 } from '../api/ops.api';
 import { opsQueryKeys, queryCacheProfiles } from '../api/queryKeys';
 import { ApiErrorState, EmptyState, PageSkeleton } from '../components/UIStates';
@@ -51,6 +59,14 @@ const priorityStatus = (priority: OpsActionCenterItem['priority']) => {
   return 'OK';
 };
 
+const tenantStatusToSignal = (
+  status: OpsTenantOperationalStatus,
+): OpsSignalStatus => {
+  if (status === 'OK') return 'OK';
+  if (status === 'WARNING') return 'WARNING';
+  return 'CRITICAL';
+};
+
 const formatDateTime = (value?: string | null) => {
   if (!value) return 'Non daté';
   return new Intl.DateTimeFormat('fr-FR', {
@@ -60,8 +76,35 @@ const formatDateTime = (value?: string | null) => {
 };
 
 const POLLING_INTERVALS = [15_000, 30_000, 60_000] as const;
+const ACTION_CENTER_PRIORITIES: OpsActionCenterPriority[] = [
+  'LOW',
+  'MEDIUM',
+  'HIGH',
+  'CRITICAL',
+];
+const ACTION_CENTER_STATUSES: OpsActionCenterStatus[] = [
+  'OPEN',
+  'IN_PROGRESS',
+  'ESCALATED',
+  'WAITING_EVIDENCE',
+  'WAITING_DECISION',
+];
 
 const formatInterval = (value: number) => `${value / 1000}s`;
+
+const notificationStatusTone = (status: string): OpsSignalStatus => {
+  if (status === 'ACKNOWLEDGED' || status === 'SENT' || status === 'DRY_RUN') {
+    return 'OK';
+  }
+  if (status === 'FAILED' || status === 'PARTIAL') return 'CRITICAL';
+  if (status === 'THROTTLED' || status === 'PENDING') return 'WARNING';
+  return 'UNKNOWN';
+};
+
+type RunbookReferenceRequest = {
+  reference: { entity: 'OperationalAlert' | 'OperationIncident' | 'OperationsJournalEntry'; id: number };
+  origin: 'alerte' | 'incident' | 'action-center';
+};
 
 const buildDefaultPeriod = () => {
   const to = new Date();
@@ -115,6 +158,180 @@ const KpiStrip = ({ summary }: { summary: OpsDashboardSummary }) => (
   </section>
 );
 
+const MultiTenantCockpit = ({
+  summary,
+  isLoading,
+  isError,
+}: {
+  summary?: OpsMultiTenantSummaryResponse;
+  isLoading: boolean;
+  isError: boolean;
+}) => (
+  <section className="space-y-4">
+    <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+      <div>
+        <div className="flex items-center gap-2">
+          <ServerCog size={18} className="text-cyan-300" />
+          <h2 className="text-lg font-bold text-white">
+            Cockpit multi-tenant
+          </h2>
+        </div>
+        <p className="mt-1 text-sm text-slate-500">
+          {summary
+            ? `${summary.totals.tenants} tenant${summary.totals.tenants > 1 ? 's' : ''} · ${formatDateTime(summary.generatedAt)}`
+            : 'Synthèse plateforme en cours de chargement.'}
+        </p>
+      </div>
+      {summary && (
+        <div className="flex flex-wrap gap-2">
+          <StatusBadge
+            status={summary.totals.criticalTenants > 0 ? 'CRITICAL' : 'OK'}
+            label={`${summary.totals.criticalTenants} critique`}
+          />
+          <StatusBadge
+            status={summary.totals.warningTenants > 0 ? 'WARNING' : 'OK'}
+            label={`${summary.totals.warningTenants} à surveiller`}
+          />
+        </div>
+      )}
+    </div>
+
+    {isLoading ? (
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
+        {[0, 1, 2].map((item) => (
+          <div
+            key={item}
+            className="h-44 animate-pulse rounded-lg border border-slate-800 bg-slate-900"
+          />
+        ))}
+      </div>
+    ) : isError ? (
+      <EmptyState
+        title="Cockpit multi-tenant indisponible"
+        message="Le résumé plateforme ne répond pas pour le périmètre courant."
+        icon={AlertTriangle}
+        tone="amber"
+        compact
+      />
+    ) : !summary || summary.tenants.length === 0 ? (
+      <EmptyState
+        title="Aucun tenant actif"
+        message="Le cockpit multi-tenant ne remonte aucun périmètre opérationnel."
+        icon={CheckCircle2}
+        tone="emerald"
+        compact
+      />
+    ) : (
+      <>
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+          <article className="rounded-lg border border-slate-800 bg-slate-950/50 p-4">
+            <p className="text-xs font-bold uppercase tracking-wide text-slate-500">
+              Alertes critiques
+            </p>
+            <p className="mt-2 text-2xl font-black text-white">
+              {summary.tenants.reduce(
+                (total, tenant) => total + tenant.alerts.critical,
+                0,
+              )}
+            </p>
+          </article>
+          <article className="rounded-lg border border-slate-800 bg-slate-950/50 p-4">
+            <p className="text-xs font-bold uppercase tracking-wide text-slate-500">
+              Incidents actifs
+            </p>
+            <p className="mt-2 text-2xl font-black text-white">
+              {summary.totals.activeIncidents}
+            </p>
+          </article>
+          <article className="rounded-lg border border-slate-800 bg-slate-950/50 p-4">
+            <p className="text-xs font-bold uppercase tracking-wide text-slate-500">
+              Routines échouées
+            </p>
+            <p className="mt-2 text-2xl font-black text-white">
+              {summary.totals.failedRoutines}
+            </p>
+          </article>
+          <article className="rounded-lg border border-slate-800 bg-slate-950/50 p-4">
+            <p className="text-xs font-bold uppercase tracking-wide text-slate-500">
+              Action-center
+            </p>
+            <p className="mt-2 text-2xl font-black text-white">
+              {summary.totals.actionCenterItems}
+            </p>
+          </article>
+        </div>
+
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 xl:grid-cols-3">
+          {summary.tenants.map((tenant) => (
+            <article
+              key={tenant.tenantId}
+              className="rounded-lg border border-slate-800 bg-slate-900 p-4"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h3 className="font-black text-white">{tenant.tenantId}</h3>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Dernier backup:{' '}
+                    {tenant.lastBackup
+                      ? `${tenant.lastBackup.routine} · ${formatDateTime(
+                          tenant.lastBackup.finishedAt ??
+                            tenant.lastBackup.startedAt,
+                        )}`
+                      : 'Aucun backup connu'}
+                  </p>
+                </div>
+                <StatusBadge
+                  status={tenantStatusToSignal(tenant.status)}
+                  label={tenant.status}
+                />
+              </div>
+
+              <dl className="mt-4 grid grid-cols-2 gap-2">
+                <div className="rounded-md bg-slate-950 px-3 py-2">
+                  <dt className="text-xs text-slate-500">Alertes critiques</dt>
+                  <dd className="mt-1 text-sm font-black text-white">
+                    {tenant.alerts.critical}/{tenant.alerts.open}
+                  </dd>
+                </div>
+                <div className="rounded-md bg-slate-950 px-3 py-2">
+                  <dt className="text-xs text-slate-500">Incidents actifs</dt>
+                  <dd className="mt-1 text-sm font-black text-white">
+                    {tenant.incidents.active}
+                  </dd>
+                </div>
+                <div className="rounded-md bg-slate-950 px-3 py-2">
+                  <dt className="text-xs text-slate-500">Routines échouées</dt>
+                  <dd className="mt-1 text-sm font-black text-white">
+                    {tenant.routines.failed}
+                  </dd>
+                </div>
+                <div className="rounded-md bg-slate-950 px-3 py-2">
+                  <dt className="text-xs text-slate-500">Action-center</dt>
+                  <dd className="mt-1 text-sm font-black text-white">
+                    {tenant.actionCenter.total}
+                  </dd>
+                </div>
+              </dl>
+
+              {tenant.lastBackup?.error && (
+                <p className="mt-3 text-xs text-rose-200">
+                  Backup: {tenant.lastBackup.error}
+                </p>
+              )}
+              {tenant.routines.lastFailedAt && (
+                <p className="mt-3 text-xs text-slate-500">
+                  Dernière routine échouée:{' '}
+                  {formatDateTime(tenant.routines.lastFailedAt)}
+                </p>
+              )}
+            </article>
+          ))}
+        </div>
+      </>
+    )}
+  </section>
+);
+
 const NotificationPanel = ({ summary }: { summary: OpsDashboardSummary }) => (
   <section className="rounded-lg border border-slate-800 bg-slate-950/50 p-5">
     <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
@@ -129,31 +346,25 @@ const NotificationPanel = ({ summary }: { summary: OpsDashboardSummary }) => (
         label={statusLabel[summary.notifications.status]}
       />
     </div>
-    <div className="mt-4 grid grid-cols-3 gap-2">
-      <div className="rounded-md border border-slate-800 bg-slate-900 p-3">
-        <p className="text-xs font-bold uppercase tracking-wide text-slate-500">
-          État
-        </p>
-        <p className="mt-2 text-sm font-bold text-white">
-          {summary.notifications.label}
-        </p>
-      </div>
-      <div className="rounded-md border border-slate-800 bg-slate-900 p-3">
-        <p className="text-xs font-bold uppercase tracking-wide text-slate-500">
-          À traiter
-        </p>
-        <p className="mt-2 text-sm font-black text-white">
-          {summary.notifications.pendingAlerts}
-        </p>
-      </div>
-      <div className="rounded-md border border-slate-800 bg-slate-900 p-3">
-        <p className="text-xs font-bold uppercase tracking-wide text-slate-500">
-          Escalades
-        </p>
-        <p className="mt-2 text-sm font-black text-white">
-          {summary.notifications.escalatedIncidents}
-        </p>
-      </div>
+    <div className="mt-4 grid grid-cols-2 gap-2 lg:grid-cols-6">
+      {[
+        ['État', summary.notifications.label],
+        ['À traiter', String(summary.notifications.pendingAlerts)],
+        ['Ack', String(summary.notifications.acknowledgedNotifications)],
+        ['Rappels', String(summary.notifications.reminders)],
+        ['Quiet hours', String(summary.notifications.quietHoursDeferred)],
+        ['Escalades', String(summary.notifications.escalatedIncidents)],
+      ].map(([label, value]) => (
+        <div
+          key={label}
+          className="rounded-md border border-slate-800 bg-slate-900 p-3"
+        >
+          <p className="text-xs font-bold uppercase tracking-wide text-slate-500">
+            {label}
+          </p>
+          <p className="mt-2 text-sm font-black text-white">{value}</p>
+        </div>
+      ))}
     </div>
     <p className="mt-3 text-sm text-slate-400">
       {summary.notifications.detail}
@@ -161,27 +372,147 @@ const NotificationPanel = ({ summary }: { summary: OpsDashboardSummary }) => (
     <p className="mt-1 text-xs text-slate-500">
       Dernier signal: {formatDateTime(summary.notifications.lastActivityAt)}
     </p>
+
+    {summary.notifications.entries.length === 0 ? (
+      <p className="mt-4 rounded-md border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-slate-500">
+        Aucune preuve de notification récente dans le journal ops.
+      </p>
+    ) : (
+      <ol className="mt-4 space-y-3">
+        {summary.notifications.entries.map((entry) => (
+          <li
+            key={entry.id}
+            className="rounded-md border border-slate-800 bg-slate-900 px-3 py-3"
+          >
+            <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+              <div>
+                <p className="text-sm font-bold text-white">{entry.title}</p>
+                <p className="mt-1 text-xs text-slate-500">
+                  Journal #{entry.id} · {entry.eventType} ·{' '}
+                  {formatDateTime(entry.occurredAt)}
+                </p>
+              </div>
+              <StatusBadge
+                status={notificationStatusTone(entry.status)}
+                label={entry.status}
+              />
+            </div>
+
+            <dl className="mt-3 grid grid-cols-1 gap-2 text-xs md:grid-cols-2">
+              <div>
+                <dt className="font-bold uppercase tracking-wide text-slate-500">
+                  Preuve
+                </dt>
+                <dd className="mt-1 break-all text-slate-300">
+                  {entry.proofId ?? 'Non renseignée'}
+                </dd>
+              </div>
+              <div>
+                <dt className="font-bold uppercase tracking-wide text-slate-500">
+                  Canaux
+                </dt>
+                <dd className="mt-1 text-slate-300">
+                  {entry.channels.length > 0
+                    ? entry.channels.join(' · ')
+                    : 'Non renseignés'}
+                </dd>
+              </div>
+              <div>
+                <dt className="font-bold uppercase tracking-wide text-slate-500">
+                  Ack
+                </dt>
+                <dd className="mt-1 text-slate-300">
+                  {entry.acknowledgedAt
+                    ? `${formatDateTime(entry.acknowledgedAt)} · acteur ${entry.acknowledgedById ?? 'N/A'}`
+                    : 'En attente'}
+                </dd>
+              </div>
+              <div>
+                <dt className="font-bold uppercase tracking-wide text-slate-500">
+                  Rappel / escalade
+                </dt>
+                <dd className="mt-1 text-slate-300">
+                  {entry.reminder.reminderCount > 0 || entry.reminder.isReminder
+                    ? `Rappel ${entry.reminder.reminderCount}`
+                    : 'Aucun rappel'}{' '}
+                  · Niveau {entry.escalationLevel ?? 'N/A'}
+                </dd>
+              </div>
+            </dl>
+
+            {(entry.quietHours || entry.suppressedUntil) && (
+              <p className="mt-3 text-xs text-amber-200">
+                Quiet hours:{' '}
+                {entry.quietHours
+                  ? `${entry.quietHours.start}-${entry.quietHours.end}`
+                  : 'config non détaillée'}{' '}
+                · reprise {formatDateTime(entry.suppressedUntil)}
+              </p>
+            )}
+
+            {entry.attempts.length > 0 && (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {entry.attempts.slice(0, 4).map((attempt, index) => (
+                  <span
+                    key={`${entry.id}-${attempt.channel}-${index}`}
+                    className="rounded bg-slate-950 px-2 py-1 text-xs text-slate-300"
+                  >
+                    {attempt.channel}: {attempt.status}
+                  </span>
+                ))}
+              </div>
+            )}
+          </li>
+        ))}
+      </ol>
+    )}
   </section>
 );
 
 const AlertActionButton = ({
   children,
   disabled,
+  icon,
   onClick,
 }: {
   children: React.ReactNode;
   disabled?: boolean;
+  icon?: React.ReactNode;
   onClick: () => void;
 }) => (
   <button
     type="button"
     onClick={onClick}
     disabled={disabled}
-    className="inline-flex items-center justify-center rounded-md border border-slate-700 bg-slate-950 px-2.5 py-1.5 text-xs font-bold text-slate-100 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+    className="inline-flex min-h-8 items-center justify-center gap-1.5 rounded-md border border-slate-700 bg-slate-950 px-2.5 py-1.5 text-xs font-bold text-slate-100 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
   >
+    {icon}
     {children}
   </button>
 );
+
+const runbookReferenceFromAlert = (
+  alert: OpsAlert,
+): RunbookReferenceRequest | null =>
+  alert.sourceKind === 'OPERATIONAL_ALERT'
+    ? {
+        reference: { entity: 'OperationalAlert', id: alert.id },
+        origin: 'alerte',
+      }
+    : null;
+
+const runbookReferenceFromIncident = (
+  incident: OpsIncident,
+): RunbookReferenceRequest | null =>
+  incident.sourceIncidentId
+    ? {
+        reference: {
+          entity: 'OperationIncident',
+          id: incident.sourceIncidentId,
+        },
+        origin: 'incident',
+      }
+    : null;
 
 const AlertsPanel = ({
   summary,
@@ -189,12 +520,14 @@ const AlertsPanel = ({
   onResolve,
   onRerunCheck,
   onOpenIncident,
+  onOpenRunbook,
 }: {
   summary: OpsDashboardSummary;
   isMutating: boolean;
   onResolve: (alert: OpsAlert) => void;
   onRerunCheck: (alert: OpsAlert) => void;
   onOpenIncident: (alert: OpsAlert) => void;
+  onOpenRunbook: (request: RunbookReferenceRequest) => void;
 }) => (
   <section className="space-y-3">
     <div className="flex items-center justify-between gap-3">
@@ -216,65 +549,76 @@ const AlertsPanel = ({
       />
     ) : (
       <ol className="space-y-3">
-        {summary.alerts.map((alert) => (
-          <li
-            key={alert.id}
-            className="rounded-lg border border-slate-800 bg-slate-900 p-4"
-          >
-            <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-              <div>
-                <p className="font-bold text-white">{alert.title}</p>
-                <p className="mt-1 text-sm text-slate-400">{alert.detail}</p>
-                <p className="mt-2 text-xs text-slate-500">
-                  {alert.ruleCode ?? alert.type ?? alert.source} ·{' '}
-                  {formatDateTime(alert.detectedAt)}
-                </p>
-              </div>
-              <div className="flex shrink-0 flex-wrap justify-end gap-2">
-                <StatusBadge
-                  status={
-                    alert.severity === 'HIGH'
-                      ? 'CRITICAL'
-                      : alert.severity === 'MEDIUM'
-                        ? 'WARNING'
-                        : 'OK'
-                  }
-                  label={alert.severity}
-                />
-                <StatusBadge
-                  status={
-                    alert.notificationStatus === 'PENDING' ? 'WARNING' : 'OK'
-                  }
-                  label={
-                    alert.notificationStatus === 'PENDING'
-                      ? 'Notification'
-                      : 'Acquittée'
-                  }
-                />
-              </div>
-            </div>
-            <div className="mt-3 flex flex-wrap gap-2">
-              <AlertActionButton
-                disabled={isMutating || !alert.actions.canResolve}
-                onClick={() => onResolve(alert)}
+        {summary.alerts.map((alert) => {
+            const runbookRequest = runbookReferenceFromAlert(alert);
+            return (
+              <li
+                key={`${alert.sourceKind}-${alert.id}`}
+                className="rounded-lg border border-slate-800 bg-slate-900 p-4"
               >
-                Résoudre alerte
-              </AlertActionButton>
-              <AlertActionButton
-                disabled={isMutating || !alert.actions.canRerunCheck}
-                onClick={() => onRerunCheck(alert)}
-              >
-                Relancer contrôle
-              </AlertActionButton>
-              <AlertActionButton
-                disabled={isMutating || !alert.actions.canOpenIncident}
-                onClick={() => onOpenIncident(alert)}
-              >
-                Ouvrir incident
-              </AlertActionButton>
-            </div>
-          </li>
-        ))}
+                <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                  <div>
+                    <p className="font-bold text-white">{alert.title}</p>
+                    <p className="mt-1 text-sm text-slate-400">{alert.detail}</p>
+                    <p className="mt-2 text-xs text-slate-500">
+                      {alert.ruleCode ?? alert.type ?? alert.source} ·{' '}
+                      {formatDateTime(alert.detectedAt)}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 flex-wrap justify-end gap-2">
+                    <StatusBadge
+                      status={
+                        alert.severity === 'HIGH'
+                          ? 'CRITICAL'
+                          : alert.severity === 'MEDIUM'
+                            ? 'WARNING'
+                            : 'OK'
+                      }
+                      label={alert.severity}
+                    />
+                    <StatusBadge
+                      status={
+                        alert.notificationStatus === 'PENDING' ? 'WARNING' : 'OK'
+                      }
+                      label={
+                        alert.notificationStatus === 'PENDING'
+                          ? 'Notification'
+                          : 'Acquittée'
+                      }
+                    />
+                  </div>
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {runbookRequest && (
+                    <AlertActionButton
+                      disabled={isMutating}
+                      onClick={() => onOpenRunbook(runbookRequest)}
+                    >
+                      Ouvrir runbook
+                    </AlertActionButton>
+                  )}
+                  <AlertActionButton
+                    disabled={isMutating || !alert.actions.canResolve}
+                    onClick={() => onResolve(alert)}
+                  >
+                    Résoudre alerte
+                  </AlertActionButton>
+                  <AlertActionButton
+                    disabled={isMutating || !alert.actions.canRerunCheck}
+                    onClick={() => onRerunCheck(alert)}
+                  >
+                    Relancer contrôle
+                  </AlertActionButton>
+                  <AlertActionButton
+                    disabled={isMutating || !alert.actions.canOpenIncident}
+                    onClick={() => onOpenIncident(alert)}
+                  >
+                    Ouvrir incident
+                  </AlertActionButton>
+                </div>
+              </li>
+            );
+          })}
       </ol>
     )}
   </section>
@@ -312,20 +656,66 @@ const RunbookPanel = ({
                 {runbook.reference.sourceType} #{runbook.reference.id} ·{' '}
                 {formatDateTime(runbook.generatedAt)}
               </p>
+              <p className="mt-1 text-xs text-slate-500">
+                Source: {runbook.reference.source ?? runbook.reference.sourceType}
+                {runbook.reference.sourceReference
+                  ? ` · ${runbook.reference.sourceReference}`
+                  : ''}
+              </p>
+              {runbook.template && (
+                <p className="mt-1 text-xs text-slate-500">
+                  Template #{runbook.template.id} · version{' '}
+                  {runbook.template.version}
+                  {runbook.template.service
+                    ? ` · service ${runbook.template.service}`
+                    : ''}
+                  {runbook.template.type ? ` · ${runbook.template.type}` : ''}
+                </p>
+              )}
             </div>
             <StatusBadge
               status={priorityStatus(runbook.next.priority)}
               label={runbook.next.priority}
             />
           </div>
+          <p className="mt-3 text-sm text-slate-400">{runbook.why}</p>
           <p className="mt-3 text-sm text-slate-300">
             {runbook.next.whatToDoNext}
           </p>
           <p className="mt-1 text-xs text-slate-500">{runbook.next.why}</p>
+          {runbook.next.waitingOn.length > 0 && (
+            <p className="mt-2 text-xs text-amber-200">
+              En attente: {runbook.next.waitingOn.join(' · ')}
+            </p>
+          )}
         </div>
 
+        {runbook.requiredPermissions &&
+          runbook.requiredPermissions.length > 0 && (
+            <div>
+              <h3 className="text-xs font-black uppercase tracking-wide text-slate-500">
+                Permissions
+              </h3>
+              <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
+                {runbook.requiredPermissions.map((permission) => (
+                  <div
+                    key={`${permission.role}-${permission.permission}`}
+                    className="rounded-md border border-slate-800 bg-slate-900 px-3 py-2"
+                  >
+                    <p className="text-xs font-bold text-white">
+                      {permission.role} · {permission.permission}
+                    </p>
+                    <p className="mt-1 text-xs text-slate-500">
+                      {permission.reason}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
         <ol className="space-y-2">
-          {runbook.steps.slice(0, 4).map((step) => (
+          {runbook.steps.map((step) => (
             <li
               key={step.order}
               className="rounded-md border border-slate-800 bg-slate-900 px-3 py-2"
@@ -333,34 +723,133 @@ const RunbookPanel = ({
               <p className="text-sm font-bold text-white">
                 {step.order}. {step.title}
               </p>
+              <p className="mt-1 text-xs text-slate-500">
+                {step.requiredRole} · {step.requiredPermission}
+              </p>
               <p className="mt-1 text-xs text-slate-400">
                 {step.instruction}
               </p>
+              <p className="mt-1 text-xs text-slate-500">{step.why}</p>
+              {step.checks && step.checks.length > 0 && (
+                <ul className="mt-2 space-y-1">
+                  {step.checks.map((check) => (
+                    <li key={check.id} className="text-xs text-slate-400">
+                      Contrôle: {check.label} · attendu: {check.expected}
+                      {check.blocking ? ' · bloquant' : ''}
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {step.evidence && step.evidence.length > 0 && (
+                <ul className="mt-2 space-y-1">
+                  {step.evidence.map((evidence) => (
+                    <li
+                      key={`${step.order}-${evidence.label}`}
+                      className="text-xs text-slate-400"
+                    >
+                      Preuve: {evidence.label} · {evidence.expected}
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {step.actions && step.actions.length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {step.actions.map((action) => (
+                    <span
+                      key={action.id}
+                      className={cn(
+                        'rounded border px-2 py-1 text-xs font-bold',
+                        action.enabled
+                          ? 'border-cyan-500/30 bg-cyan-500/10 text-cyan-100'
+                          : 'border-slate-700 bg-slate-950 text-slate-500',
+                      )}
+                    >
+                      {action.method} {action.label}
+                    </span>
+                  ))}
+                </div>
+              )}
             </li>
           ))}
         </ol>
 
+        {runbook.checks.length > 0 && (
+          <div>
+            <h3 className="text-xs font-black uppercase tracking-wide text-slate-500">
+              Contrôles attendus
+            </h3>
+            <ul className="mt-2 space-y-2">
+              {runbook.checks.map((check) => (
+                <li
+                  key={check.id}
+                  className="rounded-md border border-slate-800 bg-slate-900 px-3 py-2 text-xs text-slate-400"
+                >
+                  <span className="font-bold text-white">{check.label}</span> ·{' '}
+                  {check.expected}
+                  {check.blocking ? ' · bloquant' : ''}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {runbook.expectedEvidence.length > 0 && (
+          <div>
+            <h3 className="text-xs font-black uppercase tracking-wide text-slate-500">
+              Preuves attendues
+            </h3>
+            <ul className="mt-2 space-y-2">
+              {runbook.expectedEvidence.map((evidence) => (
+                <li
+                  key={evidence.label}
+                  className="rounded-md border border-slate-800 bg-slate-900 px-3 py-2 text-xs text-slate-400"
+                >
+                  <span className="font-bold text-white">{evidence.label}</span>{' '}
+                  · {evidence.expected}
+                  {evidence.requiredFor.length > 0
+                    ? ` · requis pour ${evidence.requiredFor.join(', ')}`
+                    : ''}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
         {runbook.actions.length > 0 && (
-          <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-            {runbook.actions.slice(0, 4).map((action) => (
-              <div
-                key={action.id}
-                className="rounded-md border border-slate-800 bg-slate-900 px-3 py-2"
-              >
-                <p className="text-xs font-bold text-white">
-                  {action.method} {action.label}
-                </p>
-                <p className="mt-1 truncate text-xs text-slate-500">
-                  {action.endpoint}
-                </p>
-              </div>
-            ))}
+          <div>
+            <h3 className="text-xs font-black uppercase tracking-wide text-slate-500">
+              Actions
+            </h3>
+            <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
+              {runbook.actions.map((action) => (
+                <div
+                  key={action.id}
+                  className="rounded-md border border-slate-800 bg-slate-900 px-3 py-2"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="text-xs font-bold text-white">
+                      {action.method} {action.label}
+                    </p>
+                    <span className="text-xs font-bold text-slate-500">
+                      {action.enabled ? 'Permise' : 'Bloquée'}
+                    </span>
+                  </div>
+                  <p className="mt-1 break-all font-mono text-xs text-slate-500">
+                    {action.endpoint}
+                  </p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    {action.requiredPermission} · {action.why}
+                  </p>
+                </div>
+              ))}
+            </div>
           </div>
         )}
       </div>
     ) : (
       <p className="mt-4 text-sm text-slate-500">
-        Sélectionnez une action pour charger le runbook généré.
+        Sélectionnez une alerte, un incident ou une action pour charger le
+        runbook généré.
       </p>
     )}
   </section>
@@ -369,105 +858,427 @@ const RunbookPanel = ({
 const ActionCenterPanel = ({
   summary,
   isMutating,
+  mutatingItemId,
   onOpenRunbook,
+  onAssign,
+  onComment,
+  onPrioritize,
+  onTransition,
   onResolve,
 }: {
   summary: OpsDashboardSummary;
   isMutating: boolean;
-  onOpenRunbook: (item: OpsActionCenterItem) => void;
-  onResolve: (item: OpsActionCenterItem) => void;
-}) => (
-  <section className="space-y-3">
-    <div className="flex items-center justify-between gap-3">
-      <div className="flex items-center gap-2">
-        <ServerCog size={18} className="text-cyan-300" />
-        <h2 className="text-lg font-bold text-white">Action-center</h2>
+  mutatingItemId?: string | null;
+  onOpenRunbook: (request: RunbookReferenceRequest) => void;
+  onAssign: (item: OpsActionCenterItem, assignedToId: number, comment?: string) => void;
+  onComment: (item: OpsActionCenterItem, comment: string) => void;
+  onPrioritize: (
+    item: OpsActionCenterItem,
+    priority: OpsActionCenterPriority,
+    comment?: string,
+  ) => void;
+  onTransition: (
+    item: OpsActionCenterItem,
+    status: OpsActionCenterStatus,
+    comment?: string,
+  ) => void;
+  onResolve: (
+    item: OpsActionCenterItem,
+    input: {
+      status: 'RESOLVED' | 'CLOSED';
+      summary: string;
+      evidenceUrl?: string;
+      evidenceLabel?: string;
+    },
+  ) => void;
+}) => {
+  type ActionDraft = {
+    assignedToId: string;
+    comment: string;
+    priority: OpsActionCenterPriority;
+    status: OpsActionCenterStatus;
+    resolveStatus: 'RESOLVED' | 'CLOSED';
+    summary: string;
+    evidenceUrl: string;
+    evidenceLabel: string;
+    error?: string;
+  };
+
+  const [drafts, setDrafts] = React.useState<Record<string, ActionDraft>>({});
+
+  const defaultDraft = React.useCallback(
+    (item: OpsActionCenterItem): ActionDraft => ({
+      assignedToId: item.workflow?.assignedToId?.toString() ?? '',
+      comment: '',
+      priority: item.priority,
+      status: ACTION_CENTER_STATUSES.includes(item.status)
+        ? item.status
+        : 'IN_PROGRESS',
+      resolveStatus: 'RESOLVED',
+      summary: '',
+      evidenceUrl: '',
+      evidenceLabel: '',
+    }),
+    [],
+  );
+
+  const draftFor = React.useCallback(
+    (item: OpsActionCenterItem) => drafts[item.id] ?? defaultDraft(item),
+    [defaultDraft, drafts],
+  );
+
+  const patchDraft = (
+    item: OpsActionCenterItem,
+    patch: Partial<ActionDraft>,
+  ) => {
+    setDrafts((current) => ({
+      ...current,
+      [item.id]: { ...(current[item.id] ?? defaultDraft(item)), ...patch },
+    }));
+  };
+
+  const submitAssign = (item: OpsActionCenterItem) => {
+    const draft = draftFor(item);
+    const assignedToId = Number(draft.assignedToId);
+    if (!Number.isInteger(assignedToId) || assignedToId < 1) {
+      patchDraft(item, {
+        error: 'Assignation: indiquez un ID utilisateur positif.',
+      });
+      return;
+    }
+    patchDraft(item, { error: undefined });
+    onAssign(item, assignedToId, draft.comment.trim() || undefined);
+  };
+
+  const submitComment = (item: OpsActionCenterItem) => {
+    const draft = draftFor(item);
+    if (!draft.comment.trim()) {
+      patchDraft(item, { error: 'Commentaire requis.' });
+      return;
+    }
+    patchDraft(item, { error: undefined });
+    onComment(item, draft.comment.trim());
+  };
+
+  const submitResolve = (item: OpsActionCenterItem) => {
+    const draft = draftFor(item);
+    if (!draft.summary.trim()) {
+      patchDraft(item, { error: 'Résumé de résolution requis.' });
+      return;
+    }
+    if (draft.evidenceUrl.trim()) {
+      try {
+        new URL(draft.evidenceUrl.trim());
+      } catch {
+        patchDraft(item, { error: 'URL de preuve invalide.' });
+        return;
+      }
+    }
+    patchDraft(item, { error: undefined });
+    onResolve(item, {
+      status: draft.resolveStatus,
+      summary: draft.summary.trim(),
+      evidenceUrl: draft.evidenceUrl.trim() || undefined,
+      evidenceLabel: draft.evidenceLabel.trim() || undefined,
+    });
+  };
+
+  return (
+    <section className="space-y-3">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <ServerCog size={18} className="text-cyan-300" />
+          <h2 className="text-lg font-bold text-white">Action-center</h2>
+        </div>
+        <StatusBadge
+          status={summary.actionCenter.status}
+          label={
+            summary.actionCenter.available
+              ? `${summary.actionCenter.total} action`
+              : 'Indisponible'
+          }
+        />
       </div>
-      <StatusBadge
-        status={summary.actionCenter.status}
-        label={
-          summary.actionCenter.available
-            ? `${summary.actionCenter.total} action`
-            : 'Indisponible'
-        }
-      />
-    </div>
-    {!summary.actionCenter.available ? (
-      <EmptyState
-        title="Action-center non exposé"
-        message={
-          summary.actionCenter.unavailableReason ??
-          'Le flux action-center ne répond pas pour ce tenant.'
-        }
-        icon={AlertTriangle}
-        tone="amber"
-        compact
-      />
-    ) : summary.actionCenter.items.length === 0 ? (
-      <EmptyState
-        title="Aucune action prioritaire"
-        message="L’action-center ne remonte aucune intervention active."
-        icon={CheckCircle2}
-        tone="emerald"
-        compact
-      />
-    ) : (
-      <ol className="space-y-3">
-        {summary.actionCenter.items.map((item) => (
-          <li
-            key={item.id}
-            className="rounded-lg border border-slate-800 bg-slate-900 p-4"
-          >
-            <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-              <div>
-                <p className="font-bold text-white">{item.title}</p>
-                <p className="mt-1 text-sm text-slate-400">{item.reason}</p>
-                <p className="mt-2 text-xs text-slate-500">
-                  {item.type} · {item.sourceReference.reference} ·{' '}
-                  {formatDateTime(item.timestamps.occurredAt)}
-                </p>
-              </div>
-              <div className="flex shrink-0 flex-wrap justify-end gap-2">
-                <StatusBadge
-                  status={priorityStatus(item.priority)}
-                  label={item.priority}
-                />
-                <StatusBadge status="WARNING" label={item.status} />
-              </div>
-            </div>
-            {item.requiredEvidence.length > 0 && (
-              <p className="mt-3 text-xs text-slate-500">
-                Preuves: {item.requiredEvidence.slice(0, 2).join(' · ')}
-              </p>
-            )}
-            <div className="mt-3 flex flex-wrap gap-2">
-              <AlertActionButton
-                disabled={isMutating}
-                onClick={() => onOpenRunbook(item)}
+      {!summary.actionCenter.available ? (
+        <EmptyState
+          title="Action-center non exposé"
+          message={
+            summary.actionCenter.unavailableReason ??
+            'Le flux action-center ne répond pas pour ce tenant.'
+          }
+          icon={AlertTriangle}
+          tone="amber"
+          compact
+        />
+      ) : summary.actionCenter.items.length === 0 ? (
+        <EmptyState
+          title="Aucune action prioritaire"
+          message="L’action-center ne remonte aucune intervention active."
+          icon={CheckCircle2}
+          tone="emerald"
+          compact
+        />
+      ) : (
+        <ol className="space-y-3">
+          {summary.actionCenter.items.map((item) => {
+            const draft = draftFor(item);
+            const itemBusy = isMutating && mutatingItemId === item.id;
+
+            return (
+              <li
+                key={item.id}
+                className="rounded-lg border border-slate-800 bg-slate-900 p-4"
               >
-                Ouvrir runbook
-              </AlertActionButton>
-              {item.sourceReference.entity === 'OperationalAlert' && (
-                <AlertActionButton
-                  disabled={isMutating}
-                  onClick={() => onResolve(item)}
-                >
-                  Résoudre si supporté
-                </AlertActionButton>
-              )}
-            </div>
-          </li>
-        ))}
-      </ol>
-    )}
-  </section>
-);
+                <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                  <div>
+                    <p className="font-bold text-white">{item.title}</p>
+                    <p className="mt-1 text-sm text-slate-400">{item.reason}</p>
+                    <p className="mt-2 text-xs text-slate-500">
+                      {item.type} · {item.sourceReference.reference} ·{' '}
+                      {formatDateTime(item.timestamps.occurredAt)}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 flex-wrap justify-end gap-2">
+                    <StatusBadge
+                      status={priorityStatus(item.priority)}
+                      label={item.priority}
+                    />
+                    <StatusBadge status="WARNING" label={item.status} />
+                  </div>
+                </div>
+                <div className="mt-3 grid grid-cols-1 gap-2 text-xs text-slate-500 md:grid-cols-3">
+                  <p>Assigné: {item.workflow?.assignedToId ?? 'Non assigné'}</p>
+                  <p>Commentaires: {item.workflow?.commentsCount ?? 0}</p>
+                  <p>MAJ: {formatDateTime(item.workflow?.updatedAt)}</p>
+                </div>
+                {item.workflow?.lastComment && (
+                  <p className="mt-2 rounded-md border border-slate-800 bg-slate-950 px-3 py-2 text-xs text-slate-400">
+                    Dernier commentaire: {item.workflow.lastComment.comment}
+                  </p>
+                )}
+                {item.requiredEvidence.length > 0 && (
+                  <p className="mt-3 text-xs text-slate-500">
+                    Preuves: {item.requiredEvidence.slice(0, 2).join(' · ')}
+                  </p>
+                )}
+                <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-2">
+                  <label className="block text-xs font-bold uppercase tracking-wide text-slate-500">
+                    Assignation
+                    <input
+                      value={draft.assignedToId}
+                      onChange={(event) =>
+                        patchDraft(item, {
+                          assignedToId: event.target.value,
+                          error: undefined,
+                        })
+                      }
+                      inputMode="numeric"
+                      placeholder="ID utilisateur"
+                      className="mt-1 h-9 w-full rounded-md border border-slate-700 bg-slate-950 px-3 text-sm text-slate-100 outline-none focus:border-cyan-400"
+                    />
+                  </label>
+                  <label className="block text-xs font-bold uppercase tracking-wide text-slate-500">
+                    Commentaire
+                    <input
+                      value={draft.comment}
+                      onChange={(event) =>
+                        patchDraft(item, {
+                          comment: event.target.value,
+                          error: undefined,
+                        })
+                      }
+                      maxLength={2000}
+                      placeholder="Note opérateur"
+                      className="mt-1 h-9 w-full rounded-md border border-slate-700 bg-slate-950 px-3 text-sm text-slate-100 outline-none focus:border-cyan-400"
+                    />
+                  </label>
+                  <label className="block text-xs font-bold uppercase tracking-wide text-slate-500">
+                    Priorité
+                    <select
+                      value={draft.priority}
+                      onChange={(event) =>
+                        patchDraft(item, {
+                          priority: event.target.value as OpsActionCenterPriority,
+                          error: undefined,
+                        })
+                      }
+                      className="mt-1 h-9 w-full rounded-md border border-slate-700 bg-slate-950 px-3 text-sm text-slate-100 outline-none focus:border-cyan-400"
+                    >
+                      {ACTION_CENTER_PRIORITIES.map((priority) => (
+                        <option key={priority} value={priority}>
+                          {priority}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="block text-xs font-bold uppercase tracking-wide text-slate-500">
+                    Statut
+                    <select
+                      value={draft.status}
+                      onChange={(event) =>
+                        patchDraft(item, {
+                          status: event.target.value as OpsActionCenterStatus,
+                          error: undefined,
+                        })
+                      }
+                      className="mt-1 h-9 w-full rounded-md border border-slate-700 bg-slate-950 px-3 text-sm text-slate-100 outline-none focus:border-cyan-400"
+                    >
+                      {ACTION_CENTER_STATUSES.map((status) => (
+                        <option key={status} value={status}>
+                          {status}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+                <div className="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-[120px_minmax(0,1fr)_minmax(0,1fr)]">
+                  <label className="block text-xs font-bold uppercase tracking-wide text-slate-500">
+                    Clôture
+                    <select
+                      value={draft.resolveStatus}
+                      onChange={(event) =>
+                        patchDraft(item, {
+                          resolveStatus: event.target.value as 'RESOLVED' | 'CLOSED',
+                          error: undefined,
+                        })
+                      }
+                      className="mt-1 h-9 w-full rounded-md border border-slate-700 bg-slate-950 px-3 text-sm text-slate-100 outline-none focus:border-cyan-400"
+                    >
+                      <option value="RESOLVED">RESOLVED</option>
+                      <option value="CLOSED">CLOSED</option>
+                    </select>
+                  </label>
+                  <label className="block text-xs font-bold uppercase tracking-wide text-slate-500">
+                    Résumé
+                    <input
+                      value={draft.summary}
+                      onChange={(event) =>
+                        patchDraft(item, {
+                          summary: event.target.value,
+                          error: undefined,
+                        })
+                      }
+                      maxLength={2000}
+                      placeholder="Retour nominal confirmé"
+                      className="mt-1 h-9 w-full rounded-md border border-slate-700 bg-slate-950 px-3 text-sm text-slate-100 outline-none focus:border-cyan-400"
+                    />
+                  </label>
+                  <label className="block text-xs font-bold uppercase tracking-wide text-slate-500">
+                    Preuve URL
+                    <input
+                      value={draft.evidenceUrl}
+                      onChange={(event) =>
+                        patchDraft(item, {
+                          evidenceUrl: event.target.value,
+                          error: undefined,
+                        })
+                      }
+                      maxLength={500}
+                      placeholder="https://..."
+                      className="mt-1 h-9 w-full rounded-md border border-slate-700 bg-slate-950 px-3 text-sm text-slate-100 outline-none focus:border-cyan-400"
+                    />
+                  </label>
+                </div>
+                <label className="mt-3 block text-xs font-bold uppercase tracking-wide text-slate-500">
+                  Libellé preuve
+                  <input
+                    value={draft.evidenceLabel}
+                    onChange={(event) =>
+                      patchDraft(item, {
+                        evidenceLabel: event.target.value,
+                        error: undefined,
+                      })
+                    }
+                    maxLength={160}
+                    placeholder="Capture monitoring"
+                    className="mt-1 h-9 w-full rounded-md border border-slate-700 bg-slate-950 px-3 text-sm text-slate-100 outline-none focus:border-cyan-400"
+                  />
+                </label>
+                {draft.error && (
+                  <p className="mt-3 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs font-bold text-amber-100">
+                    {draft.error}
+                  </p>
+                )}
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <AlertActionButton
+                    disabled={isMutating}
+                    icon={<ScrollText size={14} />}
+                    onClick={() =>
+                      onOpenRunbook({
+                        reference: item.sourceReference,
+                        origin: 'action-center',
+                      })
+                    }
+                  >
+                    Runbook
+                  </AlertActionButton>
+                  <AlertActionButton
+                    disabled={isMutating}
+                    icon={<UserCheck size={14} />}
+                    onClick={() => submitAssign(item)}
+                  >
+                    Assigner
+                  </AlertActionButton>
+                  <AlertActionButton
+                    disabled={isMutating}
+                    icon={<MessageSquare size={14} />}
+                    onClick={() => submitComment(item)}
+                  >
+                    Commenter
+                  </AlertActionButton>
+                  <AlertActionButton
+                    disabled={isMutating}
+                    icon={<Flag size={14} />}
+                    onClick={() =>
+                      onPrioritize(
+                        item,
+                        draft.priority,
+                        draft.comment.trim() || undefined,
+                      )
+                    }
+                  >
+                    Priorité
+                  </AlertActionButton>
+                  <AlertActionButton
+                    disabled={isMutating}
+                    icon={<RefreshCw size={14} />}
+                    onClick={() =>
+                      onTransition(
+                        item,
+                        draft.status,
+                        draft.comment.trim() || undefined,
+                      )
+                    }
+                  >
+                    Statut
+                  </AlertActionButton>
+                  <AlertActionButton
+                    disabled={isMutating}
+                    icon={<CheckCircle2 size={14} />}
+                    onClick={() => submitResolve(item)}
+                  >
+                    Résoudre
+                  </AlertActionButton>
+                  {itemBusy && (
+                    <span className="inline-flex min-h-8 items-center text-xs font-bold text-cyan-200">
+                      Mutation en cours...
+                    </span>
+                  )}
+                </div>
+              </li>
+            );
+          })}
+        </ol>
+      )}
+    </section>
+  );
+};
 
 const SlaPanel = ({ summary }: { summary: OpsDashboardSummary }) => (
   <section className="space-y-3">
     <div className="flex items-center gap-2">
       <Gauge size={18} className="text-cyan-300" />
-      <h2 className="text-lg font-bold text-white">SLA exploitation</h2>
+      <h2 className="text-lg font-bold text-white">SLO / SLA exploitation</h2>
     </div>
     <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
       {summary.sla.map((sla) => (
@@ -478,12 +1289,25 @@ const SlaPanel = ({ summary }: { summary: OpsDashboardSummary }) => (
           <div className="flex items-start justify-between gap-3">
             <div>
               <h3 className="font-bold text-white">{sla.label}</h3>
-              <p className="mt-1 text-xs text-slate-500">Cible: {sla.target}</p>
+              <p className="mt-1 text-xs text-slate-500">
+                Seuils: cible {sla.target} · {sla.detail}
+              </p>
             </div>
-            <StatusBadge status={sla.status} label={statusLabel[sla.status]} />
+            <StatusBadge
+              status={sla.status}
+              label={sla.sloStatus ?? statusLabel[sla.status]}
+            />
           </div>
           <p className="mt-3 text-xl font-black text-white">{sla.current}</p>
-          <p className="mt-1 text-sm text-slate-400">{sla.detail}</p>
+          {sla.period && (
+            <p className="mt-1 text-xs text-slate-500">
+              Période: {formatDateTime(sla.period.from)} →{' '}
+              {formatDateTime(sla.period.to)}
+            </p>
+          )}
+          <p className="mt-2 text-sm text-slate-400">
+            {sla.reason ?? sla.detail}
+          </p>
         </article>
       ))}
     </div>
@@ -608,7 +1432,15 @@ const BackupPanel = ({ summary }: { summary: OpsDashboardSummary }) => {
   );
 };
 
-const IncidentsPanel = ({ summary }: { summary: OpsDashboardSummary }) => (
+const IncidentsPanel = ({
+  summary,
+  isMutating,
+  onOpenRunbook,
+}: {
+  summary: OpsDashboardSummary;
+  isMutating: boolean;
+  onOpenRunbook: (request: RunbookReferenceRequest) => void;
+}) => (
   <section className="rounded-lg border border-slate-800 bg-slate-950/50 p-5">
     <div className="flex items-center justify-between gap-3">
       <div className="flex items-center gap-2">
@@ -626,35 +1458,48 @@ const IncidentsPanel = ({ summary }: { summary: OpsDashboardSummary }) => (
       </p>
     ) : (
       <ol className="mt-4 space-y-3">
-        {summary.incidents.map((incident) => (
-          <li
-            key={incident.id}
-            className="rounded-md border border-slate-800 bg-slate-900 px-3 py-2"
-          >
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="text-sm font-bold text-white">
-                  {incident.title}
+        {summary.incidents.map((incident) => {
+            const runbookRequest = runbookReferenceFromIncident(incident);
+            return (
+              <li
+                key={incident.id}
+                className="rounded-md border border-slate-800 bg-slate-900 px-3 py-2"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-bold text-white">
+                      {incident.title}
+                    </p>
+                    <p className="mt-1 text-xs text-slate-400">
+                      {incident.detail}
+                    </p>
+                    {incident.escalationReason && (
+                      <p className="mt-1 text-xs text-amber-200">
+                        Escalade: {incident.escalationReason}
+                      </p>
+                    )}
+                  </div>
+                  <StatusBadge
+                    status={incident.status}
+                    label={incident.lifecycleStatus ?? statusLabel[incident.status]}
+                  />
+                </div>
+                <p className="mt-2 text-xs text-slate-500">
+                  {incident.source} · {formatDateTime(incident.openedAt)}
                 </p>
-                <p className="mt-1 text-xs text-slate-400">
-                  {incident.detail}
-                </p>
-                {incident.escalationReason && (
-                  <p className="mt-1 text-xs text-amber-200">
-                    Escalade: {incident.escalationReason}
-                  </p>
+                {runbookRequest && (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <AlertActionButton
+                      disabled={isMutating}
+                      onClick={() => onOpenRunbook(runbookRequest)}
+                    >
+                      Ouvrir runbook
+                    </AlertActionButton>
+                  </div>
                 )}
-              </div>
-              <StatusBadge
-                status={incident.status}
-                label={incident.lifecycleStatus ?? statusLabel[incident.status]}
-              />
-            </div>
-            <p className="mt-2 text-xs text-slate-500">
-              {incident.source} · {formatDateTime(incident.openedAt)}
-            </p>
-          </li>
-        ))}
+              </li>
+            );
+          })}
       </ol>
     )}
   </section>
@@ -818,6 +1663,8 @@ export const OpsDashboardPage = () => {
     OpsRunbookDto | undefined
   >();
   const [runbookError, setRunbookError] = React.useState(false);
+  const [mutatingActionCenterItemId, setMutatingActionCenterItemId] =
+    React.useState<string | null>(null);
   const period = React.useMemo(
     () => ({
       ...buildDefaultPeriod(),
@@ -829,6 +1676,19 @@ export const OpsDashboardPage = () => {
   const summaryQuery = useQuery({
     queryKey: opsQueryKeys.dashboard.summary(period),
     queryFn: () => opsApi.summary(period),
+    refetchInterval: pollingEnabled ? pollingInterval : false,
+    refetchIntervalInBackground: false,
+    ...queryCacheProfiles.live,
+  });
+
+  const multiTenantSummaryQuery = useQuery({
+    queryKey: opsQueryKeys.dashboard.multiTenantSummary({
+      tenantId: period.tenantId,
+    }),
+    queryFn: () =>
+      opsApi.multiTenantSummary({
+        tenantId: period.tenantId,
+      }),
     refetchInterval: pollingEnabled ? pollingInterval : false,
     refetchIntervalInBackground: false,
     ...queryCacheProfiles.live,
@@ -890,12 +1750,14 @@ export const OpsDashboardPage = () => {
   });
 
   const openRunbookMutation = useMutation({
-    mutationFn: (item: OpsActionCenterItem) =>
-      opsApi.getRunbook(item.sourceReference, { tenantId: period.tenantId }),
-    onSuccess: (runbook) => {
+    mutationFn: (request: RunbookReferenceRequest) =>
+      opsApi.getRunbook(request.reference, { tenantId: period.tenantId }).then(
+        (runbook) => ({ runbook, origin: request.origin }),
+      ),
+    onSuccess: ({ runbook, origin }) => {
       setOpenedRunbook(runbook);
       setRunbookError(false);
-      setActionMessage('Runbook chargé pour la référence action-center.');
+      setActionMessage(`Runbook chargé depuis ${origin}.`);
     },
     onError: () => {
       setRunbookError(true);
@@ -903,21 +1765,67 @@ export const OpsDashboardPage = () => {
     },
   });
 
-  const resolveActionCenterItemMutation = useMutation({
-    mutationFn: (item: OpsActionCenterItem) =>
-      opsApi.resolveAlert(
-        {
-          id: item.sourceReference.id,
-          sourceKind: 'OPERATIONAL_ALERT',
-        },
-        'Résolution depuis l’action-center ops.',
-      ),
+  const actionCenterWorkflowMutation = useMutation({
+    mutationFn: async ({
+      item,
+      action,
+      assignedToId,
+      comment,
+      priority,
+      status,
+      resolution,
+    }: {
+      item: OpsActionCenterItem;
+      action: 'assign' | 'comment' | 'priority' | 'status' | 'resolve';
+      assignedToId?: number;
+      comment?: string;
+      priority?: OpsActionCenterPriority;
+      status?: OpsActionCenterStatus;
+      resolution?: {
+        status: 'RESOLVED' | 'CLOSED';
+        summary: string;
+        evidenceUrl?: string;
+        evidenceLabel?: string;
+      };
+    }) => {
+      setMutatingActionCenterItemId(item.id);
+      const params = { tenantId: period.tenantId };
+
+      if (action === 'assign') {
+        return opsApi.assignActionCenterItem(
+          item.id,
+          { assignedToId: assignedToId!, comment },
+          params,
+        );
+      }
+      if (action === 'comment') {
+        return opsApi.commentActionCenterItem(item.id, { comment: comment! }, params);
+      }
+      if (action === 'priority') {
+        return opsApi.prioritizeActionCenterItem(
+          item.id,
+          { priority: priority!, comment },
+          params,
+        );
+      }
+      if (action === 'status') {
+        return opsApi.transitionActionCenterItem(
+          item.id,
+          { status: status!, comment },
+          params,
+        );
+      }
+      return opsApi.resolveActionCenterItem(item.id, resolution!, params);
+    },
     onSuccess: async () => {
-      setActionMessage('Action-center: alerte résolue.');
+      setActionMessage('Action-center mis à jour. Rafraîchissement des signaux.');
       await refreshOps();
     },
     onError: () => {
-      setActionMessage('Action-center: résolution indisponible.');
+      setActionMessage('Action-center: mutation indisponible.');
+    },
+    onSettled: () => {
+      setMutatingActionCenterItemId(null);
     },
   });
 
@@ -926,7 +1834,7 @@ export const OpsDashboardPage = () => {
     rerunCheckMutation.isPending ||
     openIncidentMutation.isPending ||
     openRunbookMutation.isPending ||
-    resolveActionCenterItemMutation.isPending;
+    actionCenterWorkflowMutation.isPending;
 
   if (summaryQuery.isLoading) {
     return <PageSkeleton title="Chargement tableau ops" rows={4} sidePanel />;
@@ -1040,6 +1948,12 @@ export const OpsDashboardPage = () => {
 
       <KpiStrip summary={summary} />
 
+      <MultiTenantCockpit
+        summary={multiTenantSummaryQuery.data}
+        isLoading={multiTenantSummaryQuery.isLoading}
+        isError={multiTenantSummaryQuery.isError}
+      />
+
       {actionMessage && (
         <p className="rounded-md border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-slate-300">
           {actionMessage}
@@ -1051,8 +1965,46 @@ export const OpsDashboardPage = () => {
           <ActionCenterPanel
             summary={summary}
             isMutating={isActionMutating}
-            onOpenRunbook={(item) => openRunbookMutation.mutate(item)}
-            onResolve={(item) => resolveActionCenterItemMutation.mutate(item)}
+            mutatingItemId={mutatingActionCenterItemId}
+            onOpenRunbook={(request) => openRunbookMutation.mutate(request)}
+            onAssign={(item, assignedToId, comment) =>
+              actionCenterWorkflowMutation.mutate({
+                item,
+                action: 'assign',
+                assignedToId,
+                comment,
+              })
+            }
+            onComment={(item, comment) =>
+              actionCenterWorkflowMutation.mutate({
+                item,
+                action: 'comment',
+                comment,
+              })
+            }
+            onPrioritize={(item, priority, comment) =>
+              actionCenterWorkflowMutation.mutate({
+                item,
+                action: 'priority',
+                priority,
+                comment,
+              })
+            }
+            onTransition={(item, status, comment) =>
+              actionCenterWorkflowMutation.mutate({
+                item,
+                action: 'status',
+                status,
+                comment,
+              })
+            }
+            onResolve={(item, resolution) =>
+              actionCenterWorkflowMutation.mutate({
+                item,
+                action: 'resolve',
+                resolution,
+              })
+            }
           />
           <RunbookPanel
             runbook={openedRunbook}
@@ -1065,6 +2017,7 @@ export const OpsDashboardPage = () => {
             onResolve={(alert) => resolveAlertMutation.mutate(alert)}
             onRerunCheck={(alert) => rerunCheckMutation.mutate(alert)}
             onOpenIncident={(alert) => openIncidentMutation.mutate(alert)}
+            onOpenRunbook={(request) => openRunbookMutation.mutate(request)}
           />
           <AnomaliesPanel summary={summary} />
           <SlaPanel summary={summary} />
@@ -1073,7 +2026,11 @@ export const OpsDashboardPage = () => {
         <div className="space-y-5">
           <NotificationPanel summary={summary} />
           <BackupPanel summary={summary} />
-          <IncidentsPanel summary={summary} />
+          <IncidentsPanel
+            summary={summary}
+            isMutating={isActionMutating}
+            onOpenRunbook={(request) => openRunbookMutation.mutate(request)}
+          />
           <RoutinesPanel summary={summary} />
           <DirectionReportsPanel summary={summary} />
         </div>

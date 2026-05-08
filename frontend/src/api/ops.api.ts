@@ -13,6 +13,14 @@ import type {
 
 export type OpsStatus = 'OPERATIONAL' | 'DEGRADED' | 'CRITICAL' | 'UNKNOWN';
 export type OpsSignalStatus = 'OK' | 'WARNING' | 'CRITICAL' | 'UNKNOWN';
+export type OpsSloStatus = 'PASSED' | 'WARNING' | 'FAILED';
+export type OpsSloObjectiveId =
+  | 'alert_resolution_delay'
+  | 'open_alert_age'
+  | 'incident_mttr'
+  | 'backup_freshness'
+  | 'routine_success_rate'
+  | 'notification_delivery';
 
 export interface OpsDashboardParams extends CompliancePeriodParams {}
 
@@ -109,6 +117,46 @@ export interface OpsSlaIndicator {
   current: string;
   status: OpsSignalStatus;
   detail: string;
+  reason?: string;
+  period?: {
+    from: string | null;
+    to: string | null;
+  };
+  sloStatus?: OpsSloStatus;
+}
+
+export interface OpsSloObjectiveThresholds {
+  pass: number;
+  warning: number;
+  unit: 'minutes' | 'hours' | 'percent';
+  direction: 'lte' | 'gte';
+}
+
+export interface OpsSloObjectiveActual {
+  value: number | null;
+  unit: OpsSloObjectiveThresholds['unit'];
+  sampleSize: number;
+}
+
+export interface OpsSloObjective {
+  id: OpsSloObjectiveId;
+  label: string;
+  status: OpsSloStatus;
+  actual: OpsSloObjectiveActual;
+  thresholds: OpsSloObjectiveThresholds;
+  reason: string;
+  details?: Record<string, unknown>;
+}
+
+export interface OpsSloResponse {
+  tenantId: string;
+  generatedAt: string;
+  period: {
+    from: string | null;
+    to: string | null;
+  };
+  status: OpsSloStatus;
+  objectives: Record<OpsSloObjectiveId, OpsSloObjective>;
 }
 
 export interface OpsBackupPanel {
@@ -155,7 +203,55 @@ export interface OpsNotificationState {
   detail: string;
   pendingAlerts: number;
   escalatedIncidents: number;
+  acknowledgedNotifications: number;
+  reminders: number;
+  quietHoursDeferred: number;
+  failedNotifications: number;
   lastActivityAt?: string;
+  entries: OpsNotificationEvidence[];
+}
+
+export type OpsNotificationJournalStatus =
+  | 'PENDING'
+  | 'DRY_RUN'
+  | 'SENT'
+  | 'PARTIAL'
+  | 'FAILED'
+  | 'THROTTLED'
+  | 'ACKNOWLEDGED'
+  | 'UNKNOWN';
+
+export interface OpsNotificationEvidence {
+  id: number;
+  title: string;
+  eventType: string;
+  status: OpsNotificationJournalStatus;
+  severity: OpsIncidentSeverity;
+  occurredAt: string;
+  resolvedAt?: string | null;
+  relatedReference?: string | null;
+  channels: string[];
+  attempts: Array<{
+    channel: string;
+    status: OpsNotificationJournalStatus;
+    message?: string;
+  }>;
+  proofId?: string;
+  proofGeneratedAt?: string;
+  acknowledgedAt?: string;
+  acknowledgedById?: number;
+  reminder: {
+    isReminder: boolean;
+    reminderCount: number;
+    nextReminderAt?: string | null;
+  };
+  escalationLevel?: number;
+  quietHours?: {
+    start: string;
+    end: string;
+    timezone?: string;
+  } | null;
+  suppressedUntil?: string | null;
 }
 
 export type OpsActionCenterItemType =
@@ -171,7 +267,9 @@ export type OpsActionCenterStatus =
   | 'IN_PROGRESS'
   | 'ESCALATED'
   | 'WAITING_EVIDENCE'
-  | 'WAITING_DECISION';
+  | 'WAITING_DECISION'
+  | 'RESOLVED'
+  | 'CLOSED';
 
 export type OpsActionCenterPriority = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
 
@@ -180,6 +278,23 @@ export interface OpsActionCenterSourceReference {
   id: number;
   tenantId: string;
   reference: string;
+}
+
+export interface OpsActionCenterWorkflowComment {
+  id: number;
+  comment: string;
+  actorId: number;
+  createdAt: string;
+}
+
+export interface OpsActionCenterWorkflowState {
+  assignedToId: number | null;
+  priorityOverride: OpsActionCenterPriority | null;
+  statusOverride: OpsActionCenterStatus | null;
+  commentsCount: number;
+  lastComment: OpsActionCenterWorkflowComment | null;
+  updatedAt: string | null;
+  updatedById: number | null;
 }
 
 export interface OpsActionCenterItem {
@@ -200,6 +315,7 @@ export interface OpsActionCenterItem {
     escalatedAt?: string | null;
     resolvedAt?: string | null;
   };
+  workflow?: OpsActionCenterWorkflowState;
 }
 
 export interface OpsActionCenterResponse {
@@ -214,6 +330,60 @@ export interface OpsActionCenterResponse {
   items: OpsActionCenterItem[];
 }
 
+export type OpsTenantOperationalStatus = 'OK' | 'WARNING' | 'CRITICAL';
+
+export interface OpsTenantLastBackupSummary {
+  routine: string;
+  status: string;
+  startedAt: string;
+  finishedAt: string | null;
+  artifactUrl: string | null;
+  error: string | null;
+}
+
+export interface OpsTenantSummary {
+  tenantId: string;
+  status: OpsTenantOperationalStatus;
+  alerts: {
+    open: number;
+    critical: number;
+    bySeverity: Record<string, number>;
+  };
+  incidents: {
+    active: number;
+    critical: number;
+    escalated: number;
+  };
+  routines: {
+    failed: number;
+    lastFailedAt: string | null;
+  };
+  lastBackup: OpsTenantLastBackupSummary | null;
+  actionCenter: {
+    total: number;
+    critical: number;
+    topItems: OpsActionCenterItem[];
+  };
+}
+
+export interface OpsMultiTenantSummaryResponse {
+  generatedAt: string;
+  scope: {
+    tenantId: string | null;
+    allTenants: boolean;
+  };
+  totals: {
+    tenants: number;
+    criticalTenants: number;
+    warningTenants: number;
+    openAlerts: number;
+    activeIncidents: number;
+    failedRoutines: number;
+    actionCenterItems: number;
+  };
+  tenants: OpsTenantSummary[];
+}
+
 export interface OpsActionCenterPanel {
   available: boolean;
   status: OpsSignalStatus;
@@ -226,8 +396,16 @@ export interface OpsActionCenterPanel {
 export interface OpsRunbookDto {
   id: string;
   generatedAt: string;
+  template?: {
+    id: number;
+    version: number;
+    tenantId: string | null;
+    service: string | null;
+    type: string | null;
+  } | null;
   reference: {
     sourceType: 'ALERT' | 'INCIDENT' | 'JOURNAL';
+    type?: string | null;
     id: number;
     tenantId: string;
     title: string;
@@ -239,6 +417,11 @@ export interface OpsRunbookDto {
     relatedReference?: string | null;
     impactedService?: string | null;
   };
+  requiredPermissions?: Array<{
+    role: string;
+    permission: 'operations:read' | 'operations:write' | 'audit:read';
+    reason: string;
+  }>;
   why: string;
   next: {
     why: string;
@@ -254,6 +437,26 @@ export interface OpsRunbookDto {
     instruction: string;
     requiredRole: string;
     requiredPermission: 'operations:read' | 'operations:write' | 'audit:read';
+    checks?: Array<{
+      id: string;
+      label: string;
+      expected: string;
+      blocking: boolean;
+    }>;
+    evidence?: Array<{
+      label: string;
+      expected: string;
+      requiredFor: string[];
+    }>;
+    actions?: Array<{
+      id: string;
+      label: string;
+      method: 'GET' | 'POST' | 'PATCH';
+      endpoint: string;
+      requiredPermission: 'operations:read' | 'operations:write';
+      enabled: boolean;
+      why: string;
+    }>;
   }>;
   checks: Array<{
     id: string;
@@ -363,11 +566,53 @@ interface OpsRawIncident {
   updatedAt?: string;
 }
 
+interface OpsRawJournalEntry {
+  id: number;
+  tenantId: string;
+  type: 'INCIDENT' | 'NOTIFICATION' | 'ACTION' | 'DECISION' | 'EVIDENCE';
+  status: 'RECORDED' | 'OPEN' | 'IN_PROGRESS' | 'RESOLVED' | 'CLOSED';
+  severity: OpsIncidentSeverity;
+  title: string;
+  description?: string | null;
+  occurredAt: string;
+  resolvedAt?: string | null;
+  relatedReference?: string | null;
+  evidenceUrl?: string | null;
+  evidenceLabel?: string | null;
+  metadata?: Record<string, unknown> | null;
+}
+
 export interface DeclareOpsIncidentInput {
   title: string;
   description: string;
   severity: OpsIncidentSeverity;
   impactedService?: string;
+  evidenceUrl?: string;
+  evidenceLabel?: string;
+}
+
+export interface AssignOpsActionCenterItemInput {
+  assignedToId: number;
+  comment?: string;
+}
+
+export interface CommentOpsActionCenterItemInput {
+  comment: string;
+}
+
+export interface PrioritizeOpsActionCenterItemInput {
+  priority: OpsActionCenterPriority;
+  comment?: string;
+}
+
+export interface TransitionOpsActionCenterItemInput {
+  status: OpsActionCenterStatus;
+  comment?: string;
+}
+
+export interface ResolveOpsActionCenterItemInput {
+  status?: Extract<OpsActionCenterStatus, 'RESOLVED' | 'CLOSED'>;
+  summary: string;
   evidenceUrl?: string;
   evidenceLabel?: string;
 }
@@ -393,8 +638,35 @@ const gateSignalStatus = (
   return gate.status === 'PASSED' ? 'OK' : 'CRITICAL';
 };
 
+const sloSignalStatus = (status?: OpsSloStatus): OpsSignalStatus => {
+  if (status === 'PASSED') return 'OK';
+  if (status === 'WARNING') return 'WARNING';
+  if (status === 'FAILED') return 'CRITICAL';
+  return 'UNKNOWN';
+};
+
 const formatPercent = (value: number) =>
   `${Math.round(Math.max(0, Math.min(1, value)) * 100)}%`;
+
+const formatSloValue = (
+  value: number | null,
+  unit: OpsSloObjectiveThresholds['unit'],
+) => {
+  if (value === null) return 'Aucune donnée';
+  if (unit === 'percent') return `${value}%`;
+  if (unit === 'hours') return `${value}h`;
+  return `${value}min`;
+};
+
+const formatSloTarget = (thresholds: OpsSloObjectiveThresholds) => {
+  const comparator = thresholds.direction === 'lte' ? '<=' : '>=';
+  return `${comparator} ${formatSloValue(thresholds.pass, thresholds.unit)}`;
+};
+
+const formatSloWarning = (thresholds: OpsSloObjectiveThresholds) => {
+  const comparator = thresholds.direction === 'lte' ? '<=' : '>=';
+  return `${comparator} ${formatSloValue(thresholds.warning, thresholds.unit)}`;
+};
 
 const countGates = (gates: ProductionGateStatus[]) => ({
   passed: gates.filter((gate) => gate.status === 'PASSED').length,
@@ -424,6 +696,53 @@ const stringFromMetadata = (
   return typeof value === 'string' && value.trim() !== ''
     ? value
     : undefined;
+};
+
+const safeRecord = (value: unknown): Record<string, unknown> =>
+  value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+
+const stringArrayFromMetadata = (
+  metadata: Record<string, unknown>,
+  key: string,
+): string[] => {
+  const value = metadata[key];
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string')
+    : [];
+};
+
+const notificationStatusFromValue = (
+  value: unknown,
+): OpsNotificationJournalStatus => {
+  const allowed: OpsNotificationJournalStatus[] = [
+    'PENDING',
+    'DRY_RUN',
+    'SENT',
+    'PARTIAL',
+    'FAILED',
+    'THROTTLED',
+    'ACKNOWLEDGED',
+    'UNKNOWN',
+  ];
+  return typeof value === 'string' &&
+    allowed.includes(value as OpsNotificationJournalStatus)
+    ? (value as OpsNotificationJournalStatus)
+    : 'UNKNOWN';
+};
+
+const notificationStatusFromJournal = (
+  entry: OpsRawJournalEntry,
+  metadata: Record<string, unknown>,
+): OpsNotificationJournalStatus => {
+  const metadataStatus = notificationStatusFromValue(metadata.notificationStatus);
+  if (metadataStatus !== 'UNKNOWN') return metadataStatus;
+  if (entry.status === 'RESOLVED') return 'ACKNOWLEDGED';
+  if (entry.status === 'OPEN' || entry.status === 'IN_PROGRESS') {
+    return 'PENDING';
+  }
+  return 'UNKNOWN';
 };
 
 const incidentStatusFromSeverity = (
@@ -695,12 +1014,107 @@ const buildIncidents = ({
   return incidents.slice(0, 6);
 };
 
+const buildNotificationEvidence = (
+  journalEntries: OpsRawJournalEntry[] | null,
+): OpsNotificationEvidence[] => {
+  const entries = Array.isArray(journalEntries) ? journalEntries : [];
+
+  return entries
+    .filter((entry) => entry.type === 'NOTIFICATION')
+    .map((entry) => {
+      const metadata = safeRecord(entry.metadata);
+      const proof = safeRecord(metadata.notificationProof);
+      const acknowledgement = safeRecord(metadata.acknowledgement);
+      const reminder = safeRecord(metadata.reminder);
+      const policy = safeRecord(metadata.notificationPolicy);
+      const quietHours = safeRecord(policy.quietHours);
+      const attemptsValue = metadata.attempts;
+      const attempts = Array.isArray(attemptsValue)
+        ? attemptsValue.map((attempt) => {
+            const record = safeRecord(attempt);
+            return {
+              channel:
+                typeof record.channel === 'string' ? record.channel : 'N/A',
+              status: notificationStatusFromValue(record.status),
+              message:
+                typeof record.message === 'string'
+                  ? record.message
+                  : undefined,
+            };
+          })
+        : [];
+
+      return {
+        id: entry.id,
+        title: entry.title,
+        eventType:
+          typeof metadata.eventType === 'string' ? metadata.eventType : 'N/A',
+        status: notificationStatusFromJournal(entry, metadata),
+        severity: entry.severity,
+        occurredAt: entry.occurredAt,
+        resolvedAt: entry.resolvedAt,
+        relatedReference: entry.relatedReference,
+        channels: stringArrayFromMetadata(metadata, 'channels'),
+        attempts,
+        proofId: typeof proof.proofId === 'string' ? proof.proofId : undefined,
+        proofGeneratedAt:
+          typeof proof.generatedAt === 'string' ? proof.generatedAt : undefined,
+        acknowledgedAt:
+          typeof acknowledgement.acknowledgedAt === 'string'
+            ? acknowledgement.acknowledgedAt
+            : undefined,
+        acknowledgedById:
+          typeof acknowledgement.acknowledgedById === 'number'
+            ? acknowledgement.acknowledgedById
+            : undefined,
+        reminder: {
+          isReminder: reminder.isReminder === true,
+          reminderCount:
+            typeof reminder.reminderCount === 'number'
+              ? reminder.reminderCount
+              : 0,
+          nextReminderAt:
+            typeof reminder.nextReminderAt === 'string'
+              ? reminder.nextReminderAt
+              : null,
+        },
+        escalationLevel:
+          typeof metadata.escalationLevel === 'number'
+            ? metadata.escalationLevel
+            : undefined,
+        quietHours:
+          typeof quietHours.start === 'string' && typeof quietHours.end === 'string'
+            ? {
+                start: quietHours.start,
+                end: quietHours.end,
+                timezone:
+                  typeof quietHours.timezone === 'string'
+                    ? quietHours.timezone
+                    : undefined,
+              }
+            : null,
+        suppressedUntil:
+          typeof metadata.suppressedUntil === 'string'
+            ? metadata.suppressedUntil
+            : null,
+      };
+    })
+    .sort(
+      (left, right) =>
+        new Date(right.occurredAt).getTime() -
+        new Date(left.occurredAt).getTime(),
+    )
+    .slice(0, 8);
+};
+
 const buildNotifications = ({
   alerts,
   incidents,
+  journalEntries,
 }: {
   alerts: OpsAlert[];
   incidents: OpsIncident[];
+  journalEntries: OpsRawJournalEntry[] | null;
 }): OpsNotificationState => {
   const pendingAlerts = alerts.filter(
     (alert) => alert.notificationStatus === 'PENDING',
@@ -708,49 +1122,98 @@ const buildNotifications = ({
   const escalatedIncidents = incidents.filter(
     (incident) => incident.notificationStatus === 'ESCALATED',
   ).length;
+  const entries = buildNotificationEvidence(journalEntries);
+  const openNotificationEntries = entries.filter((entry) =>
+    ['PENDING', 'SENT', 'PARTIAL', 'FAILED', 'THROTTLED'].includes(
+      entry.status,
+    ),
+  ).length;
+  const acknowledgedNotifications = entries.filter(
+    (entry) => entry.status === 'ACKNOWLEDGED' || entry.acknowledgedAt,
+  ).length;
+  const reminders = entries.filter(
+    (entry) => entry.reminder.isReminder || entry.reminder.reminderCount > 0,
+  ).length;
+  const quietHoursDeferred = entries.filter(
+    (entry) => entry.status === 'THROTTLED' && Boolean(entry.suppressedUntil),
+  ).length;
+  const failedNotifications = entries.filter(
+    (entry) => entry.status === 'FAILED' || entry.status === 'PARTIAL',
+  ).length;
   const lastActivityAt = [
     ...alerts.map((alert) => alert.detectedAt),
     ...incidents.map((incident) => incident.escalatedAt ?? incident.openedAt),
+    ...entries.map((entry) => entry.acknowledgedAt ?? entry.occurredAt),
   ]
     .filter(Boolean)
     .sort()
     .at(-1);
 
-  if (escalatedIncidents > 0) {
+  if (escalatedIncidents > 0 || failedNotifications > 0) {
     return {
       status: 'CRITICAL',
-      label: 'Escalade active',
-      detail: `${escalatedIncidents} incident${escalatedIncidents > 1 ? 's' : ''} escaladé${escalatedIncidents > 1 ? 's' : ''}.`,
-      pendingAlerts,
+      label:
+        failedNotifications > 0
+          ? 'Notifications en échec'
+          : 'Escalade active',
+      detail:
+        failedNotifications > 0
+          ? `${failedNotifications} notification${failedNotifications > 1 ? 's' : ''} en échec ou partielle${failedNotifications > 1 ? 's' : ''}.`
+          : `${escalatedIncidents} incident${escalatedIncidents > 1 ? 's' : ''} escaladé${escalatedIncidents > 1 ? 's' : ''}.`,
+      pendingAlerts: pendingAlerts + openNotificationEntries,
       escalatedIncidents,
+      acknowledgedNotifications,
+      reminders,
+      quietHoursDeferred,
+      failedNotifications,
       lastActivityAt,
+      entries,
     };
   }
 
-  if (pendingAlerts > 0) {
+  if (pendingAlerts > 0 || openNotificationEntries > 0 || quietHoursDeferred > 0) {
     return {
       status: 'WARNING',
-      label: 'Notifications à traiter',
-      detail: `${pendingAlerts} alerte${pendingAlerts > 1 ? 's' : ''} non acquittée${pendingAlerts > 1 ? 's' : ''}.`,
-      pendingAlerts,
+      label:
+        quietHoursDeferred > 0
+          ? 'Quiet hours actives'
+          : 'Notifications à traiter',
+      detail:
+        quietHoursDeferred > 0
+          ? `${quietHoursDeferred} notification${quietHoursDeferred > 1 ? 's' : ''} différée${quietHoursDeferred > 1 ? 's' : ''} par quiet hours.`
+          : `${pendingAlerts + openNotificationEntries} notification${pendingAlerts + openNotificationEntries > 1 ? 's' : ''} non acquittée${pendingAlerts + openNotificationEntries > 1 ? 's' : ''}.`,
+      pendingAlerts: pendingAlerts + openNotificationEntries,
       escalatedIncidents,
+      acknowledgedNotifications,
+      reminders,
+      quietHoursDeferred,
+      failedNotifications,
       lastActivityAt,
+      entries,
     };
   }
 
   return {
-    status: alerts.length > 0 || incidents.length > 0 ? 'OK' : 'UNKNOWN',
+    status:
+      alerts.length > 0 || incidents.length > 0 || entries.length > 0
+        ? 'OK'
+        : 'UNKNOWN',
     label:
-      alerts.length > 0 || incidents.length > 0
+      alerts.length > 0 || incidents.length > 0 || entries.length > 0
         ? 'Suivi à jour'
         : 'Aucun signal',
     detail:
-      alerts.length > 0 || incidents.length > 0
+      alerts.length > 0 || incidents.length > 0 || entries.length > 0
         ? 'Les alertes ouvertes sont acquittées et aucun incident n’est escaladé.'
         : 'Aucune notification ou escalade active remontée.',
     pendingAlerts,
     escalatedIncidents,
+    acknowledgedNotifications,
+    reminders,
+    quietHoursDeferred,
+    failedNotifications,
     lastActivityAt,
+    entries,
   };
 };
 
@@ -831,16 +1294,35 @@ const buildDirectionReportSurface = (
 });
 
 const buildSla = ({
+  slo,
   observability,
   readiness,
   backup,
   backupGate,
 }: {
+  slo: OpsSloResponse | null;
   observability: ProductionObservabilityHealth | null;
   readiness: ProductionDecision | null;
   backup: BackupMetrics | null;
   backupGate?: ProductionGateStatus;
 }): OpsSlaIndicator[] => {
+  if (slo && slo.objectives) {
+    return Object.values(slo.objectives).map((objective) => ({
+      id: objective.id,
+      label: objective.label,
+      target: formatSloTarget(objective.thresholds),
+      current: formatSloValue(objective.actual.value, objective.actual.unit),
+      status: sloSignalStatus(objective.status),
+      detail: [
+        `Seuil warning ${formatSloWarning(objective.thresholds)}`,
+        `${objective.actual.sampleSize} échantillon`,
+      ].join(' · '),
+      reason: objective.reason,
+      period: slo.period,
+      sloStatus: objective.status,
+    }));
+  }
+
   const publicationAttempts = observability?.counters.publicationAttempts ?? 0;
   const successfulPublications =
     observability?.counters.successfulPublications ?? 0;
@@ -945,8 +1427,10 @@ const buildSummary = ({
   alertFeed,
   operationalAlertFeed,
   incidentFeed,
+  journalEntries,
   actionCenter,
   complianceReports,
+  slo,
 }: {
   apiHealth: ReadyHealth | null;
   observability: ProductionObservabilityHealth | null;
@@ -956,8 +1440,10 @@ const buildSummary = ({
   alertFeed: OpsRawAgentAlert[] | null;
   operationalAlertFeed: OpsRawOperationalAlert[] | null;
   incidentFeed: OpsRawIncident[] | null;
+  journalEntries: OpsRawJournalEntry[] | null;
   actionCenter: OpsActionCenterResponse | null;
   complianceReports: OpsComplianceReport[] | null;
+  slo: OpsSloResponse | null;
 }): OpsDashboardSummary => {
   const generatedAt = nowIso();
   const gates = readiness ? [readiness.gates.freeze, ...readiness.gates.checks] : [];
@@ -989,7 +1475,11 @@ const buildSummary = ({
     history,
     rawIncidents: incidentFeed,
   });
-  const notifications = buildNotifications({ alerts, incidents });
+  const notifications = buildNotifications({
+    alerts,
+    incidents,
+    journalEntries,
+  });
   const highAlerts =
     alerts.filter((alert) => alert.severity === 'HIGH').length ||
     observability?.counters.highAlerts ||
@@ -1027,7 +1517,10 @@ const buildSummary = ({
         key: 'notifications',
         label: 'Notifications',
         value: notifications.label,
-        detail: notifications.detail,
+        detail:
+          notifications.reminders > 0
+            ? `${notifications.detail} ${notifications.reminders} rappel.`
+            : notifications.detail,
         status: notifications.status,
       },
       {
@@ -1063,6 +1556,7 @@ const buildSummary = ({
     alerts,
     anomalies,
     sla: buildSla({
+      slo,
       observability,
       readiness,
       backup: backupMetrics,
@@ -1093,6 +1587,14 @@ const buildSummary = ({
 };
 
 export const opsApi = {
+  multiTenantSummary: async (
+    params?: Pick<OpsDashboardParams, 'tenantId'>,
+  ): Promise<OpsMultiTenantSummaryResponse> => {
+    const response = await api.get('/api/ops/multi-tenant-summary', {
+      params,
+    });
+    return response.data;
+  },
   summary: async (
     params?: OpsDashboardParams,
   ): Promise<OpsDashboardSummary> => {
@@ -1105,8 +1607,10 @@ export const opsApi = {
       alertFeed,
       operationalAlertFeed,
       incidentFeed,
+      journalEntries,
       actionCenter,
       complianceReports,
+      slo,
     ] =
       await Promise.allSettled([
         api
@@ -1147,6 +1651,17 @@ export const opsApi = {
           })
           .then((response) => response.data),
         api
+          .get<OpsRawJournalEntry[]>('/api/ops/journal', {
+            params: {
+              tenantId: params?.tenantId,
+              type: 'NOTIFICATION',
+              from: params?.from,
+              to: params?.to,
+              limit: 8,
+            },
+          })
+          .then((response) => response.data),
+        api
           .get<OpsActionCenterResponse>('/api/ops/action-center', {
             params: {
               tenantId: params?.tenantId,
@@ -1164,6 +1679,15 @@ export const opsApi = {
             },
           })
           .then((response) => response.data),
+        api
+          .get<OpsSloResponse>('/api/ops/slo', {
+            params: {
+              tenantId: params?.tenantId,
+              from: params?.from,
+              to: params?.to,
+            },
+          })
+          .then((response) => response.data),
       ]);
 
     return buildSummary({
@@ -1175,8 +1699,10 @@ export const opsApi = {
       alertFeed: settledValue(alertFeed),
       operationalAlertFeed: settledValue(operationalAlertFeed),
       incidentFeed: settledValue(incidentFeed),
+      journalEntries: settledValue(journalEntries),
       actionCenter: settledValue(actionCenter),
       complianceReports: settledValue(complianceReports),
+      slo: settledValue(slo),
     });
   },
   actionCenter: async (
@@ -1187,6 +1713,66 @@ export const opsApi = {
     },
   ): Promise<OpsActionCenterResponse> => {
     const response = await api.get('/api/ops/action-center', { params });
+    return response.data;
+  },
+  assignActionCenterItem: async (
+    itemId: string,
+    input: AssignOpsActionCenterItemInput,
+    params?: Pick<OpsDashboardParams, 'tenantId'>,
+  ): Promise<OpsActionCenterItem> => {
+    const response = await api.patch(
+      `/api/ops/action-center/${encodeURIComponent(itemId)}/assign`,
+      input,
+      { params: { tenantId: params?.tenantId } },
+    );
+    return response.data;
+  },
+  commentActionCenterItem: async (
+    itemId: string,
+    input: CommentOpsActionCenterItemInput,
+    params?: Pick<OpsDashboardParams, 'tenantId'>,
+  ): Promise<OpsActionCenterItem> => {
+    const response = await api.post(
+      `/api/ops/action-center/${encodeURIComponent(itemId)}/comments`,
+      input,
+      { params: { tenantId: params?.tenantId } },
+    );
+    return response.data;
+  },
+  prioritizeActionCenterItem: async (
+    itemId: string,
+    input: PrioritizeOpsActionCenterItemInput,
+    params?: Pick<OpsDashboardParams, 'tenantId'>,
+  ): Promise<OpsActionCenterItem> => {
+    const response = await api.patch(
+      `/api/ops/action-center/${encodeURIComponent(itemId)}/priority`,
+      input,
+      { params: { tenantId: params?.tenantId } },
+    );
+    return response.data;
+  },
+  transitionActionCenterItem: async (
+    itemId: string,
+    input: TransitionOpsActionCenterItemInput,
+    params?: Pick<OpsDashboardParams, 'tenantId'>,
+  ): Promise<OpsActionCenterItem> => {
+    const response = await api.patch(
+      `/api/ops/action-center/${encodeURIComponent(itemId)}/status`,
+      input,
+      { params: { tenantId: params?.tenantId } },
+    );
+    return response.data;
+  },
+  resolveActionCenterItem: async (
+    itemId: string,
+    input: ResolveOpsActionCenterItemInput,
+    params?: Pick<OpsDashboardParams, 'tenantId'>,
+  ): Promise<OpsActionCenterItem> => {
+    const response = await api.patch(
+      `/api/ops/action-center/${encodeURIComponent(itemId)}/resolve`,
+      input,
+      { params: { tenantId: params?.tenantId } },
+    );
     return response.data;
   },
   getRunbook: async (

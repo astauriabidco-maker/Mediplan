@@ -6,6 +6,7 @@ import type {
 import type { CompliancePeriodParams } from './manager.api';
 import type { ProductionReadinessTenantParams } from './production-readiness.api';
 import type { OpsDashboardParams } from './ops.api';
+import type { AuditLogFilters } from './audit.api';
 
 const MINUTE = 60 * 1000;
 
@@ -35,6 +36,21 @@ const tenantParams = (params?: ProductionReadinessTenantParams) => ({
 const opsParams = (params?: OpsDashboardParams) => ({
   from: params?.from,
   to: params?.to,
+  tenantId: params?.tenantId,
+});
+
+const auditParams = (params?: AuditLogFilters) => ({
+  tenantId: params?.tenantId,
+  from: params?.from,
+  to: params?.to,
+  limit: params?.limit,
+  action: params?.action,
+  entityType: params?.entityType,
+  entityId: params?.entityId,
+  detailAction: params?.detailAction,
+});
+
+const opsTenantParams = (params?: Pick<OpsDashboardParams, 'tenantId'>) => ({
   tenantId: params?.tenantId,
 });
 
@@ -140,7 +156,15 @@ export const opsQueryKeys = {
     all: () => [...opsQueryKeys.all, 'dashboard'] as const,
     summary: (params?: OpsDashboardParams) =>
       [...opsQueryKeys.dashboard.all(), opsParams(params)] as const,
+    multiTenantSummary: (params?: Pick<OpsDashboardParams, 'tenantId'>) =>
+      [...opsQueryKeys.dashboard.all(), 'multi-tenant', opsTenantParams(params)] as const,
   },
+};
+
+export const auditQueryKeys = {
+  all: ['audit'] as const,
+  logs: (params?: AuditLogFilters) =>
+    [...auditQueryKeys.all, 'logs', auditParams(params)] as const,
 };
 
 export const invalidatePlanningResolutionQueries = (
