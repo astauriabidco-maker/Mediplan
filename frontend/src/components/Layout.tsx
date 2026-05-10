@@ -30,6 +30,7 @@ import { twMerge } from 'tailwind-merge';
 import React, { useState } from 'react';
 import { useNotifications } from '../hooks/useNotifications';
 import NotificationBell from './NotificationBell';
+import { Sprint36CommercialDemoBanner } from './Sprint36CommercialDemoBanner';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -154,6 +155,7 @@ export const Layout = () => {
   const { user, logout, impersonatedTenantId, setImpersonatedTenantId } =
     useAuth();
   useNotifications();
+  const activeTenantId = impersonatedTenantId ?? user?.tenantId;
 
   const handleLogout = () => {
     logout();
@@ -419,6 +421,7 @@ export const Layout = () => {
 
         {/* Scrollable Area */}
         <main className="flex-1 overflow-y-auto p-8">
+          <Sprint36CommercialDemoBanner tenantId={activeTenantId} />
           <Outlet />
         </main>
       </div>

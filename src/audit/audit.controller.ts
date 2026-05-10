@@ -6,6 +6,7 @@ import { AuditService } from './audit.service';
 import { AuditAction, AuditEntityType } from './entities/audit-log.entity';
 import type { AuthenticatedRequest } from '../auth/authenticated-request';
 import { resolveTenantId } from '../auth/tenant-context';
+import { assertSprint36SensitiveExportAllowed } from '../commercial-demo/sprint36-commercial-demo';
 
 @Controller('audit')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -35,7 +36,9 @@ export class AuditController {
         @Query('to') to?: string,
         @Query('limit') limit?: string,
     ) {
-        return this.auditService.exportLogs(resolveTenantId(req, queryTenantId), {
+        const tenantId = resolveTenantId(req, queryTenantId);
+        assertSprint36SensitiveExportAllowed(tenantId);
+        return this.auditService.exportLogs(tenantId, {
             actorId: actorId ? parseInt(actorId, 10) : undefined,
             action,
             entityType,

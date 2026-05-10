@@ -2,6 +2,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { BackupController } from './backup.controller';
 import { BackupService, TenantImportMode } from './backup.service';
+import { SPRINT36_COMMERCIAL_DEMO_TENANT_ID } from '../commercial-demo/sprint36-commercial-demo';
 
 const createRequest = (overrides: Partial<any> = {}) =>
   ({
@@ -93,5 +94,15 @@ describe('BackupController', () => {
       expect.objectContaining({ tenantId: 'tenant-a' }),
       TenantImportMode.REPLACE_PLANNING_DATA,
     );
+  });
+
+  it('blocks tenant backup exports for the commercial demo tenant', async () => {
+    await expect(
+      controller.exportTenant(
+        createRequest({ tenantId: SPRINT36_COMMERCIAL_DEMO_TENANT_ID }),
+      ),
+    ).rejects.toThrow(/Import\/export sensible bloque/);
+
+    expect(backupService.exportTenant).not.toHaveBeenCalled();
   });
 });

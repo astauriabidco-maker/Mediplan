@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ObservabilityEvent } from '../lib/observability';
+import { SPRINT36_COMMERCIAL_DEMO_TENANT_ID } from '../lib/sprint36CommercialDemo';
 
 const requestUse = vi.fn();
 const responseUse = vi.fn();
@@ -23,6 +24,7 @@ vi.mock('../store/useAuth', () => ({
     getState: vi.fn(() => ({
       token: 'jwt-token',
       impersonatedTenantId: 'tenant-b',
+      user: { tenantId: 'tenant-a' },
       logout,
     })),
   },
@@ -58,6 +60,27 @@ describe('api axios observability interceptors', () => {
     });
     expect(config.params).toEqual({ tenantId: 'tenant-b' });
     expect(config.metadata.traceId).toBe('trace-request-1');
+  });
+
+  it('blocks sensitive import/export requests for the commercial demo tenant', async () => {
+    const { useAuth } = await import('../store/useAuth');
+    vi.mocked(useAuth.getState).mockReturnValueOnce({
+      token: 'jwt-token',
+      impersonatedTenantId: SPRINT36_COMMERCIAL_DEMO_TENANT_ID,
+      user: { tenantId: 'tenant-a' },
+      logout,
+    } as any);
+
+    await import('./axios');
+    const onRequest = requestUse.mock.calls[0][0];
+
+    expect(() =>
+      onRequest({
+        headers: {},
+        params: {},
+        url: '/api/tenant-backups/export',
+      }),
+    ).toThrow(/Import\/export sensible bloque/);
   });
 
   it('logs failed API responses with backend correlation and logs out on 401', async () => {

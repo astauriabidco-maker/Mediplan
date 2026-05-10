@@ -82,6 +82,11 @@ const LeavesPage = lazy(() =>
 const LoginPage = lazy(() =>
   import('./pages/LoginPage').then((module) => ({ default: module.LoginPage })),
 );
+const DemoRequestPage = lazy(() =>
+  import('./pages/DemoRequestPage').then((module) => ({
+    default: module.DemoRequestPage,
+  })),
+);
 const WhatsAppInbox = lazy(() =>
   import('./pages/WhatsAppInbox').then((module) => ({
     default: module.WhatsAppInbox,
@@ -168,6 +173,7 @@ function App() {
         <BrowserRouter>
           <Routes>
             <Route path="/login" element={<LoginPage />} />
+            <Route path="/demo" element={<DemoRequestPage />} />
             <Route path="/auth/accept-invite" element={<AcceptInvitePage />} />
             <Route path="/sign/:token" element={<PublicSignPage />} />
 

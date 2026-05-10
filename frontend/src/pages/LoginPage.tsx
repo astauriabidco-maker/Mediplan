@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useAuth } from '../store/useAuth';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { Lock, Mail, Loader2 } from 'lucide-react';
 
@@ -99,6 +99,15 @@ export const LoginPage: React.FC = () => {
                         </button>
                     </div>
                 </form>
+
+                <div className="text-center">
+                    <Link
+                        to="/demo"
+                        className="text-sm font-semibold text-blue-200 transition-colors hover:text-white"
+                    >
+                        Demander une démo commerciale
+                    </Link>
+                </div>
 
                 <div className="mt-8 pt-6 border-t border-white/10">
                     <p className="text-center text-xs font-semibold text-blue-300 uppercase tracking-wider mb-4">

@@ -2,6 +2,7 @@ import { PERMISSIONS_KEY } from '../auth/permissions.decorator';
 import { AuditController } from './audit.controller';
 import { AuditService } from './audit.service';
 import { AuditAction, AuditEntityType } from './entities/audit-log.entity';
+import { SPRINT36_COMMERCIAL_DEMO_TENANT_ID } from '../commercial-demo/sprint36-commercial-demo';
 
 const createRequest = (overrides: Partial<any> = {}) => ({
   user: {
@@ -107,5 +108,15 @@ describe('AuditController', () => {
       to: new Date('2026-02-28T23:59:59.000Z'),
       limit: 50,
     });
+  });
+
+  it('blocks audit exports for the commercial demo tenant', async () => {
+    await expect(
+      controller.exportLogs(
+        createRequest({ tenantId: SPRINT36_COMMERCIAL_DEMO_TENANT_ID }),
+      ),
+    ).rejects.toThrow(/Import\/export sensible bloque/);
+
+    expect(auditService.exportLogs).not.toHaveBeenCalled();
   });
 });

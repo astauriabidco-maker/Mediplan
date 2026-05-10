@@ -13,6 +13,7 @@ import { Permissions } from '../auth/permissions.decorator';
 import { RolesGuard } from '../auth/roles.guard';
 import type { AuthenticatedRequest } from '../auth/authenticated-request';
 import { resolveTenantId } from '../auth/tenant-context';
+import { assertSprint36SensitiveExportAllowed } from '../commercial-demo/sprint36-commercial-demo';
 import {
   BackupService,
   TenantBackupSnapshot,
@@ -32,8 +33,10 @@ export class BackupController {
     @Query('from') from?: string,
     @Query('to') to?: string,
   ) {
+    const tenantId = resolveTenantId(req, queryTenantId);
+    assertSprint36SensitiveExportAllowed(tenantId);
     return this.backupService.exportTenant(
-      resolveTenantId(req, queryTenantId),
+      tenantId,
       {
         from: this.toOptionalDate(from, 'from'),
         to: this.toOptionalDate(to, 'to'),
@@ -69,8 +72,10 @@ export class BackupController {
     },
     @Query('tenantId') queryTenantId?: string,
   ) {
+    const tenantId = resolveTenantId(req, queryTenantId);
+    assertSprint36SensitiveExportAllowed(tenantId);
     return this.backupService.importTenant(
-      resolveTenantId(req, queryTenantId),
+      tenantId,
       body.snapshot,
       req.user,
       body.mode ?? TenantImportMode.MERGE,

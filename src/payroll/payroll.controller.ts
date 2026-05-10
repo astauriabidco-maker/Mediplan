@@ -5,6 +5,7 @@ import { PayrollPdfService } from './payroll-pdf.service';
 import { PayrollExportService } from './payroll-export.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { Permissions } from '../auth/permissions.decorator';
+import { assertSprint36SensitiveExportAllowed } from '../commercial-demo/sprint36-commercial-demo';
 
 @Controller('payroll')
 @UseGuards(JwtAuthGuard)
@@ -37,6 +38,7 @@ export class PayrollController {
         @Res() res: Response
     ) {
         const tenantId = req.user.tenantId;
+        assertSprint36SensitiveExportAllowed(tenantId);
         // Verify Payslip existence & ownership
         const payslips = await this.payrollService.getPayslips(tenantId, new Date().getMonth()+1, new Date().getFullYear()); // Wait, better fetch proper one.
         // Let's create a getById in payrollService or just fetch all and find
@@ -64,6 +66,7 @@ export class PayrollController {
         @Res() res: Response
     ) {
         const tenantId = req.user.tenantId;
+        assertSprint36SensitiveExportAllowed(tenantId);
         const csvContent = await this.payrollExportService.generateSageExport(+month, +year, tenantId);
 
         const fileName = `OD_Paie_${tenantId}_${month}_${year}.csv`;
@@ -85,6 +88,7 @@ export class PayrollController {
         @Res() res: Response
     ) {
         const tenantId = req.user.tenantId;
+        assertSprint36SensitiveExportAllowed(tenantId);
         const csvContent = await this.payrollExportService.generateDipeExport(+month, +year, tenantId);
 
         const fileName = `DIPE_CNPS_${tenantId}_${month}_${year}.csv`;

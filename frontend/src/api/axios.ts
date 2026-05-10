@@ -4,6 +4,11 @@ import {
     createTraceId,
     logApiError,
 } from '../lib/observability';
+import {
+    Sprint36CommercialDemoGuardError,
+    isSprint36CommercialDemoTenant,
+    isSprint36SensitiveDemoExportPath,
+} from '../lib/sprint36CommercialDemo';
 
 interface ObservedRequestConfig {
     metadata?: {
@@ -45,7 +50,18 @@ const api = axios.create();
 
 api.interceptors.request.use(
     (config) => {
-        const { token, impersonatedTenantId } = useAuth.getState();
+        const { token, impersonatedTenantId, user } = useAuth.getState();
+        const activeTenantId = impersonatedTenantId ?? user?.tenantId;
+        const requestTenantId =
+            typeof config.params?.tenantId === 'string'
+                ? config.params.tenantId
+                : activeTenantId;
+        if (
+            isSprint36CommercialDemoTenant(requestTenantId) &&
+            isSprint36SensitiveDemoExportPath(config.url)
+        ) {
+            throw new Sprint36CommercialDemoGuardError();
+        }
         const traceId = createTraceId();
         (config as ObservedRequestConfig).metadata = {
             traceId,
