@@ -79,6 +79,8 @@
     "sprint30:phase6": "npm --prefix frontend run test -- --run src/api/ops.contract.test.ts src/api/ops.api.test.ts src/api/queryKeys.test.ts src/pages/OpsDashboardPage.test.tsx src/pages/AuditLogPage.test.tsx && npm --prefix frontend run build && git diff --check",
     "sprint31:phase5": "npm --prefix frontend run test -- --run src/api/__mocks__/ops-pilot-demo.mock.test.ts src/api/ops.contract.test.ts src/api/ops.api.test.ts src/api/queryKeys.test.ts src/pages/OpsDashboardPage.test.tsx src/pages/AuditLogPage.test.tsx && npm --prefix frontend run build && git diff --check",
     "sprint33:pilot:check": "npm --prefix frontend run test -- --run src/api/pilot-session.contract.test.ts src/api/__mocks__/ops-pilot-demo.mock.test.ts src/api/ops.contract.test.ts src/api/ops.api.test.ts src/api/queryKeys.test.ts src/pages/OpsDashboardPage.test.tsx src/pages/AuditLogPage.test.tsx && npm --prefix frontend run build && git diff --check",
+    "sprint34:prod:gate": "(npm run production:readiness -- --format json || test $? -eq 2) && (npm run production:freeze -- --format json || test $? -eq 2) && npm run production:gates -- --format json && npm run production:signoffs -- --format json && git diff --check",
+    "sprint35:commercial:check": "npm run sprint33:pilot:check && git diff --check",
     "ci:frontend": "npm run frontend:build && npm run frontend:budget:check && npm run frontend:lint && npm run frontend:test && npm run frontend:audit && npm run frontend:smoke:routes",
     "ci:product": "npm run ci:frontend && npm run ci:quality",
     "seed:hgd": "ts-node -r tsconfig-paths/register seed-hgd.ts",
