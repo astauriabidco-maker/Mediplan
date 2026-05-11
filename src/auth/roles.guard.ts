@@ -1,6 +1,6 @@
 import { Injectable, CanActivate, ExecutionContext } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { UserRole } from '../agents/entities/agent.entity';
+import { UserRole, isPlatformRole } from '../agents/entities/agent.entity';
 import { ROLES_KEY } from './roles.decorator';
 import { PERMISSIONS_KEY } from './permissions.decorator';
 import { hasAnyPermission } from './permissions';
@@ -28,6 +28,10 @@ export class RolesGuard implements CanActivate {
 
         // Check Roles - SUPER_ADMIN and ADMIN bypass all permission checks
         if (user.role === UserRole.SUPER_ADMIN || user.role === UserRole.ADMIN) {
+            return true;
+        }
+
+        if (isPlatformRole(user.role) && requiredRoles?.includes(UserRole.PLATFORM_SUPER_ADMIN)) {
             return true;
         }
 

@@ -22,6 +22,8 @@ import {
   AlertTriangle,
   FileText,
   ServerCog,
+  Shield,
+  TrendingUp,
 } from 'lucide-react';
 import { useAppConfig } from '../store/useAppConfig';
 import { useAuth } from '../store/useAuth';
@@ -31,6 +33,11 @@ import React, { useState } from 'react';
 import { useNotifications } from '../hooks/useNotifications';
 import NotificationBell from './NotificationBell';
 import { Sprint36CommercialDemoBanner } from './Sprint36CommercialDemoBanner';
+import { useIsMobile } from '../hooks/useIsMobile';
+import { MobileBottomNav } from './MobileBottomNav';
+import { useSocket } from '../hooks/useSocket';
+import { useQueryClient } from '@tanstack/react-query';
+import { useEffect } from 'react';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -51,7 +58,7 @@ const SidebarItem = ({
 }) => (
   <NavLink
     to={to}
-    end={to === '/agents' || to === '/manager'}
+    end={to === '/agents' || to === '/manager' || to === '/platform'}
     className={({ isActive }) =>
       cn(
         'flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all duration-200 group mx-2',
@@ -155,7 +162,24 @@ export const Layout = () => {
   const { user, logout, impersonatedTenantId, setImpersonatedTenantId } =
     useAuth();
   useNotifications();
+  const isMobile = useIsMobile();
   const activeTenantId = impersonatedTenantId ?? user?.tenantId;
+  const { socket } = useSocket();
+  const queryClient = useQueryClient();
+
+  useEffect(() => {
+    if (socket) {
+      socket.on('marketplace_update', () => {
+        queryClient.invalidateQueries({ queryKey: ['marketplace-shifts'] });
+        queryClient.invalidateQueries({ queryKey: ['my-applications'] });
+      });
+    }
+    return () => {
+      if (socket) {
+        socket.off('marketplace_update');
+      }
+    };
+  }, [socket, queryClient]);
 
   const handleLogout = () => {
     logout();
@@ -172,10 +196,13 @@ export const Layout = () => {
     isAdminOrManager;
 
   const isAgent = user?.role === 'AGENT';
+  const isPlatformSuperAdmin = user?.role === 'PLATFORM_SUPER_ADMIN';
+  const hasTenantContext = !isPlatformSuperAdmin || Boolean(impersonatedTenantId);
 
   return (
     <div className="flex h-screen w-full bg-slate-950 text-slate-100 overflow-hidden">
       {/* Sidebar */}
+      {!isMobile && (
       <aside className="w-64 bg-slate-900 border-r border-slate-800 flex flex-col">
         <div className="p-6">
           <h1 className="text-2xl font-bold text-white flex items-center gap-2">
@@ -190,169 +217,215 @@ export const Layout = () => {
         </div>
 
         <nav className="flex-1 mt-6 space-y-1 overflow-y-auto">
-          {!isAgent && (
-            <SidebarItem
-              to="/dashboard"
-              icon={LayoutDashboard}
-              label="Tableau de bord"
-              themeColor={themeColor}
-            />
-          )}
-          {!isAgent && hasPermission('planning:read') && (
-            <SidebarItem
-              to="/manager/cockpit"
-              icon={ClipboardCheck}
-              label="Cockpit manager"
-              themeColor={themeColor}
-            />
-          )}
-          {!isAgent && hasPermission('planning:read') && (
-            <SidebarItem
-              to="/manager/worklist"
-              icon={AlertTriangle}
-              label="Corrections"
-              themeColor={themeColor}
-            />
-          )}
-          {!isAgent && hasPermission('audit:read') && (
-            <SidebarItem
-              to="/audit"
-              icon={FileText}
-              label="Journal audit"
-              themeColor={themeColor}
-            />
-          )}
-
-          <SidebarItem
-            to="/planning"
-            icon={Calendar}
-            label="Planning"
-            themeColor={themeColor}
-          />
-          {!isAgent && hasPermission('planning:read') && (
-            <SidebarItem
-              to="/planning/prepublication"
-              icon={ShieldCheck}
-              label="Pré-publication"
-              themeColor={themeColor}
-            />
-          )}
-          <SidebarItem
-            to="/attendance"
-            icon={Clock}
-            label={isAgent ? 'Mes Pointages' : 'Assiduité'}
-            themeColor={themeColor}
-          />
-          <SidebarItem
-            to="/leaves"
-            icon={Calendar}
-            label={isAgent ? 'Mes Congés' : 'Congés'}
-            themeColor={themeColor}
-          />
-
-          {!isAgent && (
-            <SidebarGroup
-              icon={User}
-              label="Agents"
-              themeColor={themeColor}
-              activePaths={['/agents']}
-            >
+          {isPlatformSuperAdmin && (
+            <>
               <SidebarItem
-                to="/agents"
-                icon={List}
-                label="Liste des Agents"
+                to="/platform"
+                icon={Shield}
+                label="Vue plateforme"
                 themeColor={themeColor}
-                isSubItem
               />
               <SidebarItem
-                to="/agents/services"
+                to="/platform/tenants"
+                icon={ServerCog}
+                label="Tenants"
+                themeColor={themeColor}
+              />
+              <SidebarItem
+                to="/platform/audit"
+                icon={FileText}
+                label="Audit & impersonation"
+                themeColor={themeColor}
+              />
+              <SidebarItem
+                to="/platform/security"
+                icon={ShieldCheck}
+                label="Sécurité"
+                themeColor={themeColor}
+              />
+              <SidebarItem
+                to="/platform/settings"
+                icon={Settings}
+                label="Paramètres plateforme"
+                themeColor={themeColor}
+              />
+            </>
+          )}
+          {hasTenantContext && (
+            <>
+              {!isAgent && (
+                <SidebarItem
+                  to="/dashboard"
+                  icon={LayoutDashboard}
+                  label="Tableau de bord"
+                  themeColor={themeColor}
+                />
+              )}
+              {!isAgent && hasPermission('planning:read') && (
+                <SidebarItem
+                  to="/manager/cockpit"
+                  icon={ClipboardCheck}
+                  label="Cockpit manager"
+                  themeColor={themeColor}
+                />
+              )}
+              {!isAgent && hasPermission('planning:read') && (
+                <SidebarItem
+                  to="/marketplace/dashboard"
+                  icon={TrendingUp}
+                  label="Analytics Marketplace"
+                  themeColor={themeColor}
+                />
+              )}
+              {!isAgent && hasPermission('planning:read') && (
+                <SidebarItem
+                  to="/manager/worklist"
+                  icon={AlertTriangle}
+                  label="Corrections"
+                  themeColor={themeColor}
+                />
+              )}
+              {!isAgent && hasPermission('audit:read') && (
+                <SidebarItem
+                  to="/audit"
+                  icon={FileText}
+                  label="Journal audit"
+                  themeColor={themeColor}
+                />
+              )}
+
+              <SidebarItem
+                to="/planning"
+                icon={Calendar}
+                label="Planning"
+                themeColor={themeColor}
+              />
+              {!isAgent && hasPermission('planning:read') && (
+                <SidebarItem
+                  to="/planning/prepublication"
+                  icon={ShieldCheck}
+                  label="Pré-publication"
+                  themeColor={themeColor}
+                />
+              )}
+              <SidebarItem
+                to="/attendance"
+                icon={Clock}
+                label={isAgent ? 'Mes Pointages' : 'Assiduité'}
+                themeColor={themeColor}
+              />
+              <SidebarItem
+                to="/leaves"
+                icon={Calendar}
+                label={isAgent ? 'Mes Congés' : 'Congés'}
+                themeColor={themeColor}
+              />
+
+              {!isAgent && (
+                <SidebarGroup
+                  icon={User}
+                  label="Agents"
+                  themeColor={themeColor}
+                  activePaths={['/agents']}
+                >
+                  <SidebarItem
+                    to="/agents"
+                    icon={List}
+                    label="Liste des Agents"
+                    themeColor={themeColor}
+                    isSubItem
+                  />
+                  <SidebarItem
+                    to="/agents/services"
+                    icon={Layers}
+                    label="Services"
+                    themeColor={themeColor}
+                    isSubItem
+                  />
+                  <SidebarItem
+                    to="/agents/hierarchy"
+                    icon={Network}
+                    label="Hiérarchie"
+                    themeColor={themeColor}
+                    isSubItem
+                  />
+                </SidebarGroup>
+              )}
+
+              {!isAgent && (
+                <SidebarItem
+                  to="/competencies"
+                  icon={Award}
+                  label="Compétences"
+                  themeColor={themeColor}
+                />
+              )}
+              {!isAgent && (
+                <SidebarItem
+                  to="/payment"
+                  icon={Smartphone}
+                  label="Facturation & Paies"
+                  themeColor={themeColor}
+                />
+              )}
+
+              <SidebarItem
+                to="/ged"
                 icon={Layers}
-                label="Services"
+                label={isAgent ? 'Mes Documents' : 'GED & Documents'}
                 themeColor={themeColor}
-                isSubItem
               />
-              <SidebarItem
-                to="/agents/hierarchy"
-                icon={Network}
-                label="Hiérarchie"
-                themeColor={themeColor}
-                isSubItem
-              />
-            </SidebarGroup>
-          )}
 
-          {!isAgent && (
-            <SidebarItem
-              to="/competencies"
-              icon={Award}
-              label="Compétences"
-              themeColor={themeColor}
-            />
-          )}
-          {!isAgent && (
-            <SidebarItem
-              to="/payment"
-              icon={Smartphone}
-              label="Facturation & Paies"
-              themeColor={themeColor}
-            />
-          )}
+              {!isAgent && (
+                <SidebarItem
+                  to="/qvt"
+                  icon={HeartPulse}
+                  label="Santé & QVT"
+                  themeColor={themeColor}
+                />
+              )}
+              {!isAgent && hasPermission('release:read') && (
+                <SidebarItem
+                  to="/admin/release"
+                  icon={ShieldCheck}
+                  label="Release readiness"
+                  themeColor={themeColor}
+                />
+              )}
+              {!isAgent && hasPermission('release:read') && (
+                <SidebarItem
+                  to="/ops"
+                  icon={ServerCog}
+                  label="Ops post-prod"
+                  themeColor={themeColor}
+                />
+              )}
+              {!isAgent && (
+                <SidebarItem
+                  to="/sync"
+                  icon={Wifi}
+                  label="Synchronisation"
+                  themeColor={themeColor}
+                />
+              )}
+              {!isAgent && (
+                <SidebarItem
+                  to="/whatsapp-inbox"
+                  icon={MessageSquare}
+                  label="Messages WhatsApp"
+                  themeColor={themeColor}
+                />
+              )}
 
-          <SidebarItem
-            to="/ged"
-            icon={Layers}
-            label={isAgent ? 'Mes Documents' : 'GED & Documents'}
-            themeColor={themeColor}
-          />
-
-          {!isAgent && (
-            <SidebarItem
-              to="/qvt"
-              icon={HeartPulse}
-              label="Santé & QVT"
-              themeColor={themeColor}
-            />
-          )}
-          {!isAgent && hasPermission('release:read') && (
-            <SidebarItem
-              to="/admin/release"
-              icon={ShieldCheck}
-              label="Release readiness"
-              themeColor={themeColor}
-            />
-          )}
-          {!isAgent && hasPermission('release:read') && (
-            <SidebarItem
-              to="/ops"
-              icon={ServerCog}
-              label="Ops post-prod"
-              themeColor={themeColor}
-            />
-          )}
-          {!isAgent && (
-            <SidebarItem
-              to="/sync"
-              icon={Wifi}
-              label="Synchronisation"
-              themeColor={themeColor}
-            />
-          )}
-          {!isAgent && (
-            <SidebarItem
-              to="/whatsapp-inbox"
-              icon={MessageSquare}
-              label="Messages WhatsApp"
-              themeColor={themeColor}
-            />
-          )}
-
-          {!isAgent && hasPermission('settings:all') && (
-            <SidebarItem
-              to="/settings"
-              icon={Settings}
-              label="Paramètres"
-              themeColor={themeColor}
-            />
+              {!isAgent && hasPermission('settings:all') && (
+                <SidebarItem
+                  to="/settings"
+                  icon={Settings}
+                  label="Paramètres"
+                  themeColor={themeColor}
+                />
+              )}
+            </>
           )}
         </nav>
 
@@ -379,6 +452,7 @@ export const Layout = () => {
           </div>
         </div>
       </aside>
+      )}
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
@@ -420,11 +494,13 @@ export const Layout = () => {
         </header>
 
         {/* Scrollable Area */}
-        <main className="flex-1 overflow-y-auto p-8">
+        <main className={cn("flex-1 overflow-y-auto p-8", isMobile && "p-4 pb-20")}>
           <Sprint36CommercialDemoBanner tenantId={activeTenantId} />
           <Outlet />
         </main>
       </div>
+
+      {isMobile && <MobileBottomNav />}
     </div>
   );
 };

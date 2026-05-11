@@ -9,6 +9,17 @@ export interface AuthenticatedUser {
     tenant: string;
     role: string;
     permissions: string[];
+    impersonation?: TenantImpersonationContext;
+}
+
+export interface TenantImpersonationContext {
+    active: true;
+    actorId: number;
+    actorEmail: string;
+    sourceTenantId: string | null;
+    targetTenantId: string;
+    startedAt: string;
+    reason?: string;
 }
 
 export type AuthenticatedRequest = Request & {

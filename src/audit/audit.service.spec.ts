@@ -237,4 +237,72 @@ describe('AuditService', () => {
       }),
     );
   });
+
+  it('logs tenant impersonation start with dedicated audit action and target tenant chain', async () => {
+    const repository = {
+      findOne: jest.fn(async () => null),
+      create: jest.fn((data) => data),
+      save: jest.fn(async (data) => ({ id: 11, ...data })),
+    };
+    const service = new AuditService(repository as any);
+
+    await service.logTenantImpersonationStart({
+      actorId: 1,
+      actorEmail: 'root@example.test',
+      sourceTenantId: 'platform',
+      targetTenantId: 'tenant-b',
+      reason: 'Support incident INC-42',
+      startedAt: '2026-05-10T09:00:00.000Z',
+    });
+
+    expect(repository.save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tenantId: 'tenant-b',
+        actorId: 1,
+        action: AuditAction.IMPERSONATION_START,
+        entityType: AuditEntityType.TENANT_IMPERSONATION,
+        entityId: 'tenant-b',
+        details: expect.objectContaining({
+          action: 'START_TENANT_IMPERSONATION',
+          sourceTenantId: 'platform',
+          targetTenantId: 'tenant-b',
+        }),
+      }),
+    );
+  });
+
+  it('logs tenant impersonation stop with dedicated audit action and target tenant chain', async () => {
+    const repository = {
+      findOne: jest.fn(async () => ({ chainSequence: 1, eventHash: 'previous-hash' })),
+      create: jest.fn((data) => data),
+      save: jest.fn(async (data) => ({ id: 12, ...data })),
+    };
+    const service = new AuditService(repository as any);
+
+    await service.logTenantImpersonationStop({
+      actorId: 1,
+      actorEmail: 'root@example.test',
+      sourceTenantId: 'platform',
+      targetTenantId: 'tenant-b',
+      startedAt: '2026-05-10T09:00:00.000Z',
+      stoppedAt: '2026-05-10T09:15:00.000Z',
+    });
+
+    expect(repository.findOne).toHaveBeenCalledWith({
+      where: expect.objectContaining({ tenantId: 'tenant-b' }),
+      order: { chainSequence: 'DESC', timestamp: 'DESC', id: 'DESC' },
+    });
+    expect(repository.save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tenantId: 'tenant-b',
+        action: AuditAction.IMPERSONATION_STOP,
+        entityType: AuditEntityType.TENANT_IMPERSONATION,
+        previousHash: 'previous-hash',
+        details: expect.objectContaining({
+          action: 'STOP_TENANT_IMPERSONATION',
+          targetTenantId: 'tenant-b',
+        }),
+      }),
+    );
+  });
 });

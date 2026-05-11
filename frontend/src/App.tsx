@@ -123,9 +123,34 @@ const OpsDashboardPage = lazy(() =>
     default: module.OpsDashboardPage,
   })),
 );
+const PlatformDashboardPage = lazy(() =>
+  import('./pages/PlatformDashboardPage').then((module) => ({
+    default: module.PlatformDashboardPage,
+  })),
+);
 const SyncPage = lazy(() =>
   import('./pages/PlaceholderPages').then((module) => ({
     default: module.SyncPage,
+  })),
+);
+const MarketplaceFeedPage = lazy(() =>
+  import('./pages/marketplace/MarketplaceFeedPage').then((module) => ({
+    default: module.MarketplaceFeedPage,
+  })),
+);
+const ShiftDetailPage = lazy(() =>
+  import('./pages/marketplace/ShiftDetailPage').then((module) => ({
+    default: module.ShiftDetailPage,
+  })),
+);
+const MyApplicationsPage = lazy(() =>
+  import('./pages/marketplace/MyApplicationsPage').then((module) => ({
+    default: module.MyApplicationsPage,
+  })),
+);
+const MarketplaceDashboardPage = lazy(() =>
+  import('./pages/marketplace/MarketplaceDashboardPage').then((module) => ({
+    default: module.MarketplaceDashboardPage,
   })),
 );
 
@@ -146,9 +171,44 @@ const ProtectedRoute = () => {
   return <Outlet />;
 };
 
+const PlatformRoute = () => {
+  const user = useAuth((state) => state.user);
+  if (user?.role !== 'PLATFORM_SUPER_ADMIN') {
+    return <Navigate to="/" replace />;
+  }
+  return <Outlet />;
+};
+
+const TenantRoute = () => {
+  const user = useAuth((state) => state.user);
+  const impersonatedTenantId = useAuth((state) => state.impersonatedTenantId);
+  if (user?.role === 'PLATFORM_SUPER_ADMIN' && !impersonatedTenantId) {
+    return <Navigate to="/platform" replace />;
+  }
+  return <Outlet />;
+};
+
+const HomeRedirect = () => {
+  const user = useAuth((state) => state.user);
+  return (
+    <Navigate
+      to={user?.role === 'PLATFORM_SUPER_ADMIN' ? '/platform' : '/dashboard'}
+      replace
+    />
+  );
+};
+
 function App() {
   const fetchConfig = useAppConfig((state) => state.fetchConfig);
   const isLoading = useAppConfig((state) => state.isLoading);
+  const user = useAuth((state) => state.user);
+  const isAgent = user?.role === 'AGENT';
+  const hasPermission = (permission: string) =>
+    Boolean(
+      user?.permissions?.includes(permission) ||
+        user?.permissions?.includes('settings:all') ||
+        user?.role === 'SUPER_ADMIN',
+    );
 
   useEffect(() => {
     fetchConfig();
@@ -179,47 +239,75 @@ function App() {
 
             <Route element={<ProtectedRoute />}>
               <Route path="/" element={<Layout />}>
-                <Route index element={<Navigate to="/dashboard" replace />} />
-                <Route path="dashboard" element={<DashboardPage />} />
-                <Route path="manager" element={<ManagerCockpitPage />} />
-                <Route
-                  path="manager/cockpit"
-                  element={<ManagerCockpitPage />}
-                />
-                <Route
-                  path="manager/worklist"
-                  element={<ManagerWorklistPage />}
-                />
-                <Route path="audit" element={<AuditLogPage />} />
-                <Route path="planning" element={<PlanningPage />} />
-                <Route
-                  path="planning/prepublication"
-                  element={<PlanningPrepublicationPage />}
-                />
-                <Route path="attendance" element={<AttendancePage />} />
-                <Route path="leaves" element={<LeavesPage />} />
-                <Route path="agents">
-                  <Route index element={<AgentsPage />} />
-                  <Route path="services" element={<HospitalServicesPage />} />
-                  <Route path="hierarchy" element={<HierarchyPage />} />
-                  <Route path="templates" element={<ContractTemplatesPage />} />
+                <Route index element={<HomeRedirect />} />
+                <Route element={<PlatformRoute />}>
+                  <Route path="platform" element={<PlatformDashboardPage />} />
+                  <Route
+                    path="platform/tenants"
+                    element={<PlatformDashboardPage />}
+                  />
+                  <Route
+                    path="platform/audit"
+                    element={<PlatformDashboardPage />}
+                  />
+                  <Route
+                    path="platform/security"
+                    element={<PlatformDashboardPage />}
+                  />
+                  <Route
+                    path="platform/settings"
+                    element={<PlatformDashboardPage />}
+                  />
                 </Route>
-                <Route path="competencies" element={<CompetenciesPage />} />
-                <Route path="payment" element={<PayrollPage />} />
-                <Route path="ged" element={<GedPage />} />
-                <Route path="qvt" element={<QvtPage />} />
-                <Route
-                  path="admin/release"
-                  element={<ReleaseReadinessPage />}
-                />
-                <Route path="ops" element={<OpsDashboardPage />} />
-                <Route path="sync" element={<SyncPage />} />
-                <Route path="whatsapp-inbox" element={<WhatsAppInbox />} />
-                <Route path="settings" element={<SettingsPage />} />
+                <Route element={<TenantRoute />}>
+                  <Route path="dashboard" element={<DashboardPage />} />
+                  <Route path="manager" element={<ManagerCockpitPage />} />
+                  <Route
+                    path="manager/cockpit"
+                    element={<ManagerCockpitPage />}
+                  />
+                  <Route
+                    path="manager/worklist"
+                    element={<ManagerWorklistPage />}
+                  />
+                  <Route path="audit" element={<AuditLogPage />} />
+                  <Route path="planning" element={<PlanningPage />} />
+                  <Route
+                    path="planning/prepublication"
+                    element={<PlanningPrepublicationPage />}
+                  />
+                  <Route path="attendance" element={<AttendancePage />} />
+                  <Route path="leaves" element={<LeavesPage />} />
+                  <Route path="agents">
+                    <Route index element={<AgentsPage />} />
+                    <Route path="services" element={<HospitalServicesPage />} />
+                    <Route path="hierarchy" element={<HierarchyPage />} />
+                    <Route
+                      path="templates"
+                      element={<ContractTemplatesPage />}
+                    />
+                  </Route>
+                  <Route path="competencies" element={<CompetenciesPage />} />
+                  <Route path="payment" element={<PayrollPage />} />
+                  <Route path="ged" element={<GedPage />} />
+                  <Route path="qvt" element={<QvtPage />} />
+                  <Route
+                    path="admin/release"
+                    element={<ReleaseReadinessPage />}
+                  />
+                  <Route path="ops" element={<OpsDashboardPage />} />
+                  <Route path="sync" element={<SyncPage />} />
+                  <Route path="whatsapp-inbox" element={<WhatsAppInbox />} />
+                  <Route path="settings" element={<SettingsPage />} />
+                <Route path="marketplace" element={<MarketplaceFeedPage />} />
+                <Route path="marketplace/shifts/:id" element={<ShiftDetailPage />} />
+                <Route path="marketplace/dashboard" element={<MarketplaceDashboardPage />} />
+                <Route path="my-shifts" element={<MyApplicationsPage />} />
               </Route>
             </Route>
+          </Route>
 
-            <Route path="*" element={<Navigate to="/" replace />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </BrowserRouter>
       </Suspense>

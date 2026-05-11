@@ -12,7 +12,11 @@ import { AuthService } from './auth.service';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { RolesGuard } from './roles.guard';
 import { Roles } from './roles.decorator';
-import { UserRole } from '../agents/entities/agent.entity';
+import {
+  UserRole,
+  canSelectTenantContext,
+  isPlatformRole,
+} from '../agents/entities/agent.entity';
 import type { AuthenticatedRequest } from './authenticated-request';
 import {
   AcceptInviteDto,
@@ -20,6 +24,8 @@ import {
   InviteUserDto,
   LoginDto,
   SegurCallbackDto,
+  StartTenantImpersonationDto,
+  StopTenantImpersonationDto,
 } from './dto/auth.dto';
 
 @Controller('auth')
@@ -52,18 +58,26 @@ export class AuthController {
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.MANAGER)
+  @Roles(
+    UserRole.PLATFORM_SUPER_ADMIN,
+    UserRole.SUPER_ADMIN,
+    UserRole.ADMIN,
+    UserRole.MANAGER,
+  )
   @Post('invite')
   @Throttle({ default: { limit: 20, ttl: 60000 } })
   async invite(
     @Body() body: InviteUserDto,
     @Request() req: AuthenticatedRequest,
   ) {
-    // SUPER_ADMIN can assign to any GHT; regular admins are locked to their own tenant
+    // Platform and historical super admins can assign to any GHT; regular admins are locked to their own tenant.
     const targetTenantId =
-      req.user.role === 'SUPER_ADMIN' && body.tenantId
+      canSelectTenantContext(req.user.role) && body.tenantId
         ? body.tenantId
         : req.user.tenantId;
+    if (!targetTenantId) {
+      throw new UnauthorizedException('Tenant cible requis pour inviter un utilisateur.');
+    }
     return this.authService.inviteUser(body.email, body.roleId, targetTenantId);
   }
 
@@ -89,5 +103,33 @@ export class AuthController {
       body.newPass,
     );
     return { success: true };
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.PLATFORM_SUPER_ADMIN)
+  @Post('impersonation/start')
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
+  async startTenantImpersonation(
+    @Body() body: StartTenantImpersonationDto,
+    @Request() req: AuthenticatedRequest,
+  ) {
+    return this.authService.startTenantImpersonation(
+      req.user,
+      body.targetTenantId,
+      body.reason,
+    );
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('impersonation/stop')
+  @Throttle({ default: { limit: 20, ttl: 60000 } })
+  async stopTenantImpersonation(
+    @Body() body: StopTenantImpersonationDto,
+    @Request() req: AuthenticatedRequest,
+  ) {
+    if (!isPlatformRole(req.user.role) && !req.user.impersonation?.active) {
+      throw new UnauthorizedException('Impersonation plateforme requise.');
+    }
+    return this.authService.stopTenantImpersonation(req.user, body.reason);
   }
 }

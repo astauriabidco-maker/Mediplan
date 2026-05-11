@@ -64,3 +64,22 @@ export class ChangePasswordDto {
   @MinLength(12)
   newPass: string;
 }
+
+export class StartTenantImpersonationDto {
+  @IsString()
+  @Length(1, 80)
+  @Matches(/^[A-Za-z0-9._:-]+$/)
+  targetTenantId: string;
+
+  @IsOptional()
+  @IsString()
+  @Length(3, 500)
+  reason?: string;
+}
+
+export class StopTenantImpersonationDto {
+  @IsOptional()
+  @IsString()
+  @Length(3, 500)
+  reason?: string;
+}

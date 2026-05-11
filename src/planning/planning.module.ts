@@ -52,7 +52,7 @@ import { ComplianceAlertService } from './compliance-alert.service';
     LeavesService, WorkPoliciesService, UnderstaffingService,
     ComplianceWorkerService
   ],
-  exports: [PlanningService, OptimizationService, AutoSchedulerService, LeavesService, WorkPoliciesService],
+  exports: [PlanningService, OptimizationService, AutoSchedulerService, LeavesService, WorkPoliciesService, ComplianceValidationService],
   controllers: [
     PlanningController,
     LeavesController,

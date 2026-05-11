@@ -42,12 +42,19 @@ export const useNotifications = () => {
             });
 
             if (Notification.permission === 'granted') {
-                const title = 'Mediplan Notification';
-                const options = {
-                    body: payload.type === 'LEAVE_REQUESTED'
-                        ? `Nouvelle demande de congé de ${payload.data.agentName}`
-                        : `Votre demande de congé a été ${payload.data.status === 'APPROVED' ? 'acceptée' : 'refusée'}`,
-                };
+                const title = payload.type === 'MARKETPLACE_OPPORTUNITY'
+                  ? 'Urgence: Garde Disponible'
+                  : 'Mediplan Notification';
+
+                const body = payload.type === 'MARKETPLACE_OPPORTUNITY'
+                  ? `Une garde en ${payload.data.facilityName} est disponible le ${payload.data.date}. Majoration: ${payload.data.bonus || 'Standard'}`
+                  : payload.type === 'LEAVE_REQUESTED'
+                  ? `Nouvelle demande de congé de ${payload.data.agentName}`
+                  : `Votre demande de congé a été ${payload.data.status === 'APPROVED' ? 'acceptée' : 'refusée'}`;
+
+                const options = { body, icon: '/icon-192x192.png' };
+
+                // On utilise l'API Notification native (si app ouverte)
                 new Notification(title, options);
             }
         });
@@ -63,6 +70,15 @@ export const useNotifications = () => {
     }, [token, user]);
 
     useEffect(() => {
+        // Enregistrement du Service Worker pour les notifications Push (en arrière-plan)
+        if ('serviceWorker' in navigator && 'PushManager' in window) {
+            navigator.serviceWorker.register('/sw.js').then(function(swReg) {
+                console.log('Service Worker for Push Notifications registered', swReg);
+            }).catch(function(error) {
+                console.error('Service Worker Error', error);
+            });
+        }
+
         if (Notification.permission === 'default') {
             Notification.requestPermission();
         }

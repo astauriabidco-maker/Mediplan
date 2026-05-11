@@ -4,9 +4,18 @@ import { persist } from 'zustand/middleware';
 interface User {
     id: number;
     email: string;
-    tenantId: string;
+    tenantId: string | null;
     role: string;
     permissions: string[];
+    impersonation?: {
+        active: true;
+        actorId: number;
+        actorEmail: string;
+        sourceTenantId: string | null;
+        targetTenantId: string;
+        startedAt: string;
+        reason?: string;
+    };
 }
 
 interface AuthState {

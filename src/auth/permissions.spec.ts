@@ -44,4 +44,21 @@ describe('permissions matrix', () => {
       ]),
     );
   });
+
+  it('provides dedicated platform permissions without granting tenant wildcard access', () => {
+    const permissions = getDefaultPermissionsForRole('PLATFORM_SUPER_ADMIN');
+
+    expect(permissions).toEqual(
+      expect.arrayContaining([
+        'platform:*',
+        Permission.PlatformTenantsRead,
+        Permission.PlatformUsersWrite,
+        Permission.PlatformAuditRead,
+      ]),
+    );
+    expect(hasAnyPermission(permissions, [Permission.PlatformTenantsWrite])).toBe(
+      true,
+    );
+    expect(hasAnyPermission(permissions, [Permission.AgentsWrite])).toBe(false);
+  });
 });

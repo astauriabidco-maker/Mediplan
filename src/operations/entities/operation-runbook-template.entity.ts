@@ -22,7 +22,7 @@ export class OperationRunbookTemplate {
   @PrimaryGeneratedColumn()
   id: number;
 
-  @Column({ nullable: true })
+  @Column({ type: 'varchar', length: 80, nullable: true })
   tenantId: string | null;
 
   @Column({ type: 'varchar', length: 160, nullable: true })

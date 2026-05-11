@@ -22,6 +22,7 @@ import type {
 import { managerQueryKeys, queryCacheProfiles } from '../api/queryKeys';
 import { ManagerKpiTile } from '../components/manager/ManagerKpiTile';
 import { ServiceIndicatorsTable } from '../components/manager/ServiceIndicatorsTable';
+import { MarketplacePendingApplications } from '../components/manager/MarketplacePendingApplications';
 import { ApiErrorState, EmptyState, PageSkeleton } from '../components/UIStates';
 import { cn } from '../utils/cn';
 
@@ -646,6 +647,8 @@ export const ManagerCockpitPage = () => {
           )}
         </div>
       </section>
+
+      <MarketplacePendingApplications />
     </div>
   );
 };

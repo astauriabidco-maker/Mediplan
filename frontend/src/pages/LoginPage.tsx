@@ -19,15 +19,15 @@ export const LoginPage: React.FC = () => {
 
         try {
             const response = await axios.post('/api/auth/login', {
-                email,
-                password,
+                email: email.trim().toLowerCase(),
+                password: password.trim(),
             });
 
             const { access_token, user } = response.data;
             setAuth(access_token, user);
             navigate('/');
         } catch (err: any) {
-            setError(err.response?.data?.message || 'Identifiants invalides');
+            setError(err.response?.data?.message || 'API indisponible ou proxy frontend non joignable');
         } finally {
             setLoading(false);
         }

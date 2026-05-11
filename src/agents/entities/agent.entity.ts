@@ -11,11 +11,21 @@ import { AgentBeneficiary } from './beneficiary.entity';
 import { HealthRecord } from './health-record.entity';
 
 export enum UserRole {
+    PLATFORM_SUPER_ADMIN = 'PLATFORM_SUPER_ADMIN',
     SUPER_ADMIN = 'SUPER_ADMIN',
     ADMIN = 'ADMIN',
     MANAGER = 'MANAGER',
     AGENT = 'AGENT',
 }
+
+export const isPlatformRole = (role?: string | null): boolean =>
+    role === UserRole.PLATFORM_SUPER_ADMIN;
+
+export const isTenantSuperAdminRole = (role?: string | null): boolean =>
+    role === UserRole.SUPER_ADMIN;
+
+export const canSelectTenantContext = (role?: string | null): boolean =>
+    isPlatformRole(role) || isTenantSuperAdminRole(role);
 
 export enum UserStatus {
     INVITED = 'INVITED',
@@ -233,7 +243,7 @@ export class Agent {
     @Column({ select: false, nullable: true }) // Nullable for existing data
     password?: string;
 
-    @Column({ default: 'DEFAULT_TENANT' })
+    @Column({ default: 'DEFAULT_TENANT', nullable: true })
     tenantId: string;
 
     @Column({ nullable: true })

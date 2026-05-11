@@ -15,6 +15,7 @@ interface ObservedRequestConfig {
         traceId: string;
         startedAt: number;
     };
+    skipTenantImpersonation?: boolean;
 }
 
 const setHeader = (
@@ -71,7 +72,7 @@ api.interceptors.request.use(
         if (token) {
             config.headers.Authorization = `Bearer ${token}`;
         }
-        if (impersonatedTenantId) {
+        if (impersonatedTenantId && !(config as ObservedRequestConfig).skipTenantImpersonation) {
             config.params = { ...config.params, tenantId: impersonatedTenantId };
         }
         return config;

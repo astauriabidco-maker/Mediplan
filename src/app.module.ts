@@ -42,6 +42,8 @@ import { AnalyticsModule } from './analytics/analytics.module';
 import { BackupModule } from './backup/backup.module';
 import { ProductionReadinessModule } from './production-readiness/production-readiness.module';
 import { OperationsModule } from './operations/operations.module';
+import { PlatformModule } from './platform/platform.module';
+import { MarketplaceModule } from './marketplace/marketplace.module';
 
 @Module({
   imports: [
@@ -117,6 +119,8 @@ import { OperationsModule } from './operations/operations.module';
     BackupModule,
     ProductionReadinessModule,
     OperationsModule,
+    PlatformModule,
+    MarketplaceModule,
   ],
   controllers: [AppController],
   providers: [

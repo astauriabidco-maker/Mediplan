@@ -40,6 +40,16 @@ export interface AuditExport {
     logs: AuditLog[];
 }
 
+export interface TenantImpersonationAuditInput {
+    actorId: number;
+    actorEmail?: string;
+    sourceTenantId: string | null;
+    targetTenantId: string;
+    reason?: string;
+    startedAt?: string;
+    stoppedAt?: string;
+}
+
 const REDACTED = '[redacted]';
 
 const SENSITIVE_DETAIL_KEYS = new Set([
@@ -62,6 +72,7 @@ const SENSITIVE_DETAIL_KEYS = new Set([
     'lastname',
     'fullname',
     'agentname',
+    'actoremail',
     'birthname',
     'dateofbirth',
     'placeofbirth',
@@ -244,6 +255,43 @@ export class AuditService {
             chainVerification,
             logs,
         };
+    }
+
+    async logTenantImpersonationStart(input: TenantImpersonationAuditInput): Promise<AuditLog> {
+        return this.log(
+            input.targetTenantId,
+            input.actorId,
+            AuditAction.IMPERSONATION_START,
+            AuditEntityType.TENANT_IMPERSONATION,
+            input.targetTenantId,
+            {
+                action: 'START_TENANT_IMPERSONATION',
+                actorEmail: input.actorEmail,
+                sourceTenantId: input.sourceTenantId,
+                targetTenantId: input.targetTenantId,
+                reason: input.reason,
+                startedAt: input.startedAt,
+            },
+        );
+    }
+
+    async logTenantImpersonationStop(input: TenantImpersonationAuditInput): Promise<AuditLog> {
+        return this.log(
+            input.targetTenantId,
+            input.actorId,
+            AuditAction.IMPERSONATION_STOP,
+            AuditEntityType.TENANT_IMPERSONATION,
+            input.targetTenantId,
+            {
+                action: 'STOP_TENANT_IMPERSONATION',
+                actorEmail: input.actorEmail,
+                sourceTenantId: input.sourceTenantId,
+                targetTenantId: input.targetTenantId,
+                reason: input.reason,
+                startedAt: input.startedAt,
+                stoppedAt: input.stoppedAt,
+            },
+        );
     }
 
     private computeEventHash(log: Partial<AuditLog>): string {

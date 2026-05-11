@@ -1,0 +1,8 @@
+src/App.tsx(293,21): error TS2304: Cannot find name 'isAgent'.
+src/App.tsx(293,32): error TS2552: Cannot find name 'hasPermission'. Did you mean 'Permissions'?
+src/components/manager/MarketplacePendingApplications.tsx(3,21): error TS2307: Cannot find module '../../lib/api' or its corresponding type declarations.
+src/pages/marketplace/MarketplaceDashboardPage.tsx(3,21): error TS2307: Cannot find module '../../lib/api' or its corresponding type declarations.
+src/pages/marketplace/MarketplaceFeedPage.tsx(3,21): error TS2307: Cannot find module '../lib/api' or its corresponding type declarations.
+src/pages/marketplace/MarketplaceFeedPage.tsx(4,25): error TS2307: Cannot find module '../store/useAuth' or its corresponding type declarations.
+src/pages/marketplace/MyApplicationsPage.tsx(3,21): error TS2307: Cannot find module '../../lib/api' or its corresponding type declarations.
+src/pages/marketplace/ShiftDetailPage.tsx(4,21): error TS2307: Cannot find module '../../lib/api' or its corresponding type declarations.

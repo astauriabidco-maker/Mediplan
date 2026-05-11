@@ -32,6 +32,7 @@ import {
 } from '../payroll/entities/payroll-rule.entity';
 import { Role } from '../auth/entities/role.entity';
 import { HOSPITAL_ROLE_PERMISSIONS } from '../auth/permissions';
+import { AuditLog } from '../audit/entities/audit-log.entity';
 import * as bcrypt from 'bcrypt';
 import { addDays, setHours, setMinutes, startOfWeek, subDays } from 'date-fns';
 
@@ -66,6 +67,8 @@ export class SeedController {
     private payrollRuleRepo: Repository<PayrollRule>,
     @InjectRepository(Role)
     private roleRepo: Repository<Role>,
+    @InjectRepository(AuditLog)
+    private auditLogRepo: Repository<AuditLog>,
   ) {}
 
   @Post('hgd')
@@ -76,7 +79,12 @@ export class SeedController {
 
     const tenantId = 'HGD-DOUALA';
     const passwordHash = await bcrypt.hash('password123', 10);
-    const demoAccounts: { email: string; role: string; label: string }[] = [];
+    const demoAccounts: {
+      email: string;
+      role: string;
+      label: string;
+      tenantId: string | null;
+    }[] = [];
     const deterministicPhone = (index: number) =>
       `+237 6${String(70000000 + index * 137291).padStart(8, '0')}`;
     const deterministicHiringDate = (index: number) => {
@@ -115,6 +123,7 @@ export class SeedController {
     await this.documentRepo.delete({ tenantId });
     await this.shiftRepo.delete({ tenantId });
     await this.leaveRepo.delete({ tenantId });
+    await this.auditLogRepo.delete({ tenantId });
     await this.agentRepo.delete({ tenantId });
     await this.roleRepo.delete({ tenantId });
     await this.serviceRepo.delete({ tenantId });
@@ -133,6 +142,23 @@ export class SeedController {
       rolesByName.set(role.name, role);
     }
     const getRole = (name: string) => rolesByName.get(name);
+    const platformTenantId = 'PLATFORM';
+    const platformRoleDefinition =
+      HOSPITAL_ROLE_PERMISSIONS[UserRole.PLATFORM_SUPER_ADMIN];
+    const platformRole =
+      (await this.roleRepo.findOne({
+        where: {
+          tenantId: platformTenantId,
+          name: platformRoleDefinition.name,
+        },
+      })) ??
+      (await this.roleRepo.save(
+        this.roleRepo.create({
+          ...platformRoleDefinition,
+          tenantId: platformTenantId,
+          isSystem: true,
+        }),
+      ));
 
     // Create facilities
     const hgd = await this.facilityRepo.save({
@@ -600,16 +626,46 @@ export class SeedController {
       email: directeur.email,
       role: 'DIRECTION',
       label: 'Directeur Général',
+      tenantId,
     });
 
-    const superAdmin = await this.agentRepo.save({
-      nom: 'MEDIPLAN DEMO',
-      firstName: 'Superadmin',
-      email: 'superadmin@mediplan.demo',
-      matricule: 'DEMO-SUPERADMIN-001',
+    const existingPlatformAdmin = await this.agentRepo.findOne({
+      where: { email: 'platform@mediplan.local' },
+    });
+    const platformAdmin = await this.agentRepo.save(
+      this.agentRepo.create({
+        ...existingPlatformAdmin,
+        nom: 'MEDIPLAN PLATFORM',
+        firstName: 'Platform',
+        email: 'platform@mediplan.local',
+        matricule: 'PLATFORM-MEDIPLAN-001',
+        telephone: '+237 699 000 001',
+        gender: 'F',
+        jobTitle: 'Administratrice plateforme',
+        contractType: 'CDI',
+        hiringDate: '2020-01-01',
+        workTimePercentage: 100,
+        tenantId: platformTenantId,
+        role: UserRole.PLATFORM_SUPER_ADMIN,
+        roleId: platformRole.id,
+        password: passwordHash,
+      }),
+    );
+    demoAccounts.push({
+      email: platformAdmin.email,
+      role: UserRole.PLATFORM_SUPER_ADMIN,
+      label: 'Plateforme Mediplan',
+      tenantId: null,
+    });
+
+    const hgdAdmin = await this.agentRepo.save({
+      nom: 'ADMIN HGD',
+      firstName: 'Admin',
+      email: 'admin@hgd-douala.cm',
+      matricule: 'HGD-ADMIN-001',
       telephone: '+237 699 000 001',
       gender: 'F',
-      jobTitle: 'Super administratrice plateforme',
+      jobTitle: 'Administratrice établissement',
       contractType: 'CDI',
       hiringDate: '2020-01-01',
       hospitalServiceId: administration.id,
@@ -620,14 +676,15 @@ export class SeedController {
       index: '468',
       workTimePercentage: 100,
       tenantId,
-      role: UserRole.SUPER_ADMIN,
-      roleId: getRole(UserRole.SUPER_ADMIN)?.id,
+      role: UserRole.ADMIN,
+      roleId: getRole(UserRole.ADMIN)?.id,
       password: passwordHash,
     });
     demoAccounts.push({
-      email: superAdmin.email,
-      role: UserRole.SUPER_ADMIN,
-      label: 'Superadmin plateforme',
+      email: hgdAdmin.email,
+      role: UserRole.ADMIN,
+      label: 'Admin HGD Douala',
+      tenantId,
     });
 
     const rhManager = await this.agentRepo.save({
@@ -657,6 +714,7 @@ export class SeedController {
       email: rhManager.email,
       role: 'HR_MANAGER',
       label: 'Responsable RH',
+      tenantId,
     });
 
     const auditor = await this.agentRepo.save({
@@ -686,6 +744,7 @@ export class SeedController {
       email: auditor.email,
       role: 'AUDITOR',
       label: 'Audit conformité',
+      tenantId,
     });
 
     const chefChirurgie = await this.agentRepo.save({
@@ -718,6 +777,7 @@ export class SeedController {
       email: chefChirurgie.email,
       role: UserRole.MANAGER,
       label: 'Manager Chirurgie',
+      tenantId,
     });
 
     await this.serviceRepo.update(chirurgie.id, { chiefId: chefChirurgie.id });
@@ -808,6 +868,7 @@ export class SeedController {
       email: chefUrgences.email,
       role: UserRole.MANAGER,
       label: 'Manager Urgences',
+      tenantId,
     });
 
     await this.serviceRepo.update(urgences.id, { chiefId: chefUrgences.id });

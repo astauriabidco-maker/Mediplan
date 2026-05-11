@@ -39,4 +39,8 @@ export class EventsGateway implements OnGatewayInit, OnGatewayConnection, OnGate
     broadcastPlanningUpdate() {
         this.server.emit('planning_update', { timestamp: new Date() });
     }
+
+    broadcastMarketplaceUpdate() {
+        this.server.emit('marketplace_update', { timestamp: new Date() });
+    }
 }

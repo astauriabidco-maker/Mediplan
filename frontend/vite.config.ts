@@ -11,6 +11,8 @@ const lazyChunkPrefixes = [
   'width-',
 ];
 
+const apiProxyTarget = process.env.VITE_API_PROXY_TARGET ?? 'http://127.0.0.1:3005';
+
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [react()],
@@ -45,11 +47,11 @@ export default defineConfig({
     },
     proxy: {
       '/api': {
-        target: 'http://backend:3005',
+        target: apiProxyTarget,
         changeOrigin: true,
       },
       '/socket.io': {
-        target: 'http://backend:3005',
+        target: apiProxyTarget,
         ws: true,
         changeOrigin: true,
       },

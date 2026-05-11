@@ -14,7 +14,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
 
     async validate(payload: any) {
         const userId = payload.sub;
-        const tenantId = payload.tenant;
+        const tenantId = payload.tenant ?? null;
 
         return {
             id: userId,
@@ -24,7 +24,8 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
             tenantId,
             tenant: tenantId,
             role: payload.role,
-            permissions: payload.permissions || []
+            permissions: payload.permissions || [],
+            impersonation: payload.impersonation,
         };
     }
 }

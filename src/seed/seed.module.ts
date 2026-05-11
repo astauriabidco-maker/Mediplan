@@ -15,6 +15,7 @@ import { BonusTemplate } from '../agents/entities/bonus-template.entity';
 import { ContractBonus } from '../agents/entities/contract-bonus.entity';
 import { PayrollRule } from '../payroll/entities/payroll-rule.entity';
 import { Role } from '../auth/entities/role.entity';
+import { AuditLog } from '../audit/entities/audit-log.entity';
 
 @Module({
   imports: [
@@ -33,6 +34,7 @@ import { Role } from '../auth/entities/role.entity';
       ContractBonus,
       PayrollRule,
       Role,
+      AuditLog,
     ]),
   ],
   controllers: [SeedController],

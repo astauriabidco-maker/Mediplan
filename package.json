@@ -83,6 +83,8 @@
     "sprint35:commercial:check": "npm run sprint33:pilot:check && git diff --check",
     "sprint36:commercial:smoke": "node --check scripts/commercial-demo-smoke.mjs && node scripts/commercial-demo-smoke.mjs",
     "sprint36:commercial:check": "npm --prefix frontend run test -- --run src/pages/DemoRequestPage.test.tsx src/api/demo-request.api.test.ts src/lib/sprint36CommercialDemo.test.ts src/components/Sprint36CommercialDemoBanner.test.tsx src/api/axios.test.ts && npm test -- backup.controller.spec.ts audit.controller.spec.ts --runInBand && npm --prefix frontend run build && npm run sprint36:commercial:smoke && git diff --check",
+    "sprint37:prod-client:smoke": "node --check scripts/prod-client-smoke-plan.mjs && node scripts/prod-client-smoke-plan.mjs",
+    "sprint37:prod-client:smoke:strict": "node scripts/prod-client-smoke-plan.mjs --strict",
     "ci:frontend": "npm run frontend:build && npm run frontend:budget:check && npm run frontend:lint && npm run frontend:test && npm run frontend:audit && npm run frontend:smoke:routes",
     "ci:product": "npm run ci:frontend && npm run ci:quality",
     "seed:hgd": "ts-node -r tsconfig-paths/register seed-hgd.ts",

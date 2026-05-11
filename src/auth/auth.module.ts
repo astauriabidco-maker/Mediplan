@@ -9,10 +9,13 @@ import { JwtStrategy } from './jwt.strategy';
 
 import { MailModule } from '../mail/mail.module';
 import { RolesModule } from './roles/roles.module';
+import { AuditModule } from '../audit/audit.module';
+import { PlatformSettings } from '../platform/platform-settings.entity';
+import { PlatformSettingsService } from '../platform/platform-settings.service';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Agent]),
+    TypeOrmModule.forFeature([Agent, PlatformSettings]),
     PassportModule,
     JwtModule.register({
       secret: process.env.JWT_SECRET || 'SECRET_KEY_DEV',
@@ -20,9 +23,10 @@ import { RolesModule } from './roles/roles.module';
     }),
     MailModule,
     RolesModule,
+    AuditModule,
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy],
+  providers: [AuthService, JwtStrategy, PlatformSettingsService],
   exports: [AuthService],
 })
-export class AuthModule { }
+export class AuthModule {}

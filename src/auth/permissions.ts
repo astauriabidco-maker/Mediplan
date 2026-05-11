@@ -2,6 +2,12 @@ import { UserRole } from '../agents/entities/agent.entity';
 
 export const Permission = {
   All: '*',
+  PlatformTenantsRead: 'platform:tenants:read',
+  PlatformTenantsWrite: 'platform:tenants:write',
+  PlatformUsersRead: 'platform:users:read',
+  PlatformUsersWrite: 'platform:users:write',
+  PlatformAuditRead: 'platform:audit:read',
+  PlatformSettingsWrite: 'platform:settings:write',
   AgentsRead: 'agents:read',
   AgentsWrite: 'agents:write',
   AnalyticsRead: 'analytics:read',
@@ -49,9 +55,24 @@ export interface SystemRoleDefinition {
 }
 
 export const HOSPITAL_ROLE_PERMISSIONS: Record<string, SystemRoleDefinition> = {
+  [UserRole.PLATFORM_SUPER_ADMIN]: {
+    name: UserRole.PLATFORM_SUPER_ADMIN,
+    description:
+      'Super administrateur plateforme hors tenant: tenants, comptes plateforme et audit global',
+    permissions: [
+      'platform:*',
+      Permission.PlatformTenantsRead,
+      Permission.PlatformTenantsWrite,
+      Permission.PlatformUsersRead,
+      Permission.PlatformUsersWrite,
+      Permission.PlatformAuditRead,
+      Permission.PlatformSettingsWrite,
+    ],
+  },
   [UserRole.SUPER_ADMIN]: {
     name: UserRole.SUPER_ADMIN,
-    description: 'Super administrateur plateforme avec accès multi-tenant',
+    description:
+      'Super administrateur tenant historique avec compatibilité multi-tenant',
     permissions: [Permission.All],
   },
   [UserRole.ADMIN]: {
